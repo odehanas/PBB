@@ -1,0 +1,64 @@
+@model IEnumerable<GovBudget.Models.SubmissionVarianceRow>
+@{
+    ViewData["Title"] = "Variance";
+    var current = ViewBag.Current as GovBudget.Models.BudgetSubmissions;
+    var previous = ViewBag.Previous as GovBudget.Models.BudgetSubmissions;
+    var totalOld = (decimal)(ViewBag.TotalOld ?? 0m);
+    var totalNew = (decimal)(ViewBag.TotalNew ?? 0m);
+}
+
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Variance</h3>
+        <div>
+            @if (current != null)
+            {
+                <a asp-action="ReviewSubmission" asp-route-id="@current.SubmissionId" class="btn btn-sm btn-outline-secondary">Back</a>
+            }
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="fw-bold">
+                @(previous == null ? "-" : $"{previous.BudgetYear} — {previous.Entity.EntityCode}/{previous.Department.DeptCode} — {previous.Category.CategoryCode} v{previous.VersionNo}")
+                <span class="mx-2">→</span>
+                @(current == null ? "-" : $"{current.BudgetYear} — {current.Entity.EntityCode}/{current.Department.DeptCode} — {current.Category.CategoryCode} v{current.VersionNo}")
+            </div>
+            <div class="text-muted small">
+                Total: @totalOld.ToString("N2") → @totalNew.ToString("N2") (Δ @(totalNew - totalOld).ToString("N2"))
+            </div>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Item</th>
+                    <th>Activity</th>
+                    <th>Project</th>
+                    <th>Description</th>
+                    <th class="text-end">Old</th>
+                    <th class="text-end">New</th>
+                    <th class="text-end">Δ</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model)
+                {
+                    <tr>
+                        <td class="text-nowrap">@r.Item</td>
+                        <td>@r.Activity</td>
+                        <td>@r.Project</td>
+                        <td>@r.Description</td>
+                        <td class="text-end">@r.OldAmount.ToString("N2")</td>
+                        <td class="text-end">@r.NewAmount.ToString("N2")</td>
+                        <td class="text-end">@r.Delta.ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+

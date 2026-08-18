@@ -1,0 +1,156 @@
+@model GovBudget.Controllers.ForecastEditVm
+@{
+    ViewData["Title"] = "Forecast to Complete";
+    var year = (int)ViewBag.Year;
+    var yearOptions = ViewBag.YearOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var entityOptions = ViewBag.EntityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var selectedEntityId = ViewBag.SelectedEntityId as int?;
+    var entityRouteVal = selectedEntityId?.ToString() ?? "";
+}
+
+<style>
+    .fc-page .table { font-size: .82rem; }
+    .fc-page .table th, .fc-page .table td { padding: .35rem .55rem; vertical-align: middle; }
+    .fc-page .table thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; white-space: nowrap; }
+    .fc-page .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .fc-page .cat-row td { background: var(--app-brand-header); color: #fff; font-weight: 700; }
+    .fc-page input.fc-input { max-width: 130px; }
+</style>
+
+<div class="container-fluid py-3 fc-page" style="max-width:1150px;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+            <h4 class="mb-0">Forecast to Complete</h4>
+            <div class="text-muted small">Enter the remaining spend expected for the rest of FY @year. Full year = Actual YTD + this forecast.</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" asp-action="Index" asp-route-year="@year" asp-route-entityId="@entityRouteVal">Import</a>
+            <a class="btn btn-sm btn-primary" asp-action="BudgetVsActual" asp-route-year="@year" asp-route-entityId="@entityRouteVal">Budget vs Actual</a>
+        </div>
+    </div>
+
+    @if (TempData["ActualResult"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show py-2 small">@TempData["ActualResult"]<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+    }
+    @if (TempData["ActualError"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show py-2 small">@TempData["ActualError"]<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+    }
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label mb-1 small">Year</label>
+                    <select name="year" class="form-select form-select-sm" asp-items="yearOptions"></select>
+                </div>
+                <div class="col">
+                    <label class="form-label mb-1 small">Entity</label>
+                    <select name="entityId" class="form-select form-select-sm" asp-items="entityOptions"></select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    @if (!Model.NeedsEntity)
+    {
+        <div class="card shadow-sm mb-3">
+            <div class="card-body py-2">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span class="fw-semibold text-secondary me-2">Forecast via Excel:</span>
+
+                    <a class="btn btn-sm btn-outline-primary"
+                       asp-action="ForecastTemplate" asp-route-year="@year" asp-route-entityId="@Model.EntityId">
+                        Download Template
+                    </a>
+
+                    <form method="post" asp-action="ForecastUpload" enctype="multipart/form-data"
+                          class="d-inline-flex align-items-center gap-2 ms-2">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="year" value="@year" />
+                        <input type="hidden" name="entityId" value="@Model.EntityId" />
+                        <input type="file" name="file" accept=".xlsx"
+                               class="form-control form-control-sm" style="max-width: 260px;" required />
+                        <button type="submit" class="btn btn-sm btn-success">Upload</button>
+                    </form>
+
+                    <span class="text-muted small ms-auto">
+                        The template is pre-filled with this entity's GL lines, budget and actual YTD.
+                        Only the shaded Forecast and Notes columns are read back; blank rows stay unchanged.
+                    </span>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (Model.NeedsEntity)
+    {
+        <div class="alert alert-info">Forecasts are entered per entity. Please select a specific entity above to begin.</div>
+    }
+    else if (Model.Rows.Count == 0)
+    {
+        <div class="alert alert-info">No budget or actual GL lines found for this entity and year.</div>
+    }
+    else
+    {
+        <form method="post" asp-action="ForecastSave">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="year" value="@year" />
+            <input type="hidden" name="entityId" value="@Model.EntityId" />
+            <div class="card shadow-sm">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>GL</th>
+                                    <th class="text-end num">Budget</th>
+                                    <th class="text-end num">Actual YTD</th>
+                                    <th class="text-end num">Remaining</th>
+                                    <th class="text-end num">Forecast to Complete</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @{ string? lastCat = null; }
+                            @foreach (var r in Model.Rows)
+                            {
+                                if (r.Category != lastCat)
+                                {
+                                    lastCat = r.Category;
+                                    <tr class="cat-row"><td colspan="6">@r.Category</td></tr>
+                                }
+                                var remaining = r.Budget - r.ActualYtd;
+                                <tr>
+                                    <td><span class="text-muted">@r.GLCode</span> @r.GLName
+                                        <input type="hidden" name="glCodes" value="@r.GLCode" />
+                                    </td>
+                                    <td class="text-end num">@r.Budget.ToString("N0")</td>
+                                    <td class="text-end num">@r.ActualYtd.ToString("N0")</td>
+                                    <td class="text-end num @(remaining < 0 ? "text-danger" : "")">@remaining.ToString("N0")</td>
+                                    <td class="text-end">
+                                        <input type="number" step="0.01" class="form-control form-control-sm fc-input text-end"
+                                               name="forecasts" value="@(r.Forecast != 0 ? r.Forecast.ToString("0.##") : "")"
+                                               placeholder="@r.SuggestedForecast.ToString("0")" />
+                                    </td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm" name="notes" maxlength="400" />
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer py-2 d-flex justify-content-between align-items-center">
+                    <span class="text-muted small">Leave a cell blank (or 0) to clear its forecast. Placeholder shows remaining budget as a starting point.</span>
+                    <button type="submit" class="btn btn-primary btn-sm">Save forecast</button>
+                </div>
+            </div>
+        </form>
+    }
+</div>

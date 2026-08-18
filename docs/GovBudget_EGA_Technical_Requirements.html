@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GovBudget — System Technical Requirements (EGA)</title>
+<style>
+  :root{--ink:#1f2937;--muted:#6b7280;--brand:#0f4c81;--brand-light:#e8f0f7;--accent:#c8911e;--line:#d8dee6;--green:#1b7a45;--red:#b3261e;--bg-soft:#f6f8fa;}
+  *{box-sizing:border-box;}
+  html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{font-family:"Segoe UI",Calibri,Arial,sans-serif;color:var(--ink);line-height:1.55;margin:0;background:#fff;font-size:14px;}
+  .page{max-width:820px;margin:0 auto;padding:48px 56px;}
+  h1,h2,h3,h4{color:var(--brand);line-height:1.25;}
+  h1{font-size:28px;margin:0 0 6px;}
+  h2{font-size:21px;border-bottom:2px solid var(--brand-light);padding-bottom:6px;margin-top:34px;}
+  h3{font-size:16px;margin-top:22px;}
+  h4{font-size:14px;margin:16px 0 4px;color:var(--ink);}
+  p{margin:8px 0;}
+  ul,ol{margin:8px 0 8px 22px;padding:0;}
+  li{margin:4px 0;}
+  .callout{border-left:4px solid var(--accent);background:#fff8ec;padding:10px 14px;margin:14px 0;border-radius:0 6px 6px 0;}
+  .callout.note{border-left-color:var(--brand);background:var(--brand-light);}
+  .callout.warn{border-left-color:var(--red);background:#fdecea;}
+  .callout strong{display:block;margin-bottom:2px;}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px;}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}
+  th{background:var(--brand-light);color:var(--brand);font-weight:700;}
+  tr:nth-child(even) td{background:var(--bg-soft);}
+  code{background:var(--bg-soft);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-family:Consolas,"Courier New",monospace;font-size:12.5px;}
+  pre{background:#0f172a;color:#e2e8f0;border-radius:8px;padding:14px 16px;overflow:auto;font-family:Consolas,"Courier New",monospace;font-size:12.5px;line-height:1.5;}
+  .cover{display:flex;flex-direction:column;justify-content:center;min-height:88vh;}
+  .cover .kicker{letter-spacing:3px;text-transform:uppercase;color:var(--accent);font-weight:700;font-size:12px;}
+  .cover h1{font-size:42px;margin:10px 0;}
+  .cover .sub{font-size:18px;color:var(--muted);}
+  .cover .rule{width:90px;height:4px;background:var(--accent);margin:22px 0;}
+  .cover .meta{margin-top:auto;color:var(--muted);font-size:12.5px;}
+  .toc ol{list-style:none;margin-left:0;}
+  .toc li{padding:4px 0;border-bottom:1px dotted var(--line);}
+  .pagebreak{page-break-before:always;}
+  @media print{.page{padding:0;max-width:100%;}.no-print{display:none!important;}body{font-size:11.5pt;}h2{page-break-after:avoid;}.callout,table,pre{page-break-inside:avoid;}@page{margin:18mm 16mm;}}
+  .print-bar{position:sticky;top:0;background:var(--brand);color:#fff;padding:10px 18px;display:flex;justify-content:space-between;align-items:center;font-size:13px;}
+  .print-bar button{background:var(--accent);color:#fff;border:0;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer;}
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  <span>GovBudget — System Technical Requirements. Use <strong>Print &rarr; Save as PDF</strong> to export and share with EGA.</span>
+  <button onclick="window.print()">Save as PDF</button>
+</div>
+
+<div class="page cover">
+  <div class="kicker">Ras Al Khaimah — Department of Finance</div>
+  <h1>GovBudget</h1>
+  <div class="sub">System Technical Requirements</div>
+  <div class="rule"></div>
+  <p style="max-width:600px;color:var(--muted)">Technical specification of the GovBudget (Performance-Based Budgeting) web application, prepared for the Electronic Government Authority (EGA) for hosting, infrastructure provisioning and onboarding.</p>
+  <div class="meta">
+    Version 1.0 &nbsp;&bull;&nbsp; Document owner: Department of Finance<br />
+    Classification: Internal / For EGA review
+  </div>
+</div>
+
+<div class="page pagebreak">
+  <h2>1. Table of contents</h2>
+  <div class="toc">
+    <ol>
+      <li>2. System overview</li>
+      <li>3. Application architecture &amp; technology stack</li>
+      <li>4. Server / hosting requirements</li>
+      <li>5. Database requirements</li>
+      <li>6. Networking, DNS &amp; TLS</li>
+      <li>7. Security &amp; authentication</li>
+      <li>8. Third-party components &amp; licensing</li>
+      <li>9. Deployment &amp; release process</li>
+      <li>10. Backup, recovery &amp; retention</li>
+      <li>11. Monitoring, logging &amp; support</li>
+      <li>12. Client (end-user) requirements</li>
+      <li>13. Environments &amp; sizing</li>
+      <li>14. Data migration &amp; integrations</li>
+      <li>15. Open items / to confirm with EGA</li>
+    </ol>
+  </div>
+
+  <h2>2. System overview</h2>
+  <p><strong>GovBudget</strong> is a web-based Performance-Based Budgeting (PBB) system used by the Department of Finance and government entities to prepare, submit, review and consolidate annual budgets, capture actuals, run cost allocation, and produce management-review and Power BI reporting.</p>
+  <p>It is a server-rendered ASP.NET Core MVC application backed by a single Microsoft SQL Server database. All users access it through a standard web browser; there is no desktop client.</p>
+
+  <h2>3. Application architecture &amp; technology stack</h2>
+  <table>
+    <tr><th>Layer</th><th>Technology</th><th>Notes</th></tr>
+    <tr><td>Runtime</td><td>.NET 10 (<code>net10.0</code>)</td><td>ASP.NET Core; requires the ASP.NET Core Runtime / Hosting Bundle on the server.</td></tr>
+    <tr><td>Web framework</td><td>ASP.NET Core MVC</td><td>Server-side rendered Razor views (compiled into the app; no runtime view compilation).</td></tr>
+    <tr><td>Data access</td><td>Entity Framework Core 10.0.2</td><td>SQL Server provider (<code>Microsoft.EntityFrameworkCore.SqlServer</code>).</td></tr>
+    <tr><td>Database</td><td>Microsoft SQL Server</td><td>Single relational database; schema under the <code>core</code> and related schemas.</td></tr>
+    <tr><td>Excel export</td><td>ClosedXML 0.104.2</td><td>Generates <code>.xlsx</code> reports (Management Review, etc.).</td></tr>
+    <tr><td>Front-end libraries</td><td>Bootstrap 5, Bootstrap Icons, jQuery</td><td>Bootstrap/jQuery served locally; Bootstrap Icons currently via CDN (jsdelivr).</td></tr>
+    <tr><td>Reporting</td><td>Power BI (external)</td><td>Reads dedicated SQL views (see <code>docs/PowerBI_*</code>).</td></tr>
+  </table>
+
+  <h2>4. Server / hosting requirements</h2>
+  <ul>
+    <li><strong>OS:</strong> Windows Server (IIS) — current deployment model. Linux + Kestrel is technically possible but not the validated target.</li>
+    <li><strong>Web server:</strong> IIS with the <strong>.NET 10 ASP.NET Core Hosting Bundle</strong> (installs the ASP.NET Core Module / ANCM for in-process hosting).</li>
+    <li><strong>Application pool:</strong> "No Managed Code" (ASP.NET Core runs its own runtime), 64-bit.</li>
+    <li><strong>HTTPS:</strong> required — the app enforces HTTPS redirection and HSTS in production.</li>
+    <li><strong>Outbound access:</strong> to the SQL Server host, and (unless Bootstrap Icons are localised) to the jsdelivr CDN.</li>
+    <li><strong>File system:</strong> write access to the app folder for deployment and to place/remove <code>app_offline.htm</code>; standard temp space for report generation.</li>
+    <li><strong>Session state:</strong> in-memory (single instance). A load-balanced multi-instance deployment would need sticky sessions or a shared session store.</li>
+  </ul>
+
+  <h2>5. Database requirements</h2>
+  <ul>
+    <li><strong>Engine:</strong> Microsoft SQL Server (Azure SQL / SQL Server 2019+ compatible).</li>
+    <li><strong>Connection:</strong> configured in <code>appsettings.json</code> under <code>ConnectionStrings:DefaultConnection</code>. Connections use <code>Encrypt=True</code>.</li>
+    <li><strong>Resilience:</strong> the app enables EF Core retry-on-failure (3 retries) and a 120-second command timeout for heavier report/consolidation queries.</li>
+    <li><strong>Schema:</strong> provisioned from the SQL scripts in <code>/docs</code> and root (e.g. <code>LocalDatabase_FullSchema.sql</code>, <code>PBB_PerformanceSchema.sql</code>, <code>ReportingRedesign_Schema.sql</code>, <code>SetupMissingTables.sql</code>).</li>
+    <li><strong>Startup guards:</strong> on start the app seeds core budget categories (REVENUE / OPEX / CAPEX); additional idempotent schema checks run in the Development environment only.</li>
+    <li><strong>Login:</strong> a dedicated SQL login with <code>db_owner</code> (or equivalent DDL + DML) on the application database.</li>
+  </ul>
+  <div class="callout warn">
+    <strong>Credentials</strong>
+    Database server address and credentials are provided <em>separately</em> through a secure channel and are <strong>not</strong> included in this document. Production secrets should be stored using environment variables / user-secrets / a secrets vault rather than in <code>appsettings.json</code>.
+  </div>
+
+  <h2>6. Networking, DNS &amp; TLS</h2>
+  <ul>
+    <li><strong>Public URL / domain:</strong> to be assigned by EGA (e.g. a <code>*.rak.ae</code> host); DNS A/CNAME record required.</li>
+    <li><strong>TLS certificate:</strong> valid certificate for the assigned domain (bound in IIS). HSTS is enabled in production.</li>
+    <li><strong>Ports:</strong> 443 (HTTPS) inbound; 80 redirect to 443. Outbound to SQL Server port (typically 1433) and HTTPS (443) for the icon CDN.</li>
+    <li><strong>Allowed hosts:</strong> currently <code>*</code> in configuration; should be tightened to the assigned domain(s) in production.</li>
+  </ul>
+
+  <h2>7. Security &amp; authentication</h2>
+  <ul>
+    <li><strong>Authentication:</strong> cookie-based (ASP.NET Core cookie authentication). Login at <code>/Account/Login</code>.</li>
+    <li><strong>Authorisation:</strong> role-based. Roles include <code>ADMIN</code> and <code>SYSADMIN</code>; an <code>AdminOnly</code> policy protects administrative areas. Non-admin users are scoped to their entity.</li>
+    <li><strong>Password reset:</strong> currently a manual/administrator-mediated flow (no email sender wired). An SMTP notifier can be enabled later without code changes to callers — SMTP relay details would be required from EGA.</li>
+    <li><strong>Transport security:</strong> HTTPS enforced; encrypted database connections.</li>
+    <li><strong>Data classification:</strong> the system holds government financial/budget data — access is restricted and should be hosted within the approved government environment.</li>
+  </ul>
+
+  <h2>8. Third-party components &amp; licensing</h2>
+  <table>
+    <tr><th>Component</th><th>Version</th><th>Purpose / License</th></tr>
+    <tr><td>.NET / ASP.NET Core</td><td>10.0</td><td>Runtime &amp; web framework (MIT).</td></tr>
+    <tr><td>Microsoft.EntityFrameworkCore.SqlServer</td><td>10.0.2</td><td>ORM / data access (MIT).</td></tr>
+    <tr><td>ClosedXML</td><td>0.104.2</td><td>Excel export (MIT).</td></tr>
+    <tr><td>Bootstrap / Bootstrap Icons</td><td>5.x / 1.11.3</td><td>UI framework &amp; icons (MIT).</td></tr>
+    <tr><td>jQuery</td><td>3.x</td><td>Client scripting (MIT).</td></tr>
+  </table>
+
+  <h2>9. Deployment &amp; release process</h2>
+  <p>Razor views are compiled into the application assemblies, so any view or code change requires a rebuild and redeploy; static assets under <code>wwwroot/</code> are served as-is. A full <strong>Publish</strong> covers both. Recommended: Visual Studio <strong>Web Deploy</strong> (incremental) or an FTP publish profile. To avoid locked-DLL errors during redeploy, drop an <code>app_offline.htm</code> in the site root before the copy and remove it afterwards (Web Deploy does this automatically). Full details are in <code>docs/DEPLOY.md</code>.</p>
+  <div class="callout note">
+    <strong>Cache</strong>
+    Static assets are versioned (<code>asp-append-version</code>), so browsers automatically pick up updated CSS/JS after a deploy.
+  </div>
+
+  <h2>10. Backup, recovery &amp; retention</h2>
+  <ul>
+    <li><strong>Database backups:</strong> automated daily full backups plus transaction-log backups; retention per government policy (to be confirmed with EGA).</li>
+    <li><strong>Recovery:</strong> point-in-time restore capability required; documented RPO/RTO targets to be agreed.</li>
+    <li><strong>Application:</strong> stateless aside from session; recovery = redeploy from source + restore database. Source is under version control (Git).</li>
+  </ul>
+
+  <h2>11. Monitoring, logging &amp; support</h2>
+  <ul>
+    <li><strong>Logging:</strong> ASP.NET Core logging (default Information; framework at Warning). Can be routed to files / Windows Event Log / a central log sink as EGA prefers.</li>
+    <li><strong>Health:</strong> the home page and a database connectivity check serve as basic availability signals.</li>
+    <li><strong>Support model:</strong> maintained by the Department of Finance application team; EGA to provide infrastructure/platform support.</li>
+  </ul>
+
+  <h2>12. Client (end-user) requirements</h2>
+  <ul>
+    <li>Modern desktop browser: latest Microsoft Edge, Google Chrome, or Firefox.</li>
+    <li>No plug-ins or client installation; HTTPS access to the site URL.</li>
+    <li>Excel (or compatible) to open exported <code>.xlsx</code> reports; Power BI Desktop/Service for reporting consumers.</li>
+  </ul>
+
+  <h2>13. Environments &amp; sizing</h2>
+  <table>
+    <tr><th>Environment</th><th>Purpose</th><th>Notes</th></tr>
+    <tr><td>Production</td><td>Live use by DoF and entities</td><td>Dedicated app + database.</td></tr>
+    <tr><td>Staging / UAT</td><td>Testing &amp; sign-off before release</td><td>Recommended; mirrors production configuration.</td></tr>
+  </table>
+  <p><strong>Indicative sizing (to be right-sized with EGA):</strong> a single web instance with 2 vCPU / 4&ndash;8 GB RAM handles the expected concurrent user base of government entities; the database is the primary scaling factor for reporting/consolidation. Load can be scaled vertically first; horizontal scale-out requires a shared session store.</p>
+
+  <h2>14. Data migration &amp; integrations</h2>
+  <ul>
+    <li><strong>Data load:</strong> master data and historical actuals are imported via the application (Excel import) and the provided SQL scripts.</li>
+    <li><strong>Reporting integration:</strong> Power BI connects to dedicated SQL views (documented in <code>docs/PowerBI_Reporting_Guide.md</code> and the <code>PowerBI_*_View(s).sql</code> scripts).</li>
+    <li><strong>Future:</strong> optional SMTP integration for password-reset / notifications.</li>
+  </ul>
+
+  <h2>15. Open items / to confirm with EGA</h2>
+  <ul>
+    <li>Assigned domain name and TLS certificate issuance.</li>
+    <li>Hosting placement (government data centre / approved cloud) and OS/IIS provisioning.</li>
+    <li>SQL Server instance provisioning, sizing, and backup/retention policy (RPO/RTO).</li>
+    <li>SMTP relay for email-based notifications (if required).</li>
+    <li>Log/monitoring destination and access management (SSO/AD integration, if desired).</li>
+    <li>Tightening <code>AllowedHosts</code> and localising the Bootstrap Icons CDN for a fully self-contained deployment.</li>
+  </ul>
+
+  <p style="margin-top:28px;color:var(--muted);font-size:12.5px;">Prepared by the Department of Finance — GovBudget application team. For questions on this specification, contact the DoF application owner.</p>
+</div>
+
+</body>
+</html>

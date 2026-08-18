@@ -1,0 +1,84 @@
+@model IEnumerable<GovBudget.Models.Entities>
+
+@{
+    ViewData["Title"] = "Index";
+    var entityClaim = User.Claims.FirstOrDefault(c => c.Type == "EntityId")?.Value;
+    var hasEntityScope = int.TryParse(entityClaim, out var scopedEntityId) && scopedEntityId > 0;
+    var isGlobalAdmin = User.IsInRole("SYSADMIN") || (User.IsInRole("ADMIN") && !hasEntityScope);
+}
+
+<h1>Index</h1>
+
+<div class="mb-3">
+    <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">&larr; Back to Admin Room</a>
+    @if (isGlobalAdmin)
+    {
+        <a asp-action="Create" class="btn btn-primary">Create New</a>
+        <a asp-action="Template" class="btn btn-outline-primary">Download Template</a>
+    }
+</div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success">@TempData["Success"]</div>
+}
+else if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger" style="white-space: pre-line;">@TempData["Error"]</div>
+}
+
+@if (isGlobalAdmin)
+{
+    <form asp-action="Upload" method="post" enctype="multipart/form-data" class="mb-3">
+        @Html.AntiForgeryToken()
+        <div class="row g-2 align-items-center">
+            <div class="col-auto">
+                <input type="file" name="file" class="form-control" accept=".xlsx" />
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-success">Upload Excel</button>
+            </div>
+        </div>
+    </form>
+}
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>
+                @Html.DisplayNameFor(model => model.EntityCode)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.EntityName)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.IsActive)
+            </th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+@foreach (var item in Model) {
+        <tr>
+            <td>
+                @Html.DisplayFor(modelItem => item.EntityCode)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.EntityName)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.IsActive)
+            </td>
+            <td>
+                <a asp-action="Details" asp-route-id="@item.EntityId">Details</a> |
+                @if (isGlobalAdmin)
+                {
+                    <a asp-action="Edit" asp-route-id="@item.EntityId">Edit</a>
+                    <span>|</span>
+                    <a asp-action="Delete" asp-route-id="@item.EntityId">Delete</a>
+                }
+            </td>
+        </tr>
+}
+    </tbody>
+</table>

@@ -1,0 +1,98 @@
+@model GovBudget.Controllers.ActualOverwriteConfirmVm
+@{
+    ViewData["Title"] = "Confirm overwrite";
+    string SourceLabel(string s) => s == "SAP_MM" ? "MM / Item" : s == "HR_EMP" ? "HR (employee)" : "GL view";
+    string[] monthNames = { "", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    string Months(List<int> ms) => ms.Count == 0 ? "—" : string.Join(", ", ms.Select(m => m >= 1 && m <= 12 ? monthNames[m] : m.ToString()));
+}
+
+<div class="container-fluid py-3" style="max-width:1100px;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h4 class="mb-0">Confirm overwrite</h4>
+        <a class="btn btn-sm btn-outline-secondary" asp-action="Index" asp-route-year="@Model.Year" asp-route-entityId="@Model.RequestEntityId">Back</a>
+    </div>
+
+    <div class="alert alert-warning">
+        Actuals already exist for <strong>FY @Model.Year</strong>, source <strong>@SourceLabel(Model.Source)</strong>, in the entities below.
+        Continuing will <strong>replace the whole of FY @Model.Year</strong> for these entities &mdash; all @Model.ExistingCount existing row(s)
+        (total @Model.ExistingTotal.ToString("N0")) will be deleted and replaced with the @Model.NewCount uploaded row(s)
+        (total @Model.NewTotal.ToString("N0")).
+        <div class="mt-2 mb-0 small">
+            Your upload should therefore be a <strong>cumulative year-to-date export</strong> covering every month posted so far.
+        </div>
+    </div>
+
+    @if (Model.AnyDroppedMonths)
+    {
+        <div class="alert alert-danger">
+            <strong>Warning &mdash; months would be lost.</strong>
+            The file does not contain data for every month that is currently loaded. If you continue, the months listed as
+            "lost" below will be deleted and <em>not</em> replaced:
+            <ul class="mb-0 mt-2">
+                @foreach (var s in Model.Scopes.Where(x => x.HasDroppedMonths))
+                {
+                    <li><strong>@s.EntityLabel</strong> &mdash; would lose: @Months(s.DroppedMonths)</li>
+                }
+            </ul>
+            <div class="mt-2 mb-0 small">
+                If this is not what you intend, click <strong>Cancel</strong> and re-export a full year-to-date file from SAP.
+            </div>
+        </div>
+    }
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Entity</th>
+                        <th class="text-end">Existing rows</th>
+                        <th class="text-end">Existing total</th>
+                        <th>Existing months</th>
+                        <th class="text-end">New rows</th>
+                        <th class="text-end">New total</th>
+                        <th>Months in file</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var s in Model.Scopes)
+                {
+                    <tr class="@(s.HasDroppedMonths ? "table-danger" : null)">
+                        <td>@s.EntityLabel</td>
+                        <td class="text-end">@s.ExistingCount</td>
+                        <td class="text-end">@s.ExistingTotal.ToString("N0")</td>
+                        <td class="small">@Months(s.ExistingMonths)</td>
+                        <td class="text-end">@s.NewCount</td>
+                        <td class="text-end">@s.NewTotal.ToString("N0")</td>
+                        <td class="small">@Months(s.NewMonths)</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @if (Model.Errors.Count > 0)
+    {
+        <div class="alert alert-info small">
+            <strong>@Model.Errors.Count row(s) will be skipped:</strong>
+            <ul class="mb-0">
+                @foreach (var e in Model.Errors.Take(15))
+                {
+                    <li>@e</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <div class="d-flex gap-2">
+        <form method="post" asp-action="ConfirmUpload">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-danger">Replace and import</button>
+        </form>
+        <form method="post" asp-action="CancelUpload">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-outline-secondary">Cancel</button>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,107 @@
+@model GovBudget.Controllers.GlDetailVm
+@{
+    var revenueTotal = Model.RevenueLines.Sum(x => x.Amount);
+    var capexTotal = Model.CapexLines.Sum(x => x.Amount);
+    var opexTotal = Model.OpexLines.Sum(x => x.Amount);
+    var hrTotal = Model.HrLines.Sum(x => x.Amount);
+}
+
+<div class="p-2 bg-white border-top">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+        <div class="fw-bold text-blue">@Model.GlLabel</div>
+        <div class="text-muted small">Year @Model.Year</div>
+    </div>
+
+    @foreach (var sec in new[] {
+        (Code: "revenue", Title: "Revenue budget lines", Lines: Model.RevenueLines, Total: revenueTotal),
+        (Code: "capex", Title: "CAPEX budget lines", Lines: Model.CapexLines, Total: capexTotal),
+        (Code: "opex", Title: "OPEX budget lines", Lines: Model.OpexLines, Total: opexTotal)
+    })
+    {
+        if (sec.Lines.Count > 0)
+        {
+            <div class="mb-3 detail-section" data-section="@sec.Code">
+                <div class="fw-bold small text-uppercase text-muted mb-1">@sec.Title (@sec.Lines.Count)</div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Program</th>
+                                <th>Activity</th>
+                                <th>Item</th>
+                                <th class="text-end">Qty</th>
+                                <th class="text-end">Unit Price</th>
+                                <th class="text-end">Amount</th>
+                                <th class="text-end">Forecast 1</th>
+                                <th class="text-end">Forecast 2</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var l in sec.Lines)
+                            {
+                                <tr>
+                                    <td>@l.ProgramLabel</td>
+                                    <td>@l.ActivityLabel</td>
+                                    <td>@l.ItemLabel</td>
+                                    <td class="text-end">@l.Quantity.ToString("N4")</td>
+                                    <td class="text-end">@l.UnitPrice.ToString("N4")</td>
+                                    <td class="text-end">@l.Amount.ToString("N2")</td>
+                                    <td class="text-end">@l.Forecast1.ToString("N2")</td>
+                                    <td class="text-end">@l.Forecast2.ToString("N2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold table-light">
+                                <td colspan="5" class="text-end">Total</td>
+                                <td class="text-end">@sec.Total.ToString("N2")</td>
+                                <td colspan="2"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+
+    @if (Model.HrLines.Count > 0)
+    {
+        <div class="mb-2 detail-section" data-section="hr">
+            <div class="fw-bold small text-uppercase text-muted mb-1">HR (imported employee costs) (@Model.HrLines.Count)</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Employee</th>
+                            <th>Entity</th>
+                            <th>Cost Center</th>
+                            <th class="text-end">Annual Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var h in Model.HrLines)
+                        {
+                            <tr>
+                                <td>@h.EmployeeId - @h.EmployeeName</td>
+                                <td>@h.EntityName</td>
+                                <td>@h.DepartmentName</td>
+                                <td class="text-end">@h.Amount.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr class="fw-bold table-light">
+                            <td colspan="3" class="text-end">HR total</td>
+                            <td class="text-end">@hrTotal.ToString("N2")</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (Model.RevenueLines.Count == 0 && Model.CapexLines.Count == 0 && Model.OpexLines.Count == 0 && Model.HrLines.Count == 0)
+    {
+        <div class="alert alert-info mb-0">No underlying transactions found for this GL account.</div>
+    }
+</div>

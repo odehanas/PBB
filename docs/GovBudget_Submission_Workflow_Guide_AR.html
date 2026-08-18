@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GovBudget — دليل سير عمل اعتماد الموازنة</title>
+<style>
+  :root{--ink:#1f2937;--muted:#6b7280;--brand:#0f4c81;--brand-light:#e8f0f7;--accent:#c8911e;--line:#d8dee6;--green:#1b7a45;--red:#b3261e;--bg-soft:#f6f8fa;}
+  *{box-sizing:border-box;}
+  html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{font-family:"Segoe UI","Dubai","Tahoma",Arial,sans-serif;color:var(--ink);line-height:1.8;margin:0;background:#fff;font-size:15px;}
+  .page{max-width:880px;margin:0 auto;padding:48px 56px;}
+  h1{font-size:28px;color:var(--brand);margin:0 0 6px;}
+  h2{font-size:22px;color:var(--brand);border-bottom:2px solid var(--brand-light);padding-bottom:6px;margin-top:36px;}
+  h3{font-size:17px;color:var(--brand);margin-top:24px;}
+  p{margin:8px 0;}
+  ul,ol{margin:8px 24px 8px 0;padding:0;}
+  li{margin:6px 0;}
+  code{background:var(--bg-soft);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:13px;direction:ltr;display:inline-block;}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px;}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:right;vertical-align:top;}
+  th{background:var(--brand);color:#fff;font-weight:600;}
+  tbody tr:nth-child(even){background:var(--bg-soft);}
+  .lead{color:var(--muted);font-size:15px;margin-bottom:18px;}
+  .callout{border-right:4px solid var(--accent);background:#fff8ec;padding:10px 14px;margin:14px 0;border-radius:6px 0 0 6px;}
+  .callout.note{border-right-color:var(--brand);background:var(--brand-light);}
+  .callout.warn{border-right-color:var(--red);background:#fdecea;}
+  .callout strong{display:block;margin-bottom:2px;}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;color:#fff;direction:ltr;}
+  .b-draft{background:#6b7280;}.b-sub{background:#9a6700;}.b-ret{background:var(--red);}
+  .b-ent{background:#2563eb;}.b-sent{background:#7c3aed;}.b-sys{background:var(--green);}
+  .flow{font-family:Consolas,monospace;font-size:13px;background:var(--bg-soft);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;white-space:pre;direction:ltr;text-align:left;}
+  .toc{background:var(--bg-soft);border:1px solid var(--line);border-radius:8px;padding:14px 24px;}
+  .yes{color:var(--green);font-weight:700;}.no{color:var(--red);font-weight:700;}.scoped{color:var(--accent);font-weight:700;}
+  .small{font-size:12.5px;color:var(--muted);}
+  footer{margin-top:40px;border-top:1px solid var(--line);padding-top:12px;color:var(--muted);font-size:12.5px;}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>سير عمل اعتماد الموازنة</h1>
+  <p class="lead">كيف تعمل عمليات الإرسال والاعتماد والإصدارات وإعادة الفتح (إلغاء القفل) في نظام GovBudget — لمستخدمي الموازنة وللمسؤولين. يتضمن الدليل شرح معنى كل حالة (Tab) في شاشة «طلبات اعتماد الموازنة».</p>
+
+  <div class="toc">
+    <strong>المحتويات</strong>
+    <ol>
+      <li>المفاهيم الأساسية</li>
+      <li>دورة حياة الحالة (المسار الكامل)</li>
+      <li>معنى كل حالة / تبويب</li>
+      <li>أعمدة قائمة طلبات الاعتماد</li>
+      <li>الأدوار والصلاحيات — من يفعل ماذا</li>
+      <li>من يحق له إعادة فتح نسخة مُرسَلة للتعديل</li>
+      <li>خطوة بخطوة — مستخدم الموازنة</li>
+      <li>خطوة بخطوة — المسؤول</li>
+      <li>ماذا يحدث عند الاعتماد النهائي</li>
+      <li>مثال تطبيقي — إرجاع ثم تعديل ثم إعادة إرسال</li>
+      <li>مرجع سريع وأسئلة شائعة</li>
+    </ol>
+  </div>
+
+  <h2>١. المفاهيم الأساسية</h2>
+  <ul>
+    <li><strong>كل طلب اعتماد مرتبط بـ: السنة + الجهة + الإدارة + الفئة.</strong> لكل فئة (<code>REVENUE</code>، <code>HR</code>، <code>CAPEX</code>، <code>OPEX</code>) مسار اعتماد مستقل وحالة مستقلة. اعتماد فئة المصروفات التشغيلية لا يؤثر على الفئة الرأسمالية وهكذا.</li>
+    <li><strong>الإصدارات (Versions).</strong> يحتفظ كل مسار بأرقام إصدارات (<code>Ver</code> ١، ٢، ٣ …). يُنشأ إصدار جديد عند إعادة فتح العمل، ويُحفظ الإصدار السابق كسجل تاريخي (مرتبط بالإصدار الأصل) لإتاحة المقارنة.</li>
+    <li><strong>القفل.</strong> لا يمكن إضافة أو تعديل أو حذف بنود الموازنة إلا عندما يكون الإصدار الأحدث بحالة <span class="badge b-draft">Draft</span> (مسودة). <strong>أي حالة أخرى تقفل إدخال البيانات.</strong></li>
+    <li><strong>سجل تراكمي.</strong> لا يستبدل النظام أي إصدار مُعتمَد أبداً. تؤدي إعادة الفتح دائماً إلى إنشاء مسودة جديدة (برقم إصدار تالٍ) مع الإبقاء على الإصدار السابق للتدقيق.</li>
+  </ul>
+
+  <h2>٢. دورة حياة الحالة (المسار الكامل)</h2>
+  <div class="flow">Draft ──Submit──▶ Submitted ──Entity approve──▶ EntityApproved ──Send to central──▶ SentToCentral ──Sys approve──▶ SysApproved (final)
+  ▲                  │                         │                                  │
+  │                  │ Return/Unlock           │ Return/Unlock (system admin)     │ Return/Unlock (system admin)
+  └──────────────────┴─────────────────────────┴──────────────────────────────────┘
+       (كل عملية إرجاع تنشئ مسودة جديدة = الإصدار التالي، مع حفظ القديم بحالة "Returned")</div>
+  <div class="callout note"><strong>اتجاه الحركة</strong>
+  ينتقل الطلب للأمام مرحلة واحدة في كل مرة. ولا يمكن إرجاعه للخلف إلا عبر <strong>الإرجاع / إلغاء القفل</strong>، وهو لا يعدّل النسخة المقفلة بل ينشئ مسودة جديدة قابلة للتحرير كإصدار تالٍ.</div>
+
+  <h2>٣. معنى كل حالة / تبويب</h2>
+  <p>تعمل الأزرار أعلى شاشة «طلبات اعتماد الموازنة» على تصفية القائمة حسب الحالة.</p>
+  <table>
+    <thead><tr><th>التبويب / الحالة</th><th>المعنى</th><th>مقفل للتعديل؟</th><th>مَن يحدّدها</th></tr></thead>
+    <tbody>
+      <tr><td><strong>All</strong> (الكل)</td><td>عرض جميع الطلبات للسنة المختارة (أحدث ٥٠٠)، بكل الحالات.</td><td>—</td><td>—</td></tr>
+      <tr><td><span class="badge b-draft">Draft</span> (مسودة)</td><td>عمل قيد الإعداد. تُدخَل البنود ولم تُرسَل بعد.</td><td class="no">لا — قابل للتعديل</td><td>يُنشأ عند بدء الإدخال أو عند إعادة فتح إصدار</td></tr>
+      <tr><td><span class="badge b-sub">Submitted</span> (مُرسَل)</td><td>أرسل مستخدم الموازنة الفئة للاعتماد. بانتظار مراجعة الجهة.</td><td class="yes">نعم</td><td>مستخدم الموازنة (Submit)</td></tr>
+      <tr><td><span class="badge b-ret">Returned</span> (مُرجَع)</td><td>أعاده المسؤول للمراجعة. هذا السطر <em>تاريخي</em>؛ وقد أُنشئت مسودة جديدة (الإصدار التالي) تلقائياً للتصحيحات.</td><td class="yes">نعم (هذا الإصدار)</td><td>المسؤول (Return / Unlock)</td></tr>
+      <tr><td><span class="badge b-ent">EntityApproved</span> (معتمد من الجهة)</td><td>معتمد على مستوى الجهة. بانتظار «الإرسال للمركز».</td><td class="yes">نعم</td><td>المسؤول (Approve)</td></tr>
+      <tr><td><span class="badge b-ent">Approved (legacy)</span> (اعتماد قديم)</td><td>قيمة حالة قديمة <code>Approved</code> من بيانات سابقة. تُعامَل تماماً مثل «معتمد من الجهة» في الإجراءات اللاحقة.</td><td class="yes">نعم</td><td>قديمة / تاريخية</td></tr>
+      <tr><td><span class="badge b-sent">SentToCentral</span> (أُرسل للمركز)</td><td>أُحيل إلى دائرة المالية المركزية. بانتظار الاعتماد النهائي للنظام.</td><td class="yes">نعم</td><td>المسؤول (Send to central)</td></tr>
+      <tr><td><span class="badge b-sys">SysApproved</span> (اعتماد نهائي)</td><td><strong>الحالة النهائية المُجمَّدة.</strong> مُثبَّتة في الموازنة المجمَّعة الرسمية. لا يوجد مسار للإرجاع منها.</td><td class="yes">نعم (نهائي)</td><td>مسؤول النظام (Sys approve)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>٤. أعمدة قائمة طلبات الاعتماد</h2>
+  <table>
+    <thead><tr><th>العمود</th><th>ما الذي يعرضه</th></tr></thead>
+    <tbody>
+      <tr><td>Submitted</td><td>تاريخ/وقت إرسال الإصدار (يظهر "-" أثناء كونه مسودة).</td></tr>
+      <tr><td>Entity</td><td>رمز الجهة المالكة للموازنة.</td></tr>
+      <tr><td>Department</td><td>رمز الإدارة.</td></tr>
+      <tr><td>Category</td><td>REVENUE أو HR أو CAPEX أو OPEX.</td></tr>
+      <tr><td>Ver</td><td>رقم إصدار مسار الطلب. الأعلى = الأحدث.</td></tr>
+      <tr><td>Status</td><td>الحالة الحالية (انظر القسم ٣).</td></tr>
+      <tr><td>Approved</td><td>تاريخ/وقت اعتماد الجهة (إن وُجد).</td></tr>
+      <tr><td>Sent</td><td>تاريخ/وقت الإرسال للمركز (إن وُجد).</td></tr>
+      <tr><td>Open (فتح)</td><td>يفتح شاشة المراجعة لذلك الإصدار (التفاصيل، مقارنة الإصدارات، والإجراءات المتاحة).</td></tr>
+      <tr><td>Unlock (إلغاء القفل)</td><td>يظهر فقط عندما يُسمح للمسؤول الحالي بإرجاع هذه الحالة (انظر القسمين ٥–٦). يرجع الطلب وينشئ مسودة جديدة قابلة للتحرير.</td></tr>
+    </tbody>
+  </table>
+  <div class="callout note"><strong>لماذا تظهر عدة أسطر لنفس الفئة</strong>
+  كل إعادة فتح تضيف إصداراً جديداً. لذا قد ترى لفئة واحدة <code>Ver 1 – Returned</code> و<code>Ver 2 – Draft</code>. الإصدار الأعلى رقماً هو الحيّ، والباقي سجل تاريخي.</div>
+
+  <h2>٥. الأدوار والصلاحيات — من يفعل ماذا</h2>
+  <p>هناك ثلاثة أطراف. تتطلب شاشات الإدارة دور <code>ADMIN</code> أو <code>SYSADMIN</code>.</p>
+  <ul>
+    <li><strong>مستخدم الموازنة</strong> — يُدخل البنود ويُرسل، وبعد الإرجاع يبدأ التعديل. يعمل فقط ضمن سياقه المحدد (السنة / الجهة / الإدارة).</li>
+    <li><strong>مسؤول مقيّد بجهة</strong> — <code>ADMIN</code> مرتبط بجهة واحدة. يتصرف <em>فقط على طلبات جهته</em>.</li>
+    <li><strong>مسؤول على مستوى النظام</strong> — <code>SYSADMIN</code>، أو <code>ADMIN</code> دون تقييد بجهة. يتصرف عبر جميع الجهات وله صلاحيات إضافية (الاعتماد النهائي والإرجاع العميق).</li>
+  </ul>
+  <table>
+    <thead><tr><th>الإجراء</th><th>مستخدم الموازنة</th><th>مسؤول مقيّد بجهة</th><th>مسؤول النظام</th><th>مسموح من الحالة</th></tr></thead>
+    <tbody>
+      <tr><td>إدخال/تعديل/حذف البنود</td><td class="yes">نعم</td><td>—</td><td>—</td><td>Draft فقط</td></tr>
+      <tr><td>الإرسال (Submit)</td><td class="yes">نعم</td><td>—</td><td>—</td><td>Draft</td></tr>
+      <tr><td>بدء التعديل (بعد الإرجاع)</td><td class="yes">نعم</td><td>—</td><td>—</td><td>Returned</td></tr>
+      <tr><td>الاعتماد (← EntityApproved)</td><td class="no">لا</td><td class="scoped">جهته فقط</td><td class="yes">نعم</td><td>Submitted</td></tr>
+      <tr><td>الإرجاع / إلغاء القفل</td><td class="no">لا</td><td class="scoped">Submitted فقط</td><td class="yes">Submitted، EntityApproved، Approved، SentToCentral</td><td>انظر العمود التالي</td></tr>
+      <tr><td>الإرسال للمركز</td><td class="no">لا</td><td class="scoped">جهته فقط</td><td class="yes">نعم</td><td>EntityApproved / Approved</td></tr>
+      <tr><td>الاعتماد النهائي (← SysApproved)</td><td class="no">لا</td><td class="no">لا</td><td class="yes">SYSADMIN فقط</td><td>SentToCentral</td></tr>
+    </tbody>
+  </table>
+
+  <h2>٦. من يحق له إعادة فتح نسخة مُرسَلة للتعديل</h2>
+  <p>هذا أكثر سؤال يتكرر. بمجرد أن يُرسل مستخدم الموازنة <strong>لا يعود قادراً على التعديل</strong> — تُقفل البيانات. وإعادة الفتح دائماً إجراء إداري اسمه <strong>الإرجاع</strong> (زر <em>Unlock</em>). وهو لا يعدّل النسخة المقفلة، بل ينشئ مسودة جديدة <span class="badge b-draft">Draft</span> كإصدار تالٍ، ثم يجري مستخدم الموازنة التصحيحات عليها.</p>
+  <h3>القواعد</h3>
+  <ul>
+    <li><strong>المسؤول المقيّد بجهة</strong> يمكنه الإرجاع فقط أثناء حالة <span class="badge b-sub">Submitted</span> — أي قبل أن يعتمده، ولجهته فقط.</li>
+    <li><strong>مسؤول النظام</strong> يمكنه الإرجاع في مراحل لاحقة أيضاً: <span class="badge b-sub">Submitted</span>، <span class="badge b-ent">EntityApproved</span>، <span class="badge b-ent">Approved (legacy)</span>، <span class="badge b-sent">SentToCentral</span>.</li>
+    <li>لا يمكن إرجاع سوى <strong>أحدث إصدار</strong> في المسار.</li>
+    <li>يمكن أن يرافق الإرجاع <strong>ملاحظة إرجاع</strong> تشرح المطلوب تصحيحه، وتظهر للمستخدم.</li>
+  </ul>
+  <div class="callout warn"><strong>SysApproved نهائي</strong>
+  لا يوجد إرجاع/إلغاء قفل من حالة <span class="badge b-sys">SysApproved</span>. فبمجرد منح المالية المركزية الاعتماد النهائي، يُقفل هذا الإصدار ضمن الموازنة المجمَّعة الرسمية ولا يمكن إعادة فتحه عبر سير العمل.</div>
+  <div class="callout note"><strong>ماذا يفعل «إلغاء القفل» فعلياً</strong>
+  عند الضغط على <em>Unlock</em> في القائمة (أو <em>Return</em> في شاشة المراجعة): (١) يضع الإصدار الحالي بحالة <span class="badge b-ret">Returned</span>، (٢) ينشئ الإصدار التالي كمسودة <span class="badge b-draft">Draft</span> قابلة للتحرير ومرتبطة به، (٣) يسجّل طلب التعديل في سجل التدقيق. ثم يفتح المستخدم شاشة إدخال الموازنة ويضغط <em>Start Revision</em> عند اللزوم، فيحرّر ويعيد الإرسال.</div>
+
+  <h2>٧. خطوة بخطوة — مستخدم الموازنة</h2>
+  <ol>
+    <li>افتح <strong>إدخال الموازنة</strong> واختر تبويب الفئة (REVENUE / HR / CAPEX / OPEX).</li>
+    <li>أضف البنود طالما الحالة <span class="badge b-draft">Draft</span>.</li>
+    <li>اضغط <strong>Submit for Approval</strong>. تتحوّل الحالة إلى <span class="badge b-sub">Submitted</span> ويُقفل التعديل.</li>
+    <li>إذا أرجعه المسؤول، ستظهر لافتة <strong>Returned</strong> مع الملاحظة. اضغط <strong>Start Revision</strong> لفتح المسودة الجديدة، صحّح البنود، ثم أعد الإرسال (يصبح هذا الإصدار التالي).</li>
+  </ol>
+
+  <h2>٨. خطوة بخطوة — المسؤول</h2>
+  <ol>
+    <li>اذهب إلى <strong>طلبات اعتماد الموازنة</strong> واستخدم التبويبات للتصفية (مثلاً <span class="badge b-sub">Submitted</span> لإيجاد ما ينتظر المراجعة).</li>
+    <li>اضغط <strong>Open</strong> لمراجعة إصدار. يمكنك مقارنته بالإصدار السابق لرؤية ما تغيّر بالضبط (انحراف لكل بند).</li>
+    <li>اختر إجراءً:
+      <ul>
+        <li><strong>Approve</strong> ← ينتقل إلى <span class="badge b-ent">EntityApproved</span>.</li>
+        <li><strong>Return / Unlock</strong> ← يرجعه ويفتح مسودة جديدة قابلة للتحرير.</li>
+        <li><strong>Send to central</strong> ← ينقل المعتمد من الجهة إلى <span class="badge b-sent">SentToCentral</span>.</li>
+        <li><strong>Sys approve</strong> (مسؤول النظام فقط) ← اعتماد نهائي <span class="badge b-sys">SysApproved</span>.</li>
+      </ul>
+    </li>
+  </ol>
+
+  <h2>٩. ماذا يحدث عند الاعتماد النهائي</h2>
+  <p>عندما يمنح مسؤول النظام الاعتماد النهائي لطلب بحالة <span class="badge b-sent">SentToCentral</span>:</p>
+  <ul>
+    <li>تتحوّل الحالة إلى <span class="badge b-sys">SysApproved</span> ويُختَم الإصدار كنهائي (من قام به ومتى).</li>
+    <li>تُكتب بنوده في مخزن <strong>الموازنة المجمَّعة النهائية الرسمية</strong> (مع استبدال أي أسطر سابقة لنفس الطلب)، وهو ما تقرأ منه التقارير والموازنة الموحَّدة.</li>
+    <li>الإصدار نهائي — لا يمكن إجراء أي تغييرات أخرى عليه.</li>
+  </ul>
+
+  <h2>١٠. مثال تطبيقي — إرجاع ثم تعديل ثم إعادة إرسال</h2>
+  <p>السيناريو: <strong>السنة ٢٠٢٦ · الجهة RDOF · الإدارة RDOF · الفئة OPEX</strong>. لاحظ كيف يتغيّر رقم الإصدار وحالة القفل في كل خطوة.</p>
+
+  <h3>١٠.١ الخط الزمني للإصدارات</h3>
+  <table>
+    <thead><tr><th>#</th><th>الإجراء</th><th>المنفّذ</th><th>النتيجة</th><th>Ver</th><th>الحالة</th><th>الإجمالي</th><th>قابل للتعديل؟</th></tr></thead>
+    <tbody>
+      <tr><td>١</td><td>إدخال بنود OPEX</td><td>مستخدم الموازنة</td><td>إنشاء مسودة</td><td>1</td><td><span class="badge b-draft">Draft</span></td><td>500,000</td><td class="yes">نعم</td></tr>
+      <tr><td>٢</td><td>الإرسال للاعتماد</td><td>مستخدم الموازنة</td><td>قُفل، بانتظار المراجعة</td><td>1</td><td><span class="badge b-sub">Submitted</span></td><td>500,000</td><td class="no">لا</td></tr>
+      <tr><td>٣</td><td>إرجاع / إلغاء قفل <span class="small">(ملاحظة: «خفّض السفر بمقدار 20,000»)</span></td><td>المسؤول</td><td>حُفظ v1 كسجل؛ <strong>أُنشئت مسودة v2</strong></td><td>1 ← 2</td><td>v1 <span class="badge b-ret">Returned</span> · v2 <span class="badge b-draft">Draft</span></td><td>500,000</td><td class="yes">نعم (على v2)</td></tr>
+      <tr><td>٤</td><td>بدء التعديل وتحرير بند السفر</td><td>مستخدم الموازنة</td><td>خُفّض بند السفر بمقدار 20,000</td><td>2</td><td><span class="badge b-draft">Draft</span></td><td>480,000</td><td class="yes">نعم</td></tr>
+      <tr><td>٥</td><td>إعادة الإرسال</td><td>مستخدم الموازنة</td><td>قُفل من جديد</td><td>2</td><td><span class="badge b-sub">Submitted</span></td><td>480,000</td><td class="no">لا</td></tr>
+      <tr><td>٦</td><td>الاعتماد</td><td>المسؤول</td><td>اعتماد الجهة</td><td>2</td><td><span class="badge b-ent">EntityApproved</span></td><td>480,000</td><td class="no">لا</td></tr>
+      <tr><td>٧</td><td>الإرسال للمركز</td><td>المسؤول</td><td>أُحيل للمالية</td><td>2</td><td><span class="badge b-sent">SentToCentral</span></td><td>480,000</td><td class="no">لا</td></tr>
+      <tr><td>٨</td><td>الاعتماد النهائي</td><td>مسؤول النظام</td><td>تثبيت في الموازنة المجمَّعة</td><td>2</td><td><span class="badge b-sys">SysApproved</span></td><td>480,000</td><td class="no">لا (نهائي)</td></tr>
+    </tbody>
+  </table>
+  <div class="callout note"><strong>ما يحدث في الخطوة ٣</strong>
+  لا يغيّر <em>الإرجاع</em> أرقام v1 — يبقى v1 عند 500,000 بحالة <span class="badge b-ret">Returned</span> للأبد (سجل تدقيق). ويُنشأ v2 قابل للتحرير ومرتبط بـ v1 كأصل له، ليتيح النظام مقارنة قبل/بعد.</div>
+
+  <h3>١٠.٢ مقارنة الإصدارات (الانحراف) في الخطوة ٤</h3>
+  <p>في شاشة المراجعة، مقارنة <strong>v2 بأصله v1</strong> تُظهر البنود التي تغيّرت فقط:</p>
+  <table>
+    <thead><tr><th>البند</th><th>السابق (v1)</th><th>الجديد (v2)</th><th>الفرق</th></tr></thead>
+    <tbody>
+      <tr><td>السفر والانتقال</td><td>60,000</td><td>40,000</td><td class="no">−20,000</td></tr>
+      <tr><td><strong>إجمالي الفئة</strong></td><td><strong>500,000</strong></td><td><strong>480,000</strong></td><td class="no"><strong>−20,000</strong></td></tr>
+    </tbody>
+  </table>
+  <p class="small">تُخفى البنود غير المتغيّرة؛ وتُعرض فقط الفروق غير الصفرية مرتبة حسب أكبر تغيير مطلق.</p>
+
+  <h3>١٠.٣ كيف يظهر ذلك في قائمة الطلبات</h3>
+  <div class="flow">Submitted   Entity  Dept   Category  Ver  Status          Approved          Sent
+-           RDOF    RDOF   OPEX      2    SysApproved     2026-..-..        2026-..-..
+2026-..-..  RDOF    RDOF   OPEX      1    Returned        -                 -</div>
+  <p class="small">سطران لنفس الفئة: الإصدار الأعلى (2) هو الحيّ/النهائي، ويبقى الإصدار 1 ظاهراً كسجل تاريخي.</p>
+
+  <h2>١١. مرجع سريع وأسئلة شائعة</h2>
+  <table>
+    <thead><tr><th>السؤال</th><th>الإجابة</th></tr></thead>
+    <tbody>
+      <tr><td>هل يمكن للمستخدم التعديل بعد الإرسال؟</td><td><span class="no">لا.</span> الإرسال يقفل البيانات. على المسؤول إرجاعه أولاً.</td></tr>
+      <tr><td>من يلغي قفل موازنة مُرسَلة؟</td><td>مسؤول الجهة (أثناء Submitted) أو مسؤول النظام (في مراحل لاحقة أيضاً).</td></tr>
+      <tr><td>هل يمحو إلغاء القفل الأرقام المُرسَلة؟</td><td><span class="no">لا.</span> تُحفظ النسخة المُرسَلة بحالة <em>Returned</em>؛ وتُنشأ مسودة جديدة للتعديل.</td></tr>
+      <tr><td>هل تُعتمد الفئات معاً؟</td><td><span class="no">لا.</span> كل فئة (REVENUE/HR/CAPEX/OPEX) تسير وتُعتمد باستقلال.</td></tr>
+      <tr><td>هل يمكن إعادة فتح SysApproved؟</td><td><span class="no">لا.</span> فهو نهائي ومقفل ضمن الموازنة المجمَّعة.</td></tr>
+      <tr><td>ما معنى "Approved (legacy)"؟</td><td>قيمة حالة قديمة تعادل EntityApproved؛ وتتصرف بالمثل في المراحل اللاحقة.</td></tr>
+      <tr><td>كيف أرى ما تغيّر بين الإصدارات؟</td><td>افتح الإصدار واستخدم عرض مقارنة الإصدارات (الانحراف) في شاشة المراجعة.</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    GovBudget — دليل سير عمل اعتماد الموازنة. يعكس منطق سير العمل الحالي للنظام (انتقالات الحالة، القفل، الإصدارات، وصلاحيات الأدوار).
+  </footer>
+
+</div>
+</body>
+</html>

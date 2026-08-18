@@ -1,0 +1,158 @@
+@model GovBudget.Models.Kpis
+@{
+    ViewData["Title"] = Model.KpiId > 0 ? "Edit KPI" : "Add KPI";
+    var entityOptions = ViewBag.EntityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var programOptions = ViewBag.ProgramOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var activityOptions = ViewBag.ActivityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var yearOptions = ViewBag.YearOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+}
+
+<div class="container-fluid py-3" style="max-width: 820px;">
+    <h3 class="mb-3">@ViewData["Title"]</h3>
+
+    <form method="post" asp-action="KpiSave">
+        <input type="hidden" asp-for="KpiId" />
+        <input type="hidden" asp-for="Period" />
+        <div asp-validation-summary="All" class="text-danger small"></div>
+
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Year</label>
+                <select asp-for="BudgetYear" class="form-select" asp-items="yearOptions"></select>
+            </div>
+            <div class="col-md-9">
+                <label class="form-label">Entity</label>
+                <select asp-for="EntityId" class="form-select" asp-items="entityOptions"></select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Programme (optional)</label>
+                <select asp-for="ProgramId" class="form-select">
+                    <option value="">-- none --</option>
+                    @foreach (var o in programOptions ?? new())
+                    {
+                        <option value="@o.Value" selected="@o.Selected">@o.Text</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Activity (optional)</label>
+                <select asp-for="ActivityId" class="form-select">
+                    <option value="">-- none --</option>
+                    @foreach (var o in activityOptions ?? new())
+                    {
+                        <option value="@o.Value" selected="@o.Selected">@o.Text</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-9">
+                <label class="form-label">KPI Name</label>
+                <input asp-for="KpiName" class="form-control" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Unit</label>
+                <input asp-for="Unit" class="form-control" placeholder="count / % / days" />
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">KPI Code</label>
+                <input asp-for="KpiCode" class="form-control" placeholder="e.g. DiM-01.01" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Priority</label>
+                <select asp-for="Priority" class="form-select">
+                    <option value="">-- select --</option>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Program Owner</label>
+                <input asp-for="ProgramOwner" class="form-control" />
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Type (category)</label>
+                <select asp-for="KpiType" class="form-select">
+                    <option value="">-- select --</option>
+                    <option value="Input">Input</option>
+                    <option value="Output">Output</option>
+                    <option value="Outcome">Outcome</option>
+                </select>
+                <div class="form-text">All activity-linked KPIs receive a share of the activity's cost (by Cost Weight).</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Dimension</label>
+                <select asp-for="Dimension" class="form-select">
+                    <option value="">-- select --</option>
+                    <option value="Efficiency">Efficiency</option>
+                    <option value="Quality">Quality</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Reading Type</label>
+                <select asp-for="ReadingType" class="form-select">
+                    <option value="">-- select --</option>
+                    <option value="Cumulative">Cumulative</option>
+                    <option value="Rate">Rate</option>
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Direction</label>
+                <select asp-for="Direction" class="form-select">
+                    <option value="UP">Higher is better</option>
+                    <option value="DOWN">Lower is better</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Baseline</label>
+                <input asp-for="Baseline" class="form-control" type="number" step="any" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Target</label>
+                <input asp-for="Target" class="form-control" type="number" step="any" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Actual (mid-year)</label>
+                <input asp-for="ActualValue" class="form-control" type="number" step="any" />
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Strategic Target (2029)</label>
+                <input asp-for="StrategicTarget2029" class="form-control" type="number" step="any" />
+                <div class="form-text">Long-horizon target, distinct from the annual Target.</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Status override (optional)</label>
+                <select asp-for="Status" class="form-select">
+                    <option value="">(auto-compute)</option>
+                    <option value="Green">Green</option>
+                    <option value="Watch">Watch</option>
+                    <option value="Behind">Behind</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Cost Weight</label>
+                <input asp-for="CostWeight" class="form-control" type="number" step="any" min="0" placeholder="e.g. 1" />
+                <div class="form-text">Relative share of the linked activity's cost across its KPIs. Blank = equal split.</div>
+            </div>
+
+            <div class="col-md-12">
+                <label class="form-label">Calculation Method</label>
+                <textarea asp-for="CalculationMethod" class="form-control" rows="2" dir="auto"></textarea>
+            </div>
+            <div class="col-md-12">
+                <label class="form-label">Scope</label>
+                <textarea asp-for="Scope" class="form-control" rows="2" dir="auto"></textarea>
+            </div>
+        </div>
+
+        <div class="mt-4">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a class="btn btn-outline-secondary" asp-action="Kpis" asp-route-year="@Model.BudgetYear">Cancel</a>
+        </div>
+    </form>
+</div>

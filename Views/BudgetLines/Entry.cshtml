@@ -1,0 +1,1084 @@
+@model GovBudget.Models.BudgetLines
+@{
+    ViewData["Title"] = "Budget Entry";
+    var category = (ViewBag.CategoryCode as string ?? "OPEX").ToUpperInvariant();
+    var isLocked = (bool)(ViewBag.IsLocked ?? false);
+    var isReadOnlyRole = (bool)(ViewBag.IsReadOnlyRole ?? false);
+    var submissionStatus = ViewBag.SubmissionStatus as string ?? "Draft";
+    var submission = ViewBag.Submission as GovBudget.Models.BudgetSubmissions;
+    var submissionVersion = (int)(ViewBag.SubmissionVersion ?? 0);
+    var lineCount = (int)(ViewBag.LineCount ?? 0);
+    var canManageItems = (bool)(ViewBag.CanManageItems ?? false);
+    var canManageMasterData = (bool)(ViewBag.CanManageMasterData ?? false);
+    long? lastSavedId = null;
+    if (TempData["LastSavedId"] != null && long.TryParse(TempData["LastSavedId"]!.ToString(), out var tmpLastSavedId))
+    {
+        lastSavedId = tmpLastSavedId;
+    }
+}
+
+<style>
+    /* Blue and Light Gray Theme Tweaks */
+    .bg-light-gray { background-color: #f8f9fa; }
+    .card-header-blue { background-color: #e7f1ff; color: #0d6efd; border-bottom: 1px solid #b6d4fe; }
+    .btn-blue { background-color: #0d6efd; color: white; }
+    .btn-blue:hover { background-color: #0b5ed7; color: white; }
+    .text-blue { color: #0d6efd; }
+    .entry-compact .card-body { padding: .75rem; }
+    .entry-compact .form-label { margin-bottom: .15rem; font-size: .75rem; color: #495057; }
+    .entry-compact .form-text { font-size: .75rem; margin-top: .15rem; }
+    .entry-compact .row.g-2 > [class*="col-"] { padding-top: .125rem; padding-bottom: .125rem; }
+
+    /* Recent Lines - denser layout so more columns/rows fit, esp. with sidebar hidden */
+    .recent-lines { font-size: .8rem; }
+    .recent-lines th, .recent-lines td { padding: .28rem .4rem; vertical-align: middle; }
+    .recent-lines thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .02em; white-space: nowrap; }
+    .recent-lines td.num, .recent-lines th.num { white-space: nowrap; }
+    .recent-lines td.code { white-space: nowrap; font-weight: 600; }
+    .recent-lines .desc { max-width: 360px; }
+    .recent-lines .act-btns { white-space: nowrap; }
+    .recent-lines .act-btns .btn { padding: .1rem .4rem; font-size: .72rem; line-height: 1.2; }
+</style>
+<link rel="stylesheet" href="~/css/tour.css" />
+
+<div class="container-fluid px-md-4 py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex align-items-center gap-2">
+            <h3 class="text-blue mb-0">Budget Entry</h3>
+            <button type="button" id="startBudgetTour" class="btn btn-sm btn-outline-primary">Take a tour</button>
+        </div>
+        <div class="text-end" data-tour="status">
+            <div class="text-muted small">Context: <strong>@ViewBag.ContextLabel</strong></div>
+            <div class="small">
+                <span class="badge @(submissionStatus == "Draft" ? "bg-secondary" : submissionStatus == "Submitted" ? "bg-warning text-dark" : submissionStatus == "Returned" ? "bg-danger" : "bg-success")">
+                    @submissionStatus@(submissionVersion > 0 ? $" v{submissionVersion}" : "")
+                </span>
+                @if (submission?.SubmittedAt != null)
+                {
+                    <span class="text-muted ms-2">Submitted: @submission.SubmittedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (submissionStatus == "Approved" || submissionStatus == "SentToCentral")
+    {
+        <div class="alert alert-success">
+            <div class="fw-bold">APPROVED</div>
+            <div class="small text-muted">Approved by @submission?.ApprovedBy on @(submission?.ApprovedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-")</div>
+        </div>
+    }
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+    else if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+
+    @if (string.Equals(submissionStatus, "Returned", StringComparison.OrdinalIgnoreCase))
+    {
+        <div class="alert alert-warning d-flex justify-content-between align-items-start">
+            <div>
+                <div class="fw-bold">Returned for revision</div>
+                @if (!string.IsNullOrWhiteSpace(submission?.ReturnNote))
+                {
+                    <div class="small text-muted">@submission.ReturnNote</div>
+                }
+            </div>
+            <form asp-action="StartRevision" asp-controller="BudgetLines" method="post" class="ms-3">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="category" value="@category" />
+                <button type="submit" class="btn btn-sm btn-outline-dark">Start Revision</button>
+            </form>
+        </div>
+    }
+
+    <div class="d-flex justify-content-end mb-3" data-tour="submit">
+        <form asp-action="Submit" asp-controller="BudgetLines" method="post" class="d-inline">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="category" value="@category" />
+            @if (!isLocked)
+            {
+                if (lineCount > 0)
+                {
+                    <button type="submit" class="btn btn-sm btn-warning">Submit for Approval</button>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-sm btn-warning" disabled>Submit for Approval</button>
+                }
+            }
+            else
+            {
+                <button type="button" class="btn btn-sm btn-outline-secondary" disabled>Locked</button>
+            }
+        </form>
+    </div>
+
+    <!-- Bulk Excel import / template -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="fw-semibold text-secondary me-2">Bulk @category via Excel:</span>
+
+                <a class="btn btn-sm btn-outline-primary"
+                   asp-controller="BudgetLines" asp-action="Template" asp-route-category="@category">
+                    Download Template
+                </a>
+
+                @if (!isLocked)
+                {
+                    <form asp-controller="BudgetLines" asp-action="Upload" method="post"
+                          enctype="multipart/form-data" class="d-inline-flex align-items-center gap-2 ms-2">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="category" value="@category" />
+                        <input type="file" name="file" accept=".xlsx"
+                               class="form-control form-control-sm" style="max-width: 260px;" required />
+                        <button type="submit" class="btn btn-sm btn-success">Upload</button>
+                    </form>
+
+                    <span class="text-muted small ms-auto">
+                        Use codes (see the reference sheets in the template). Re-uploading <strong>replaces
+                        all existing @category data for this entity and year</strong> &mdash; you get a warning
+                        page listing what will be deleted before anything changes.
+                    </span>
+                }
+                else
+                {
+                    <span class="text-muted small ms-2">
+                        @(isReadOnlyRole ? "Your role can view this screen but not upload budget data." : "Uploads are disabled while the budget is locked.")
+                    </span>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-3" data-tour="tabs">
+        <li class="nav-item">
+            <a class="nav-link @(category == "REVENUE" ? "active" : "")"
+               asp-controller="BudgetLines" asp-action="Entry" asp-route-category="REVENUE">REVENUE</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link"
+               asp-controller="HrCosts" asp-action="Budget" asp-route-year="@Model.BudgetYear">HR</a>
+        </li>
+        <li class="nav-item" data-tour="capex">
+            <a class="nav-link @(category == "CAPEX" ? "active" : "")"
+               asp-controller="BudgetLines" asp-action="Entry" asp-route-category="CAPEX">CAPEX</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(category == "OPEX" ? "active" : "")"
+               asp-controller="BudgetLines" asp-action="Entry" asp-route-category="OPEX">OPEX</a>
+        </li>
+    </ul>
+
+    <!-- REAL form that posts -->
+    <form asp-action="Entry" asp-controller="BudgetLines" method="post" enctype="multipart/form-data" novalidate>
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="currentCategory" value="@category" />
+        <input type="hidden" asp-for="BudgetLineId" />
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+        <fieldset disabled="@(isLocked ? "disabled" : null)">
+        <div class="card shadow-sm border-0 mb-3 entry-compact">
+            <div class="card-header card-header-blue fw-bold">
+                Line Details
+            </div>
+            <div class="card-body bg-light-gray">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-lg-4" data-tour="item">
+                        <label class="form-label d-flex justify-content-between align-items-center">
+                            <span>Item</span>
+                            @if (canManageItems)
+                            {
+                                <span class="d-inline-flex align-items-center gap-2">
+                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
+                                            data-bs-toggle="modal" data-bs-target="#addItemModal">+ New item</button>
+                                    <a class="btn btn-link btn-sm p-0 text-decoration-none text-muted"
+                                       asp-controller="Items" asp-action="Index" target="_blank" title="Manage items (full details)">Manage</a>
+                                </span>
+                            }
+                        </label>
+                        <select asp-for="ItemId" class="form-select form-select-sm js-searchable" data-placeholder="Search item by code or name..." asp-items="ViewBag.ItemId">
+                            <option value="0">...</option>
+                        </select>
+                        <span asp-validation-for="ItemId" class="text-danger"></span>
+                    </div>
+
+                    @if (category == "CAPEX")
+                    {
+                        <div class="col-12 col-lg-2">
+                            <label class="form-label">Asset Type</label>
+                            <select asp-for="CapexAssetType" class="form-select form-select-sm">
+                                <option value="">...</option>
+                                <option value="NEW">New</option>
+                                <option value="REPLACEMENT">Replacement</option>
+                            </select>
+                            <span asp-validation-for="CapexAssetType" class="text-danger"></span>
+                        </div>
+                    }
+
+                    <div class="col-12 col-lg-3" data-tour="activity">
+                        <label class="form-label d-flex justify-content-between align-items-center">
+                            <span>Activity</span>
+                            @if (canManageMasterData)
+                            {
+                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
+                                        data-bs-toggle="modal" data-bs-target="#addActivityModal">+ New activity</button>
+                            }
+                        </label>
+                        <select asp-for="ActivityId" class="form-select form-select-sm" asp-items="ViewBag.ActivityId">
+                            <option value="">...</option>
+                        </select>
+                        <span asp-validation-for="ActivityId" class="text-danger"></span>
+                    </div>
+
+                    <div class="col-12 col-lg-3" data-tour="project">
+                        <label class="form-label d-flex justify-content-between align-items-center">
+                            <span>Project (optional)</span>
+                            @if (canManageMasterData)
+                            {
+                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
+                                        data-bs-toggle="modal" data-bs-target="#addProjectModal">+ New project</button>
+                            }
+                        </label>
+                        <select asp-for="ProjectId" class="form-select form-select-sm" asp-items="ViewBag.ProjectId">
+                            <option value="">...</option>
+                        </select>
+                    </div>
+
+                    <div class="col-12 col-lg-6">
+                        <label class="form-label">Description</label>
+                        <input asp-for="Description" class="form-control form-control-sm" />
+                        <span asp-validation-for="Description" class="text-danger"></span>
+                    </div>
+
+                    <div class="col-6 col-lg-2">
+                        <label asp-for="Quantity" class="form-label">Qty</label>
+                        <input asp-for="Quantity" class="form-control form-control-sm" step="0.0001" id="qty" />
+                        <span asp-validation-for="Quantity" class="text-danger"></span>
+                    </div>
+
+                    <div class="col-6 col-lg-2">
+                        <label asp-for="UnitPrice" class="form-label">Price</label>
+                        <input asp-for="UnitPrice" class="form-control form-control-sm" step="0.0001" id="price" />
+                        <span asp-validation-for="UnitPrice" class="text-danger"></span>
+                    </div>
+
+                    <div class="col-12 col-lg-2" data-tour="amount">
+                        <label asp-for="Amount" class="form-label">Amount</label>
+                        <input asp-for="Amount" class="form-control form-control-sm bg-white" step="0.01" id="amount" readonly />
+                        <span asp-validation-for="Amount" class="text-danger"></span>
+                    </div>
+
+                    <div class="col-12 col-lg-4" data-tour="distribution">
+                        <label class="form-label">Distribution</label>
+                        <div class="input-group input-group-sm">
+                            <select asp-for="DistributionMode" class="form-select form-select-sm" id="distMode">
+                                <option value="EQUAL">EQUAL</option>
+                                <option value="MANUAL">MANUAL</option>
+                            </select>
+                            <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#distModal">
+                                12 Months
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="col-6 col-lg-2" data-tour="forecast">
+                        <label class="form-label">Year +1 %</label>
+                        <input asp-for="F1_Percent" class="form-control form-control-sm" step="0.0001" id="f1p" />
+                    </div>
+
+                    <div class="col-6 col-lg-2">
+                        <label class="form-label">Year +2 %</label>
+                        <input asp-for="F2_Percent" class="form-control form-control-sm" step="0.0001" id="f2p" />
+                    </div>
+
+                    <div class="col-12 col-lg-4 d-flex justify-content-end gap-2" data-tour="actions">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#advancedEntry" aria-expanded="false">
+                            More
+                        </button>
+                        @if (!isLocked)
+                        {
+                            <button type="submit" class="btn btn-blue btn-sm px-4">Save Line</button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="collapse mb-3" id="advancedEntry">
+            <div class="card shadow-sm border-0 entry-compact">
+                <div class="card-header bg-white text-secondary fw-bold">
+                    Additional Fields
+                </div>
+                <div class="card-body">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-12 col-lg-3">
+                            <label class="form-label">Year +1 Amount</label>
+                            <input asp-for="F1_Amount" class="form-control form-control-sm" step="0.01" id="f1a" />
+                        </div>
+                        <div class="col-12 col-lg-3">
+                            <label class="form-label">Year +2 Amount</label>
+                            <input asp-for="F2_Amount" class="form-control form-control-sm" step="0.01" id="f2a" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CAPEX block -->
+        <div class="card shadow-sm border-0 mb-3 capex-only entry-compact" style="display:none;">
+            <div class="card-header bg-warning text-dark fw-bold">
+                CAPEX Depreciation & Supporting Document
+            </div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-12 col-lg-3">
+                        <label class="form-label">Method</label>
+                        <input asp-for="Dep_Method" class="form-control form-control-sm" value="STRAIGHT" readonly />
+                    </div>
+                    <div class="col-6 col-lg-3">
+                        <label class="form-label">Life (months)</label>
+                        <input asp-for="Dep_LifeMonths" class="form-control form-control-sm" step="1" />
+                    </div>
+                    <div class="col-6 col-lg-3">
+                        <label class="form-label">Start Month</label>
+                        <input asp-for="Dep_StartMonth" class="form-control form-control-sm" step="1" />
+                    </div>
+                </div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-lg-8">
+                        <label class="form-label">Supporting Document (PDF / JPG / PNG, max 5 MB)</label>
+                        <input type="file" name="capexAttachment" class="form-control form-control-sm" />
+                        @if (ViewBag.ExistingDocFileName != null)
+                        {
+                            <div class="form-text">
+                                Current file:
+                                <a asp-action="DownloadSupportDoc"
+                                   asp-controller="BudgetLines"
+                                   asp-route-id="@Model.BudgetLineId"
+                                   asp-route-category="@category">
+                                    @ViewBag.ExistingDocFileName
+                                </a>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Distribution Modal -->
+        <div class="modal fade" id="distModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header card-header-blue">
+                        <h5 class="modal-title">Monthly Distribution</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body bg-light-gray">
+                        <div class="row g-2">
+                            <div class="col-md-2"><label class="form-label">Jan (M01)</label><input asp-for="M01" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">Feb (M02)</label><input asp-for="M02" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">Mar (M03)</label><input asp-for="M03" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">Apr (M04)</label><input asp-for="M04" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">May (M05)</label><input asp-for="M05" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">Jun (M06)</label><input asp-for="M06" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">Jul (M07)</label><input asp-for="M07" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">Aug (M08)</label><input asp-for="M08" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">Sep (M09)</label><input asp-for="M09" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">Oct (M10)</label><input asp-for="M10" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">Nov (M11)</label><input asp-for="M11" class="form-control form-control-sm month" step="0.01" /></div>
+                            <div class="col-md-2"><label class="form-label">Dec (M12)</label><input asp-for="M12" class="form-control form-control-sm month" step="0.01" /></div>
+                        </div>
+                        <div class="mt-3 text-muted small">
+                            * Edit any month to switch to MANUAL distribution.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        </fieldset>
+    </form>
+
+    @if (canManageItems)
+    {
+        <div class="modal fade" id="addItemModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Add @category Item</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        @Html.AntiForgeryToken()
+                        <div id="quickItemError" class="alert alert-danger d-none"></div>
+                        <div class="mb-2">
+                            <label class="form-label">Item Code</label>
+                            <input type="text" id="qiCode" class="form-control" maxlength="30" placeholder="e.g. ITEM123" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Item Name</label>
+                            <input type="text" id="qiName" class="form-control" maxlength="200" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">GL Account (@category)</label>
+                            <select id="qiGl" class="form-select" asp-items="ViewBag.ItemGLAccounts">
+                                <option value="">Select GL account...</option>
+                            </select>
+                        </div>
+                        <div class="form-text">
+                            Only @category GL accounts are shown. For full options, use the
+                            <a asp-controller="Items" asp-action="Create" target="_blank">Items page</a>.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" id="qiSave" class="btn btn-primary">Save &amp; Select</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (canManageMasterData)
+    {
+        <div class="modal fade" id="addActivityModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Add Activity</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        @Html.AntiForgeryToken()
+                        <div id="qaError" class="alert alert-danger d-none"></div>
+                        <div class="mb-2">
+                            <label class="form-label">Activity Code</label>
+                            <input type="text" id="qaCode" class="form-control" maxlength="30" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Activity Name</label>
+                            <input type="text" id="qaName" class="form-control" maxlength="200" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Program</label>
+                            <select id="qaProgram" class="form-select" asp-items="ViewBag.ProgramId">
+                                <option value="">Select program...</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Cost Center</label>
+                            <select id="qaDept" class="form-select" asp-items="ViewBag.EntityDepartments"></select>
+                        </div>
+                        <div class="form-text">Defaults to your current cost center. If you pick another, the activity is created there and will appear when you switch context to it. Full options on the <a asp-controller="Activities" asp-action="Create" target="_blank">Activities page</a>.</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" id="qaSave" class="btn btn-primary">Save &amp; Select</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal fade" id="addProjectModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Add Project</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        @Html.AntiForgeryToken()
+                        <div id="qpError" class="alert alert-danger d-none"></div>
+                        <div class="mb-2">
+                            <label class="form-label">Project Code</label>
+                            <input type="text" id="qpCode" class="form-control" maxlength="30" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Project Name</label>
+                            <input type="text" id="qpName" class="form-control" maxlength="200" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Cost Center (owner)</label>
+                            <select id="qpDept" class="form-select" asp-items="ViewBag.EntityDepartments"></select>
+                        </div>
+                        <div class="form-text">Defaults to your current cost center. If you pick another, the project is owned there and will appear when you switch context to it. Full options on the <a asp-controller="Projects" asp-action="Create" target="_blank">Projects page</a>.</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" id="qpSave" class="btn btn-primary">Save &amp; Select</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <hr class="my-4" />
+    <h5 class="text-secondary" id="recentLines" data-tour="recent">Recent Lines (last 100)</h5>
+    <div class="table-responsive">
+        <table class="table table-sm table-striped table-hover align-middle recent-lines">
+            <thead class="table-light">
+                <tr>
+                    <th>Item</th>
+                    <th>Source</th>
+                    <th>Description</th>
+                    <th>Activity</th>
+                    <th>Project</th>
+                    <th class="text-end num">Qty</th>
+                    <th class="text-end num">Price</th>
+                    <th class="text-end num">Annual</th>
+                    <th class="text-end num">F1 %</th>
+                    <th class="text-end num">F1 Amount</th>
+                    <th class="text-end num">F2 %</th>
+                    <th class="text-end num">F2 Amount</th>
+                    @if (category == "CAPEX")
+                    {
+                        <th>Support Doc</th>
+                    }
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in ViewBag.Recent)
+                {
+                    <tr class="@(lastSavedId.HasValue && (long)r.BudgetLineId == lastSavedId.Value ? "table-success" : "")">
+                        <td class="code">@r.ItemCode</td>
+                        <td>
+                            @{
+                                var src = ((string)r.EntrySource ?? "").Trim().ToUpperInvariant();
+                                string srcLabel, srcClass, srcTitle;
+                                switch (src)
+                                {
+                                    case "UPLOAD":
+                                        srcLabel = "Upload"; srcClass = "bg-info text-dark"; srcTitle = "Imported from Excel";
+                                        break;
+                                    case "EDITED":
+                                        srcLabel = "Edited"; srcClass = "bg-warning text-dark"; srcTitle = "Edited by hand after entry/upload";
+                                        break;
+                                    default:
+                                        srcLabel = "Manual"; srcClass = "bg-secondary"; srcTitle = "Entered manually";
+                                        break;
+                                }
+                            }
+                            <span class="badge @srcClass" title="@srcTitle">@srcLabel</span>
+                        </td>
+                        <td class="desc">@r.Description</td>
+                        <td class="code">@r.ActivityCode</td>
+                        <td class="code">@r.ProjectCode</td>
+                        <td class="text-end num">@(((decimal)r.Quantity).ToString("N4"))</td>
+                        <td class="text-end num">@(((decimal)r.UnitPrice).ToString("N4"))</td>
+                        <td class="text-end num">@(((decimal)r.Amount).ToString("N2"))</td>
+                        <td class="text-end num">@($"{(decimal)r.F1_Percent:0.####}%")</td>
+                        <td class="text-end num">@(((decimal)r.F1_Amount).ToString("N2"))</td>
+                        <td class="text-end num">@($"{(decimal)r.F2_Percent:0.####}%")</td>
+                        <td class="text-end num">@(((decimal)r.F2_Amount).ToString("N2"))</td>
+                        @if (category == "CAPEX")
+                        {
+                            <td>
+                                @if (r.DocFileName != null)
+                                {
+                                    <a asp-action="DownloadSupportDoc"
+                                       asp-controller="BudgetLines"
+                                       asp-route-id="@r.BudgetLineId"
+                                       asp-route-category="@category">
+                                        View
+                                    </a>
+                                }
+                            </td>
+                        }
+                        <td class="text-end act-btns">
+                            @if (!isLocked)
+                            {
+                                <a asp-action="Entry"
+                                   asp-controller="BudgetLines"
+                                   asp-route-category="@category"
+                                   asp-route-editId="@r.BudgetLineId"
+                                   class="btn btn-sm btn-outline-primary me-1">
+                                    Edit
+                                </a>
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-danger"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#deleteLineModal"
+                                        data-id="@r.BudgetLineId"
+                                        data-item="@r.ItemCode"
+                                        data-desc="@r.Description">
+                                    Delete
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">Locked</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (!isLocked)
+    {
+        <div class="modal fade" id="deleteLineModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Confirm Delete</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-2">
+                            Delete this budget line?
+                        </div>
+                        <div class="text-muted small">
+                            <div><strong id="deleteLineItem"></strong></div>
+                            <div id="deleteLineDesc"></div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <form asp-action="Delete" asp-controller="BudgetLines" method="post" class="d-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" id="deleteBudgetLineId" name="id" value="" />
+                            <input type="hidden" name="category" value="@category" />
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <style>
+        .searchable-select { position: relative; }
+        .searchable-panel {
+            position: absolute; z-index: 1080; width: 100%;
+            max-height: 260px; overflow-y: auto; margin-top: 2px;
+        }
+        .searchable-panel .dropdown-item { cursor: pointer; white-space: normal; }
+        .searchable-panel .dropdown-item.active,
+        .searchable-panel .dropdown-item:hover { background-color: var(--bs-primary, #0d6efd); color: #fff; }
+    </style>
+    <script>
+        // Lightweight, dependency-free searchable dropdown.
+        // Matches typed text anywhere in the option label (code OR name), case-insensitive.
+        function makeSearchable(select) {
+            if (!select || select.dataset.searchable === '1') return;
+            select.dataset.searchable = '1';
+
+            var wrapper = document.createElement('div');
+            wrapper.className = 'searchable-select';
+            select.parentNode.insertBefore(wrapper, select);
+            wrapper.appendChild(select);
+            select.classList.add('d-none');
+
+            var input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'form-control form-control-sm';
+            input.setAttribute('autocomplete', 'off');
+            input.placeholder = select.getAttribute('data-placeholder') || 'Search...';
+            wrapper.appendChild(input);
+
+            var panel = document.createElement('div');
+            panel.className = 'searchable-panel border rounded bg-white shadow-sm';
+            panel.style.display = 'none';
+            wrapper.appendChild(panel);
+
+            var activeIndex = -1;
+            var visibleButtons = [];
+
+            function selectedText() {
+                var opt = select.options[select.selectedIndex];
+                var t = opt ? opt.text : '';
+                return (t && t !== '...') ? t : '';
+            }
+            function syncInput() { input.value = selectedText(); }
+            syncInput();
+
+            function build(filter) {
+                panel.innerHTML = '';
+                visibleButtons = [];
+                activeIndex = -1;
+                var f = (filter || '').trim().toLowerCase();
+                Array.from(select.options).forEach(function (opt) {
+                    var text = opt.text;
+                    if (!text || text === '...') return;
+                    if (f && text.toLowerCase().indexOf(f) === -1) return;
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'dropdown-item';
+                    btn.textContent = text;
+                    btn.addEventListener('mousedown', function (e) {
+                        e.preventDefault();
+                        select.value = opt.value;
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                        input.value = text;
+                        hide();
+                    });
+                    panel.appendChild(btn);
+                    visibleButtons.push(btn);
+                });
+                if (visibleButtons.length === 0) {
+                    var empty = document.createElement('div');
+                    empty.className = 'dropdown-item text-muted';
+                    empty.textContent = 'No matches';
+                    panel.appendChild(empty);
+                }
+            }
+            function setActive(i) {
+                if (!visibleButtons.length) return;
+                activeIndex = (i + visibleButtons.length) % visibleButtons.length;
+                visibleButtons.forEach(function (b, idx) { b.classList.toggle('active', idx === activeIndex); });
+                visibleButtons[activeIndex].scrollIntoView({ block: 'nearest' });
+            }
+            function show() { build(''); panel.style.display = 'block'; }
+            function hide() { panel.style.display = 'none'; syncInput(); }
+
+            input.addEventListener('focus', function () { input.select(); show(); });
+            input.addEventListener('input', function () { build(input.value); panel.style.display = 'block'; });
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'ArrowDown') { e.preventDefault(); if (panel.style.display === 'none') show(); setActive(activeIndex + 1); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(activeIndex - 1); }
+                else if (e.key === 'Enter') {
+                    if (panel.style.display !== 'none' && activeIndex >= 0 && visibleButtons[activeIndex]) {
+                        e.preventDefault();
+                        visibleButtons[activeIndex].dispatchEvent(new Event('mousedown'));
+                    }
+                } else if (e.key === 'Escape') { hide(); }
+            });
+            document.addEventListener('click', function (e) { if (!wrapper.contains(e.target)) hide(); });
+            select.addEventListener('change', syncInput);
+        }
+
+        function toggleCapex(category) {
+            if (category === 'CAPEX') $('.capex-only').show();
+            else $('.capex-only').hide();
+        }
+
+        // Amount = Qty × UnitPrice
+        function autoAmount() {
+            const q = parseFloat($('#qty').val() || 0);
+            const p = parseFloat($('#price').val() || 0);
+            const a = q * p;
+            $('#amount').val(a.toFixed(2));
+            if ($('#distMode').val() === 'EQUAL') equalizeMonths();
+            updateForecast();
+        }
+
+        function equalizeMonths() {
+            const amt = parseFloat($('#amount').val() || 0);
+            const base = Math.round((amt / 12) * 100) / 100;
+            const first11 = Math.round(base * 11 * 100) / 100;
+            const last = Math.round((amt - first11) * 100) / 100;
+            const vals = [base,base,base,base,base,base,base,base,base,base,base,last];
+            $('.month').each(function(i){ $(this).val(vals[i].toFixed(2)); });
+            // In EQUAL mode, we usually make them readonly, but user wants them overwritable.
+            // If we make them readonly, user can't edit.
+            // So we will NOT make them readonly here.
+            // Instead, if user edits, we switch to MANUAL.
+        }
+
+        function updateMode() {
+            if ($('#distMode').val() === 'EQUAL') {
+                equalizeMonths();
+            }
+            // No need to toggle readonly explicitly since we allow overwrite
+        }
+
+        function updateForecast() {
+            const amt = parseFloat($('#amount').val() || 0);
+            const f1p = parseFloat($('#f1p').val() || 0), f1a = parseFloat($('#f1a').val() || 0);
+            if (!f1a && f1p > 0) $('#f1a').val((amt * (f1p / 100)).toFixed(2));
+            const f2p = parseFloat($('#f2p').val() || 0), f2a = parseFloat($('#f2a').val() || 0);
+            if (!f2a && f2p > 0) $('#f2a').val((amt * (f2p / 100)).toFixed(2));
+        }
+
+        $(function () {
+            document.querySelectorAll('select.js-searchable').forEach(makeSearchable);
+
+            toggleCapex('@category');
+            updateMode();
+
+            // Recalculate on edits
+            $('#qty,#price').on('input', function () { autoAmount(); updateForecast(); });
+            
+            // If Amount changes (programmatically via qty*price, though readonly input won't trigger input event manually)
+            // But we call autoAmount() on qty/price input, so that handles it.
+            
+            $('#distMode').on('change', updateMode);
+
+            // If user manually edits a month, switch to MANUAL
+            $('.month').on('input', function() {
+                if ($('#distMode').val() === 'EQUAL') {
+                    $('#distMode').val('MANUAL');
+                }
+            });
+
+            const lastId = '@(lastSavedId?.ToString() ?? "")';
+            if (lastId) {
+                const el = document.getElementById('recentLines');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+
+        // Inline "Add item" (admin only) — creates an item and selects it without leaving the page.
+        (function () {
+            var saveBtn = document.getElementById('qiSave');
+            if (!saveBtn) return;
+
+            var errBox = document.getElementById('quickItemError');
+            function showErr(m) { errBox.textContent = m; errBox.classList.remove('d-none'); }
+            function hideErr() { errBox.classList.add('d-none'); errBox.textContent = ''; }
+
+            saveBtn.addEventListener('click', function () {
+                hideErr();
+                var code = (document.getElementById('qiCode').value || '').trim();
+                var name = (document.getElementById('qiName').value || '').trim();
+                var gl = document.getElementById('qiGl').value;
+                if (!code || !name) { showErr('Item code and name are required.'); return; }
+                if (!gl) { showErr('Please select a GL account.'); return; }
+
+                var tokenEl = document.querySelector('#addItemModal input[name="__RequestVerificationToken"]');
+                var fd = new FormData();
+                fd.append('itemCode', code);
+                fd.append('itemName', name);
+                fd.append('glAccountId', gl);
+                fd.append('category', '@category');
+                if (tokenEl) fd.append('__RequestVerificationToken', tokenEl.value);
+
+                saveBtn.disabled = true;
+                fetch('@Url.Action("QuickCreate", "Items")', {
+                    method: 'POST',
+                    body: fd,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(function (r) { return r.ok ? r.json() : { ok: false, error: 'You are not authorized, or the request failed (' + r.status + ').' }; })
+                .then(function (res) {
+                    saveBtn.disabled = false;
+                    if (!res || !res.ok) { showErr(res && res.error ? res.error : 'Could not create item.'); return; }
+
+                    var sel = document.getElementById('ItemId');
+                    var opt = document.createElement('option');
+                    opt.value = res.itemId;
+                    opt.text = res.display;
+                    sel.appendChild(opt);
+                    sel.value = res.itemId;
+                    sel.dispatchEvent(new Event('change', { bubbles: true }));
+
+                    document.getElementById('qiCode').value = '';
+                    document.getElementById('qiName').value = '';
+                    document.getElementById('qiGl').value = '';
+
+                    var modalEl = document.getElementById('addItemModal');
+                    var m = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                    m.hide();
+                })
+                .catch(function () { saveBtn.disabled = false; showErr('Network error. Please try again.'); });
+            });
+        })();
+
+        // Generic inline quick-create for Activity / Project (admin only).
+        var currentDeptId = '@Model.DepartmentId';
+        function wireQuickCreate(opts) {
+            var saveBtn = document.getElementById(opts.saveBtnId);
+            if (!saveBtn) return;
+            var errBox = document.getElementById(opts.errBoxId);
+            function showMsg(m, ok) { errBox.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger'); errBox.textContent = m; }
+            function hideMsg() { errBox.className = 'alert alert-danger d-none'; errBox.textContent = ''; }
+
+            saveBtn.addEventListener('click', function () {
+                hideMsg();
+                var fd = new FormData();
+                var valid = true;
+                var chosenDept = currentDeptId;
+                opts.fields.forEach(function (f) {
+                    var el = document.getElementById(f.id);
+                    var val = (el.value || '').trim();
+                    if (f.required && !val) { valid = false; }
+                    if (f.name === 'departmentId') { chosenDept = val; }
+                    fd.append(f.name, val);
+                });
+                if (!valid) { showMsg('Please fill in all required fields.', false); return; }
+
+                var modalEl = document.getElementById(opts.modalId);
+                var tokenEl = modalEl.querySelector('input[name="__RequestVerificationToken"]');
+                if (tokenEl) fd.append('__RequestVerificationToken', tokenEl.value);
+
+                saveBtn.disabled = true;
+                fetch(opts.url, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(function (r) { return r.ok ? r.json() : { ok: false, error: 'You are not authorized, or the request failed (' + r.status + ').' }; })
+                    .then(function (res) {
+                        saveBtn.disabled = false;
+                        if (!res || !res.ok) { showMsg(res && res.error ? res.error : 'Could not save.', false); return; }
+
+                        // Clear only the text inputs; keep dropdown selections.
+                        opts.fields.forEach(function (f) {
+                            var el = document.getElementById(f.id);
+                            if (el && el.tagName === 'INPUT') { el.value = ''; }
+                        });
+
+                        if (String(chosenDept) !== String(currentDeptId)) {
+                            // Created for a different cost center: it won't appear in the current dropdown.
+                            showMsg(res.display + ' was created for the selected cost center. It will appear when you switch your context to that cost center.', true);
+                            return;
+                        }
+
+                        var sel = document.getElementById(opts.targetSelectId);
+                        var opt = document.createElement('option');
+                        opt.value = res[opts.idField];
+                        opt.text = res.display;
+                        sel.appendChild(opt);
+                        sel.value = res[opts.idField];
+                        sel.dispatchEvent(new Event('change', { bubbles: true }));
+
+                        var m = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                        m.hide();
+                    })
+                    .catch(function () { saveBtn.disabled = false; showMsg('Network error. Please try again.', false); });
+            });
+        }
+
+        wireQuickCreate({
+            saveBtnId: 'qaSave', errBoxId: 'qaError', modalId: 'addActivityModal',
+            url: '@Url.Action("QuickCreate", "Activities")',
+            targetSelectId: 'ActivityId', idField: 'activityId',
+            fields: [
+                { id: 'qaCode', name: 'activityCode', required: true },
+                { id: 'qaName', name: 'activityName', required: true },
+                { id: 'qaProgram', name: 'programId', required: true },
+                { id: 'qaDept', name: 'departmentId', required: true }
+            ]
+        });
+
+        wireQuickCreate({
+            saveBtnId: 'qpSave', errBoxId: 'qpError', modalId: 'addProjectModal',
+            url: '@Url.Action("QuickCreate", "Projects")',
+            targetSelectId: 'ProjectId', idField: 'projectId',
+            fields: [
+                { id: 'qpCode', name: 'projectCode', required: true },
+                { id: 'qpName', name: 'projectName', required: true },
+                { id: 'qpDept', name: 'departmentId', required: true }
+            ]
+        });
+
+        const deleteLineModalEl = document.getElementById('deleteLineModal');
+        if (deleteLineModalEl) {
+            deleteLineModalEl.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                if (!button) return;
+
+                const id = button.getAttribute('data-id') || '';
+                const item = button.getAttribute('data-item') || '';
+                const desc = button.getAttribute('data-desc') || '';
+
+                const idInput = document.getElementById('deleteBudgetLineId');
+                if (idInput) idInput.value = id;
+
+                const itemEl = document.getElementById('deleteLineItem');
+                if (itemEl) itemEl.textContent = item;
+
+                const descEl = document.getElementById('deleteLineDesc');
+                if (descEl) descEl.textContent = desc;
+            });
+        }
+    </script>
+
+    <script src="~/js/tour.js"></script>
+    <script>
+        (function () {
+            var startBtn = document.getElementById('startBudgetTour');
+            if (!startBtn || !window.GovTour) return;
+
+            function openDist() {
+                try { bootstrap.Modal.getOrCreateInstance(document.getElementById('distModal')).show(); } catch (e) { }
+            }
+            function closeDist() {
+                try { var m = bootstrap.Modal.getInstance(document.getElementById('distModal')); if (m) m.hide(); } catch (e) { }
+            }
+
+            var steps = [
+                {
+                    el: '[data-tour="status"]', side: 'left',
+                    title: 'Your working context',
+                    text: 'Shows the <b>Budget Year</b>, <b>Entity</b> and <b>Cost Center</b> you are editing, plus the submission status (Draft, Submitted, Returned, Approved).'
+                },
+                {
+                    el: '[data-tour="tabs"]', side: 'bottom',
+                    title: 'Budget categories',
+                    text: 'Switch between <b>REVENUE</b>, <b>HR</b>, <b>CAPEX</b> and <b>OPEX</b>. Each category is entered and submitted separately.'
+                },
+                {
+                    el: '[data-tour="item"]', side: 'bottom',
+                    title: 'Item (account)',
+                    text: 'Pick the budget line item. The list is filtered to the current category.'
+                },
+                {
+                    el: '[data-tour="activity"]', side: 'bottom',
+                    title: 'Allocate to an activity',
+                    text: 'Assign the line to an <b>Activity</b> under your program. This is how the cost rolls up to the correct program.'
+                },
+                {
+                    el: '[data-tour="project"]', side: 'bottom',
+                    title: 'Project (optional)',
+                    text: 'Optionally link the line to a specific project.'
+                },
+                {
+                    el: '[data-tour="amount"]', side: 'top',
+                    title: 'Quantity x Price = Amount',
+                    text: 'Enter <b>Qty</b> and <b>Price</b> &mdash; the annual <b>Amount</b> is calculated automatically.'
+                },
+                {
+                    el: '[data-tour="distribution"]', side: 'top',
+                    title: 'Spread across 12 months',
+                    text: 'Choose <b>EQUAL</b> to split evenly, or <b>MANUAL</b> to set each month. Click <b>12 Months</b> to open the editor.'
+                },
+                {
+                    el: '#distModal .modal-body', side: 'top', delay: 500,
+                    before: openDist, after: closeDist,
+                    title: 'Monthly breakdown',
+                    text: 'Enter or review each month here. Editing any month switches the line to <b>MANUAL</b> distribution automatically.'
+                },
+                {
+                    el: '[data-tour="forecast"]', side: 'top',
+                    title: 'Forecast years (+1 / +2)',
+                    text: 'Optionally project the next two years as a % of this amount (or enter exact amounts under <b>More</b>).'
+                },
+                {
+                    el: '[data-tour="capex"]', side: 'bottom',
+                    title: 'CAPEX assets',
+                    text: 'On the <b>CAPEX</b> tab you also set the Asset Type, depreciation (method, life, start month) and upload a supporting document (max 5 MB).'
+                },
+                {
+                    el: '[data-tour="actions"]', side: 'top',
+                    title: 'More fields & Save',
+                    text: '<b>More</b> reveals extra forecast-amount fields. Click <b>Save Line</b> to add the line to the list below.'
+                },
+                {
+                    el: '[data-tour="recent"]', side: 'top',
+                    title: 'Recent lines',
+                    text: 'Saved lines appear here. While the budget is still a <b>Draft</b> you can Edit or Delete any line.'
+                },
+                {
+                    el: '[data-tour="submit"]', side: 'left',
+                    title: 'Submit for approval',
+                    text: 'When all lines for this category are complete, click <b>Submit for Approval</b>. The budget then locks until an administrator returns it.'
+                }
+            ];
+
+            startBtn.addEventListener('click', function () {
+                GovTour.start(steps);
+            });
+        })();
+    </script>
+}

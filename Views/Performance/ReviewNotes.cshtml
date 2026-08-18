@@ -1,0 +1,111 @@
+@model List<GovBudget.Models.EntityReviewNotes>
+@{
+    ViewData["Title"] = "Entity Profiles";
+    var year = (int)ViewBag.Year;
+    var yearOptions = ViewBag.YearOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var entityOptions = ViewBag.EntityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var selectedEntityId = ViewBag.SelectedEntityId as int?;
+    var entityName = ViewBag.EntityName as string;
+    var editing = ViewBag.Editing as GovBudget.Models.EntityReviewNotes;
+    var noteTypes = new[] { "Assessment", "Outcome", "Issue" };
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Entity Profiles &mdash; Review Narrative</h3>
+        <a class="btn btn-sm btn-outline-secondary" asp-action="Index">Back</a>
+    </div>
+
+    <form method="get" class="row g-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label class="form-label">Year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="yearOptions"></select>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label">Entity</label>
+            <select name="entityId" class="form-select form-select-sm" asp-items="entityOptions"></select>
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+    </form>
+
+    @if (selectedEntityId == null || selectedEntityId <= 0)
+    {
+        <div class="alert alert-info">Select an entity to manage its Performance Assessment, Key Outcomes and Performance Issues.</div>
+    }
+    else
+    {
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold">@(editing != null && editing.EntityReviewNoteId > 0 ? "Edit note" : "Add note") &mdash; @entityName</div>
+            <div class="card-body">
+                <form method="post" asp-action="ReviewNoteSave" class="row g-2 align-items-end">
+                    <input type="hidden" name="reviewNoteId" value="@(editing?.EntityReviewNoteId ?? 0)" />
+                    <input type="hidden" name="entityId" value="@selectedEntityId" />
+                    <input type="hidden" name="year" value="@year" />
+                    <div class="col-md-2">
+                        <label class="form-label">Type</label>
+                        <select name="noteType" class="form-select form-select-sm">
+                            @foreach (var t in noteTypes)
+                            {
+                                <option value="@t" selected="@(t == editing?.NoteType)">@t</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label">Text</label>
+                        <textarea name="body" rows="2" class="form-control form-control-sm" placeholder="Assessment paragraph, or a single outcome / issue bullet.">@editing?.Body</textarea>
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label">Order</label>
+                        <input name="sortOrder" type="number" value="@(editing?.SortOrder ?? 0)" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
+                        @if (editing != null && editing.EntityReviewNoteId > 0)
+                        {
+                            <a class="btn btn-sm btn-outline-secondary w-100 mt-1" asp-action="ReviewNotes" asp-route-year="@year" asp-route-entityId="@selectedEntityId">Cancel edit</a>
+                        }
+                    </div>
+                </form>
+                <div class="form-text mt-2">Use one <strong>Assessment</strong> (or more, joined together), and one note per <strong>Outcome</strong> / <strong>Issue</strong> bullet.</div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                @if (Model.Count == 0)
+                {
+                    <div class="alert alert-info m-3 mb-0">No notes yet for this entity.</div>
+                }
+                else
+                {
+                    <table class="table table-sm table-striped align-middle mb-0">
+                        <thead class="table-light">
+                            <tr><th style="width:120px;">Type</th><th>Text</th><th style="width:70px;">Order</th><th style="width:130px;"></th></tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var n in Model)
+                        {
+                            <tr>
+                                <td><span class="badge @(n.NoteType == "Assessment" ? "bg-primary" : n.NoteType == "Issue" ? "bg-danger" : "bg-secondary")">@n.NoteType</span></td>
+                                <td style="white-space: pre-line;">@n.Body</td>
+                                <td>@n.SortOrder</td>
+                                <td>
+                                    <a class="btn btn-sm btn-outline-primary" asp-action="ReviewNotes" asp-route-year="@year" asp-route-entityId="@selectedEntityId" asp-route-noteId="@n.EntityReviewNoteId">Edit</a>
+                                    <form method="post" asp-action="ReviewNoteDelete" class="d-inline" onsubmit="return confirm('Delete this note?');">
+                                        <input type="hidden" name="id" value="@n.EntityReviewNoteId" />
+                                        <input type="hidden" name="year" value="@year" />
+                                        <input type="hidden" name="entityId" value="@selectedEntityId" />
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Del</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    }
+</div>

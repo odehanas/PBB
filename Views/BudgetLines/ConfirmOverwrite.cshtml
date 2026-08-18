@@ -1,0 +1,122 @@
+@model GovBudget.Controllers.BulkOverwriteConfirmVm
+
+@{
+    ViewData["Title"] = "Confirm Overwrite";
+}
+
+<h1>Confirm @Model.Category Upload — Replace Existing Data</h1>
+
+@{
+    var existingCount = Model.UploadedCount + Model.ManualCount;
+    var existingTotal = Model.UploadedTotal + Model.ManualTotal;
+    var extraScopes = Model.Scopes.Where(s => !s.InFile).ToList();
+}
+
+<div class="alert alert-danger">
+    <div class="fw-bold">This will replace the existing @Model.Category budget for this entity and year.</div>
+    There are already <strong>@existingCount</strong> @Model.Category transaction(s) stored
+    (total <strong>@existingTotal.ToString("N2")</strong>) for the same <strong>year and entity</strong>.
+    <br />
+    Continuing will <strong>DELETE all of them</strong> first and then store your
+    <strong>@Model.NewCount</strong> uploaded line(s) (total <strong>@Model.NewTotal.ToString("N2")</strong>).
+    This cannot be undone.
+</div>
+
+@if (extraScopes.Count > 0)
+{
+    <div class="alert alert-warning">
+        The replacement covers the whole entity/year, so the following cost center(s) will also be
+        cleared even though they are <strong>not in your file</strong>:
+        <ul class="mb-0 mt-1">
+            @foreach (var s in extraScopes)
+            {
+                <li>@s.Label — @(s.UploadedCount + s.ManualCount) line(s), total @((s.UploadedTotal + s.ManualTotal).ToString("N2"))</li>
+            }
+        </ul>
+    </div>
+}
+
+@if (Model.ManualCount > 0)
+{
+    <div class="alert alert-info">
+        <strong>@Model.ManualCount</strong> of the existing transaction(s) (total
+        <strong>@Model.ManualTotal.ToString("N2")</strong>) were entered or edited by hand.
+        They are <strong>deleted as well</strong> unless you tick the box below to keep them.
+    </div>
+}
+
+<div class="card mb-3">
+    <div class="card-header fw-bold">What will change</div>
+    <div class="table-responsive">
+        <table class="table table-sm table-striped mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Year / Context</th>
+                    <th class="text-end">Uploaded (to delete)</th>
+                    <th class="text-end">Uploaded Amount</th>
+                    <th class="text-end">Manual / Edited</th>
+                    <th class="text-end">Manual Amount</th>
+                    <th class="text-end">New (to store)</th>
+                    <th class="text-end">New Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var s in Model.Scopes)
+            {
+                <tr>
+                    <td>
+                        @s.Label
+                        @if (!s.InFile)
+                        {
+                            <span class="badge bg-warning text-dark ms-1">not in file</span>
+                        }
+                    </td>
+                    <td class="text-end">@s.UploadedCount</td>
+                    <td class="text-end">@s.UploadedTotal.ToString("N2")</td>
+                    <td class="text-end">@s.ManualCount</td>
+                    <td class="text-end">@s.ManualTotal.ToString("N2")</td>
+                    <td class="text-end">@s.NewCount</td>
+                    <td class="text-end">@s.NewTotal.ToString("N2")</td>
+                </tr>
+            }
+            </tbody>
+            <tfoot>
+                <tr class="fw-bold">
+                    <td>Total</td>
+                    <td class="text-end">@Model.UploadedCount</td>
+                    <td class="text-end">@Model.UploadedTotal.ToString("N2")</td>
+                    <td class="text-end">@Model.ManualCount</td>
+                    <td class="text-end">@Model.ManualTotal.ToString("N2")</td>
+                    <td class="text-end">@Model.NewCount</td>
+                    <td class="text-end">@Model.NewTotal.ToString("N2")</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<form asp-action="ConfirmUpload" method="post"
+      onsubmit="return confirm('Replace ALL existing @Model.Category data for this entity and year? This cannot be undone.');">
+    @Html.AntiForgeryToken()
+
+    @if (Model.ManualCount > 0)
+    {
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="keepManual" value="true" id="keepManual" />
+            <label class="form-check-label" for="keepManual">
+                Keep the <strong>@Model.ManualCount</strong> manually-entered / edited transaction(s)
+                (total @Model.ManualTotal.ToString("N2")) instead of deleting them.
+            </label>
+        </div>
+    }
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-danger">Replace existing data &amp; store new</button>
+    </div>
+</form>
+
+<form asp-action="CancelUpload" method="post" class="mt-2">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="category" value="@Model.Category" />
+    <button type="submit" class="btn btn-outline-secondary">Cancel — keep existing data</button>
+</form>

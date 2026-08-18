@@ -1,0 +1,71 @@
+@model IEnumerable<GovBudget.Models.GLAccounts>
+
+@{
+    ViewData["Title"] = "Index";
+}
+
+<h1>Index</h1>
+
+<div class="mb-3">
+    <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">&larr; Back to Admin Room</a>
+    <a asp-action="Create" class="btn btn-primary">Create New</a>
+    <a asp-action="Template" class="btn btn-outline-primary">Download Template</a>
+</div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success">@TempData["Success"]</div>
+}
+else if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger" style="white-space: pre-line;">@TempData["Error"]</div>
+}
+
+<form asp-action="Upload" method="post" enctype="multipart/form-data" class="mb-3">
+    @Html.AntiForgeryToken()
+    <div class="row g-2 align-items-center">
+        <div class="col-auto">
+            <input type="file" name="file" class="form-control" accept=".xlsx" />
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-success">Upload Excel</button>
+        </div>
+    </div>
+</form>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>
+                @Html.DisplayNameFor(model => model.GLCode)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.GLName)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.GLType)
+            </th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+@foreach (var item in Model) {
+        <tr>
+            <td>
+                @Html.DisplayFor(modelItem => item.GLCode)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.GLName)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.GLType)
+            </td>
+            <td>
+                <a asp-action="Edit" asp-route-id="@item.GLAccountId">Edit</a> |
+                <a asp-action="Details" asp-route-id="@item.GLAccountId">Details</a> |
+                <a asp-action="Delete" asp-route-id="@item.GLAccountId">Delete</a>
+            </td>
+        </tr>
+}
+    </tbody>
+</table>

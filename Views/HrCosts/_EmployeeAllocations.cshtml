@@ -1,0 +1,81 @@
+@model GovBudget.Models.HrEmployeeCosts
+
+@{
+    var allocations = (Model.HrEmployeeCostAllocations ?? new List<GovBudget.Models.HrEmployeeCostAllocations>())
+        .OrderBy(a => a.Activity?.Program?.ProgramCode)
+        .ThenBy(a => a.Activity?.ActivityCode)
+        .ThenBy(a => a.Project?.ProjectCode)
+        .ThenBy(a => a.AllocationId)
+        .ToList();
+
+    var allocated = allocations.Sum(x => x.AllocatedAmount);
+    var remaining = Model.AnnualCost - allocated;
+    var allocatedPct = Model.AnnualCost <= 0m ? 0m : Math.Round((allocated / Model.AnnualCost) * 100m, 2);
+}
+
+<div class="mb-2">
+    <div class="fw-bold">@Model.EmployeeName</div>
+    <div class="text-muted small">
+        @Model.EmployeeId · @Model.EntityName · @Model.DepartmentName · GL: @Model.GLCode
+    </div>
+</div>
+
+<div class="row g-2 mb-3">
+    <div class="col-md-4">
+        <div class="text-muted small">Annual Cost</div>
+        <div class="fw-bold">@Model.AnnualCost.ToString("N2")</div>
+    </div>
+    <div class="col-md-4">
+        <div class="text-muted small">Allocated</div>
+        <div class="fw-bold">@allocated.ToString("N2") (@allocatedPct.ToString("0.##")%)</div>
+    </div>
+    <div class="col-md-4">
+        <div class="text-muted small">Remaining</div>
+        <div class="fw-bold">@remaining.ToString("N2")</div>
+    </div>
+</div>
+
+@if (allocations.Count == 0)
+{
+    <div class="alert alert-info mb-0">No allocations found for this employee.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm table-striped table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Program</th>
+                    <th>Activity</th>
+                    <th>Project</th>
+                    <th class="text-end">Allocated Amount</th>
+                    <th class="text-end">%</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var a in allocations)
+            {
+                var prog = a.Activity?.Program;
+                var progText = prog != null ? $"{prog.ProgramCode} - {prog.ProgramName}" : "";
+                var act = a.Activity != null ? $"{a.Activity.ActivityCode} - {a.Activity.ActivityName}" : "";
+                var proj = a.Project != null ? $"{a.Project.ProjectCode} - {a.Project.ProjectName}" : "";
+                var pct = Model.AnnualCost <= 0m ? 0m : Math.Round((a.AllocatedAmount / Model.AnnualCost) * 100m, 2);
+                <tr>
+                    <td>@progText</td>
+                    <td>@act</td>
+                    <td>@proj</td>
+                    <td class="text-end">@a.AllocatedAmount.ToString("N2")</td>
+                    <td class="text-end">@pct.ToString("0.##")%</td>
+                </tr>
+            }
+            </tbody>
+            <tfoot class="table-light">
+                <tr>
+                    <th colspan="3" class="text-end">Total</th>
+                    <th class="text-end">@allocated.ToString("N2")</th>
+                    <th class="text-end">@allocatedPct.ToString("0.##")%</th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+}

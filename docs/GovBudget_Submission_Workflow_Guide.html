@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GovBudget — Budget Submission Workflow Guide</title>
+<style>
+  :root{--ink:#1f2937;--muted:#6b7280;--brand:#0f4c81;--brand-light:#e8f0f7;--accent:#c8911e;--line:#d8dee6;--green:#1b7a45;--red:#b3261e;--amber:#9a6700;--bg-soft:#f6f8fa;}
+  *{box-sizing:border-box;}
+  html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{font-family:"Segoe UI",Arial,sans-serif;color:var(--ink);line-height:1.7;margin:0;background:#fff;font-size:15px;}
+  .page{max-width:880px;margin:0 auto;padding:48px 56px;}
+  h1{font-size:28px;color:var(--brand);margin:0 0 6px;}
+  h2{font-size:22px;color:var(--brand);border-bottom:2px solid var(--brand-light);padding-bottom:6px;margin-top:36px;}
+  h3{font-size:17px;color:var(--brand);margin-top:24px;}
+  p{margin:8px 0;}
+  ul,ol{margin:8px 0 8px 22px;padding:0;}
+  li{margin:5px 0;}
+  code{background:var(--bg-soft);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:13px;}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px;}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top;}
+  th{background:var(--brand);color:#fff;font-weight:600;}
+  tbody tr:nth-child(even){background:var(--bg-soft);}
+  .lead{color:var(--muted);font-size:15px;margin-bottom:18px;}
+  .callout{border-left:4px solid var(--accent);background:#fff8ec;padding:10px 14px;margin:14px 0;border-radius:0 6px 6px 0;}
+  .callout.note{border-left-color:var(--brand);background:var(--brand-light);}
+  .callout.warn{border-left-color:var(--red);background:#fdecea;}
+  .callout strong{display:block;margin-bottom:2px;}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;color:#fff;}
+  .b-draft{background:#6b7280;}.b-sub{background:#9a6700;}.b-ret{background:var(--red);}
+  .b-ent{background:#2563eb;}.b-sent{background:#7c3aed;}.b-sys{background:var(--green);}
+  .flow{font-family:Consolas,monospace;font-size:13px;background:var(--bg-soft);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;white-space:pre;}
+  .toc{background:var(--bg-soft);border:1px solid var(--line);border-radius:8px;padding:14px 20px;}
+  .toc ol{margin:4px 0;}
+  .yes{color:var(--green);font-weight:700;}.no{color:var(--red);font-weight:700;}.scoped{color:var(--accent);font-weight:700;}
+  .small{font-size:12.5px;color:var(--muted);}
+  footer{margin-top:40px;border-top:1px solid var(--line);padding-top:12px;color:var(--muted);font-size:12.5px;}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Budget Submission Workflow</h1>
+  <p class="lead">How the submission, approval, versioning and re-opening (unlock) process works in GovBudget — for budget users and administrators. Includes the meaning of every status tab on the <em>Budget Submissions</em> screen.</p>
+
+  <div class="toc">
+    <strong>Contents</strong>
+    <ol>
+      <li>Key concepts</li>
+      <li>The status lifecycle (full flow)</li>
+      <li>Meaning of each status / tab</li>
+      <li>The Budget Submissions list columns</li>
+      <li>Roles &amp; permissions — who can do what</li>
+      <li>Who can re-open a submitted version for editing</li>
+      <li>Step by step — budget user</li>
+      <li>Step by step — administrator</li>
+      <li>What final approval does</li>
+      <li>Worked example — return, revise, re-submit</li>
+      <li>Quick reference &amp; FAQ</li>
+    </ol>
+  </div>
+
+  <h2>1. Key concepts</h2>
+  <ul>
+    <li><strong>A submission is per Year + Entity + Department + Category.</strong> Each category (<code>REVENUE</code>, <code>HR</code>, <code>CAPEX</code>, <code>OPEX</code>) has its <em>own</em> submission stream and its own status. Approving OPEX does not affect CAPEX, etc.</li>
+    <li><strong>Versions.</strong> Every submission stream keeps numbered versions (<code>Ver</code> 1, 2, 3 …). A new version is created when work is re-opened; the older version is preserved as history (linked by a parent reference) so you can compare changes.</li>
+    <li><strong>Locking.</strong> Budget lines can only be added, edited or deleted while the latest version is in <span class="badge b-draft">Draft</span>. <strong>Any other status locks data entry.</strong></li>
+    <li><strong>Additive history.</strong> The system never overwrites an approved version. Re-opening always spawns a fresh Draft (next version number) and leaves the prior version intact for audit.</li>
+  </ul>
+
+  <h2>2. The status lifecycle (full flow)</h2>
+  <div class="flow">Draft ──Submit──▶ Submitted ──Entity approve──▶ EntityApproved ──Send to central──▶ SentToCentral ──Sys approve──▶ SysApproved (final)
+  ▲                  │                         │                                  │
+  │                  │ Return/Unlock           │ Return/Unlock (system admin)     │ Return/Unlock (system admin)
+  └──────────────────┴─────────────────────────┴──────────────────────────────────┘
+       (each Return creates a NEW Draft = next version; old version kept as "Returned")</div>
+  <div class="callout note"><strong>Direction of travel</strong>
+  A submission moves forward one stage at a time. It can be pushed <em>backwards</em> only by a <strong>Return / Unlock</strong>, which does not edit the locked version — it creates a brand-new editable Draft as the next version.</div>
+
+  <h2>3. Meaning of each status / tab</h2>
+  <p>The buttons across the top of the <em>Budget Submissions</em> screen filter the list by status.</p>
+  <table>
+    <thead><tr><th>Tab / Status</th><th>Meaning</th><th>Locked for editing?</th><th>Set by</th></tr></thead>
+    <tbody>
+      <tr><td><strong>All</strong></td><td>Shows every submission for the selected year (latest 500), regardless of status.</td><td>—</td><td>—</td></tr>
+      <tr><td><span class="badge b-draft">Draft</span></td><td>Work in progress. Lines are being entered. Not yet submitted.</td><td class="no">No — editable</td><td>Created on first entry, or when a version is re-opened</td></tr>
+      <tr><td><span class="badge b-sub">Submitted</span></td><td>The budget user has submitted the category for approval. Awaiting entity-level review.</td><td class="yes">Yes</td><td>Budget user (Submit)</td></tr>
+      <tr><td><span class="badge b-ret">Returned</span></td><td>An administrator sent it back for revision. This row is <em>historical</em>; a new Draft (next version) has been created automatically for the corrections.</td><td class="yes">Yes (this version)</td><td>Administrator (Return / Unlock)</td></tr>
+      <tr><td><span class="badge b-ent">EntityApproved</span></td><td>Approved at the entity level. Awaiting "Send to central".</td><td class="yes">Yes</td><td>Administrator (Approve)</td></tr>
+      <tr><td><span class="badge b-ent">Approved (legacy)</span></td><td>An older status value <code>Approved</code> from earlier data. Treated exactly like <em>EntityApproved</em> for downstream actions (can be sent to central or returned by a system admin).</td><td class="yes">Yes</td><td>Legacy / historical</td></tr>
+      <tr><td><span class="badge b-sent">SentToCentral</span></td><td>Forwarded to central Department of Finance. Awaiting final system approval.</td><td class="yes">Yes</td><td>Administrator (Send to central)</td></tr>
+      <tr><td><span class="badge b-sys">SysApproved</span></td><td><strong>Final, finalized state.</strong> Locked into the official combined budget. This is terminal — there is no return path from here.</td><td class="yes">Yes (final)</td><td>System administrator (Sys approve)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>4. The Budget Submissions list columns</h2>
+  <table>
+    <thead><tr><th>Column</th><th>What it shows</th></tr></thead>
+    <tbody>
+      <tr><td>Submitted</td><td>Date/time the version was submitted (blank "-" while still Draft).</td></tr>
+      <tr><td>Entity</td><td>Entity code that owns the budget.</td></tr>
+      <tr><td>Department</td><td>Department code.</td></tr>
+      <tr><td>Category</td><td>REVENUE, HR, CAPEX or OPEX.</td></tr>
+      <tr><td>Ver</td><td>Version number of this submission stream. Higher = newer.</td></tr>
+      <tr><td>Status</td><td>Current state (see section 3).</td></tr>
+      <tr><td>Approved</td><td>Date/time of entity approval (if any).</td></tr>
+      <tr><td>Sent</td><td>Date/time it was sent to central finance (if any).</td></tr>
+      <tr><td>Open</td><td>Opens the review screen for that version (details, version compare, and the available workflow actions).</td></tr>
+      <tr><td>Unlock</td><td>Appears only when the signed-in admin is permitted to <em>Return</em> this status (see sections 5–6). Sends it back and creates a new editable Draft.</td></tr>
+    </tbody>
+  </table>
+  <div class="callout note"><strong>Why you may see several rows for the same category</strong>
+  Each re-opening adds a new version. So for one category you might see <code>Ver 1 – Returned</code> and <code>Ver 2 – Draft</code>. The highest version number is the live one; the rest are history.</div>
+
+  <h2>5. Roles &amp; permissions — who can do what</h2>
+  <p>There are three actors. Admin screens require the <code>ADMIN</code> or <code>SYSADMIN</code> role.</p>
+  <ul>
+    <li><strong>Budget user</strong> — enters lines, submits, and (after a return) starts the revision. Works only within their assigned Year / Entity / Department context.</li>
+    <li><strong>Entity-scoped admin</strong> — an <code>ADMIN</code> tied to one entity. Can act <em>only on submissions of their own entity</em>.</li>
+    <li><strong>System-level admin</strong> — a <code>SYSADMIN</code>, or an <code>ADMIN</code> with no entity restriction. Can act across all entities and has extra powers (final approval, deep return).</li>
+  </ul>
+  <table>
+    <thead><tr><th>Action</th><th>Budget user</th><th>Entity-scoped admin</th><th>System-level admin</th><th>Allowed from status</th></tr></thead>
+    <tbody>
+      <tr><td>Enter / edit / delete lines</td><td class="yes">Yes</td><td>—</td><td>—</td><td>Draft only</td></tr>
+      <tr><td>Submit</td><td class="yes">Yes</td><td>—</td><td>—</td><td>Draft</td></tr>
+      <tr><td>Start revision (after return)</td><td class="yes">Yes</td><td>—</td><td>—</td><td>Returned</td></tr>
+      <tr><td>Approve (→ EntityApproved)</td><td class="no">No</td><td class="scoped">Own entity</td><td class="yes">Yes</td><td>Submitted</td></tr>
+      <tr><td>Return / Unlock</td><td class="no">No</td><td class="scoped">Submitted only</td><td class="yes">Submitted, EntityApproved, Approved, SentToCentral</td><td>see next column</td></tr>
+      <tr><td>Send to central</td><td class="no">No</td><td class="scoped">Own entity</td><td class="yes">Yes</td><td>EntityApproved / Approved</td></tr>
+      <tr><td>Final approve (→ SysApproved)</td><td class="no">No</td><td class="no">No</td><td class="yes">SYSADMIN only</td><td>SentToCentral</td></tr>
+    </tbody>
+  </table>
+
+  <h2>6. Who can re-open a submitted version for editing</h2>
+  <p>This is the most-asked question. Once a budget user submits, <strong>they can no longer edit</strong> — the data is locked. Re-opening is always an administrator action called <strong>Return</strong> (the <em>Unlock</em> button). It never edits the locked version; it creates a fresh <span class="badge b-draft">Draft</span> as the next version, and the budget user then makes the corrections there.</p>
+  <h3>The rules</h3>
+  <ul>
+    <li><strong>Entity-scoped admin</strong> can return a submission only while it is <span class="badge b-sub">Submitted</span> — i.e. before they approve it, and only for their own entity.</li>
+    <li><strong>System-level admin</strong> can return at later stages too: <span class="badge b-sub">Submitted</span>, <span class="badge b-ent">EntityApproved</span>, <span class="badge b-ent">Approved (legacy)</span> and <span class="badge b-sent">SentToCentral</span>.</li>
+    <li>Only the <strong>latest version</strong> of a stream can be returned.</li>
+    <li>A return can carry a <strong>return note</strong> explaining what to fix; the note is shown to the budget user.</li>
+  </ul>
+  <div class="callout warn"><strong>SysApproved is final</strong>
+  There is no Return / Unlock from <span class="badge b-sys">SysApproved</span>. Once central finance gives final approval, that version is locked into the official combined budget and cannot be re-opened through the workflow.</div>
+  <div class="callout note"><strong>What "Unlock" really does</strong>
+  Clicking <em>Unlock</em> on the list (or <em>Return</em> on the review screen): (1) marks the current version <span class="badge b-ret">Returned</span>, (2) creates the next version as an editable <span class="badge b-draft">Draft</span> linked to it, and (3) records the revision request in the audit trail. The budget user then opens Budget Entry, clicks <em>Start Revision</em> if needed, edits, and re-submits.</div>
+
+  <h2>7. Step by step — budget user</h2>
+  <ol>
+    <li>Open <strong>Budget Entry</strong> and choose the category tab (REVENUE / HR / CAPEX / OPEX).</li>
+    <li>Add lines while the status is <span class="badge b-draft">Draft</span>.</li>
+    <li>Click <strong>Submit for Approval</strong>. Status becomes <span class="badge b-sub">Submitted</span> and editing locks.</li>
+    <li>If an admin returns it, you'll see a <strong>Returned</strong> banner with the note. Click <strong>Start Revision</strong> to open the new Draft, fix the lines, and submit again (this becomes the next version).</li>
+  </ol>
+
+  <h2>8. Step by step — administrator</h2>
+  <ol>
+    <li>Go to <strong>Budget Submissions</strong> and use the tabs to filter (e.g. <span class="badge b-sub">Submitted</span> to find items awaiting review).</li>
+    <li>Click <strong>Open</strong> to review a version. You can compare it against the previous version to see exactly what changed (variance by line).</li>
+    <li>Choose an action:
+      <ul>
+        <li><strong>Approve</strong> → moves to <span class="badge b-ent">EntityApproved</span>.</li>
+        <li><strong>Return / Unlock</strong> → sends it back and opens a new editable Draft for corrections.</li>
+        <li><strong>Send to central</strong> → moves an EntityApproved item to <span class="badge b-sent">SentToCentral</span>.</li>
+        <li><strong>Sys approve</strong> (system admin only) → final <span class="badge b-sys">SysApproved</span>.</li>
+      </ul>
+    </li>
+  </ol>
+
+  <h2>9. What final approval does</h2>
+  <p>When a system administrator gives final approval to a <span class="badge b-sent">SentToCentral</span> submission:</p>
+  <ul>
+    <li>Status becomes <span class="badge b-sys">SysApproved</span> and the version is stamped as finalized (who and when).</li>
+    <li>Its lines are written into the <strong>official combined final budget</strong> store (replacing any earlier rows for that same submission), which the reports and the consolidated budget read from.</li>
+    <li>The version is terminal — no further workflow changes are possible.</li>
+  </ul>
+
+  <h2>10. Worked example — return, revise, re-submit</h2>
+  <p>Scenario: <strong>Year 2026 · Entity RDOF · Department RDOF · Category OPEX</strong>. Watch how the version number and lock state change at each step.</p>
+
+  <h3>10.1 Version timeline</h3>
+  <table>
+    <thead><tr><th>#</th><th>Action</th><th>By</th><th>Result</th><th>Ver</th><th>Status</th><th>Total</th><th>Editable?</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Enter OPEX lines</td><td>Budget user</td><td>Draft created</td><td>1</td><td><span class="badge b-draft">Draft</span></td><td>500,000</td><td class="yes">Yes</td></tr>
+      <tr><td>2</td><td>Submit for approval</td><td>Budget user</td><td>Locked, awaiting review</td><td>1</td><td><span class="badge b-sub">Submitted</span></td><td>500,000</td><td class="no">No</td></tr>
+      <tr><td>3</td><td>Return / Unlock <span class="small">(note: "Reduce travel by 20,000")</span></td><td>Admin</td><td>v1 kept as history; <strong>v2 Draft created</strong></td><td>1 → 2</td><td>v1 <span class="badge b-ret">Returned</span> · v2 <span class="badge b-draft">Draft</span></td><td>500,000</td><td class="yes">Yes (on v2)</td></tr>
+      <tr><td>4</td><td>Start Revision &amp; edit travel line</td><td>Budget user</td><td>Travel line reduced by 20,000</td><td>2</td><td><span class="badge b-draft">Draft</span></td><td>480,000</td><td class="yes">Yes</td></tr>
+      <tr><td>5</td><td>Re-submit</td><td>Budget user</td><td>Locked again</td><td>2</td><td><span class="badge b-sub">Submitted</span></td><td>480,000</td><td class="no">No</td></tr>
+      <tr><td>6</td><td>Approve</td><td>Admin</td><td>Entity sign-off</td><td>2</td><td><span class="badge b-ent">EntityApproved</span></td><td>480,000</td><td class="no">No</td></tr>
+      <tr><td>7</td><td>Send to central</td><td>Admin</td><td>Forwarded to DoF</td><td>2</td><td><span class="badge b-sent">SentToCentral</span></td><td>480,000</td><td class="no">No</td></tr>
+      <tr><td>8</td><td>Sys approve</td><td>System admin</td><td>Finalized into combined budget</td><td>2</td><td><span class="badge b-sys">SysApproved</span></td><td>480,000</td><td class="no">No (final)</td></tr>
+    </tbody>
+  </table>
+  <div class="callout note"><strong>What happens at step 3</strong>
+  The <em>Return</em> does <strong>not</strong> change v1's numbers — v1 stays at 500,000 with status <span class="badge b-ret">Returned</span> forever (audit history). A new editable v2 is created, pre-linked to v1 as its parent, so the system can show a before/after comparison.</div>
+
+  <h3>10.2 Version-compare (variance) at step 4</h3>
+  <p>On the review screen, comparing <strong>v2 against its parent v1</strong> shows only the lines that changed:</p>
+  <table>
+    <thead><tr><th>Line</th><th>Old (v1)</th><th>New (v2)</th><th>Delta</th></tr></thead>
+    <tbody>
+      <tr><td>Travel &amp; transport</td><td>60,000</td><td>40,000</td><td class="no">−20,000</td></tr>
+      <tr><td><strong>Category total</strong></td><td><strong>500,000</strong></td><td><strong>480,000</strong></td><td class="no"><strong>−20,000</strong></td></tr>
+    </tbody>
+  </table>
+  <p class="small">Lines with no change are hidden; only non-zero deltas are listed, sorted by largest absolute change.</p>
+
+  <h3>10.3 How this looks on the Submissions list</h3>
+  <div class="flow">Submitted   Entity  Dept   Category  Ver  Status          Approved          Sent
+-           RDOF    RDOF   OPEX      2    SysApproved     2026-..-..        2026-..-..
+2026-..-..  RDOF    RDOF   OPEX      1    Returned        -                 -</div>
+  <p class="small">Two rows for the same category: the highest version (2) is the live/final one; version 1 remains visible as history.</p>
+
+  <h2>11. Quick reference &amp; FAQ</h2>
+  <table>
+    <thead><tr><th>Question</th><th>Answer</th></tr></thead>
+    <tbody>
+      <tr><td>Can a user edit after submitting?</td><td><span class="no">No.</span> Submitting locks the data. An admin must Return it first.</td></tr>
+      <tr><td>Who unlocks a submitted budget?</td><td>Entity admin (while Submitted) or a system admin (at later stages too).</td></tr>
+      <tr><td>Does unlocking erase the submitted numbers?</td><td><span class="no">No.</span> The submitted version is preserved as <em>Returned</em>; a new Draft version is created for edits.</td></tr>
+      <tr><td>Are categories approved together?</td><td><span class="no">No.</span> Each category (REVENUE/HR/CAPEX/OPEX) flows and is approved independently.</td></tr>
+      <tr><td>Can SysApproved be re-opened?</td><td><span class="no">No.</span> It is final and locked into the combined budget.</td></tr>
+      <tr><td>What is "Approved (legacy)"?</td><td>An old status value equivalent to EntityApproved; behaves the same downstream.</td></tr>
+      <tr><td>How do I see what changed between versions?</td><td>Open the version and use the version-compare (variance) view on the review screen.</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    GovBudget — Budget Submission Workflow Guide. Reflects the system's current workflow logic (status transitions, locking, versioning and role permissions).
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,284 @@
+@model GovBudget.Controllers.BudgetVsActualVm
+@{
+    ViewData["Title"] = "Budget vs Actual";
+    var year = (int)ViewBag.Year;
+    var yearOptions = ViewBag.YearOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var entityOptions = ViewBag.EntityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var selectedEntityId = ViewBag.SelectedEntityId as int?;
+    var entityRouteVal = selectedEntityId?.ToString() ?? "";
+
+    var grandBudget = Model.Groups.Sum(g => g.Budget);
+    var grandActual = Model.Groups.Sum(g => g.ActualYtd);
+    var grandForecast = Model.Groups.Sum(g => g.Forecast);
+    var grandFull = Model.Groups.Sum(g => g.FullYear);
+    var grandVar = Model.Groups.Sum(g => g.Variance);
+
+    string VarClass(decimal v) => v < 0 ? "text-danger" : "text-success";
+
+    var dim = (ViewBag.Dim as string) ?? "gl";
+    var breakdown = ViewBag.Breakdown as GovBudget.Controllers.BvaBreakdownVm;
+    var tree = ViewBag.Tree as GovBudget.Controllers.BvaTreeVm;
+    var dims = new (string Key, string Label)[]
+    {
+        ("gl", "GL / Category"), ("tree", "Programme \u2192 Activity"), ("item", "Item"), ("activity", "Activity"),
+        ("program", "Programme"), ("department", "Department"), ("project", "Project")
+    };
+    string DimLabel(string k) => dims.FirstOrDefault(d => d.Key == k).Label ?? k;
+}
+
+<style>
+    .bva .table { font-size: .82rem; }
+    .bva .table th, .bva .table td { padding: .35rem .55rem; vertical-align: middle; }
+    .bva .table thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; white-space: nowrap; }
+    .bva .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .bva .cat-row td { background: var(--app-brand-header); font-weight: 700; color: #fff; }
+    .bva tfoot td { border-top: 2px solid var(--app-primary); font-weight: 700; background: var(--app-brand-header-2); color: #fff; }
+</style>
+
+<div class="container-fluid py-3 bva" style="max-width:1200px;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+            <h4 class="mb-0">Budget vs Actual</h4>
+            <div class="text-muted small">FY @year &middot; @DimLabel(dim) view. Full year = Actual YTD + manual forecast-to-complete.</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" asp-action="Index" asp-route-year="@year" asp-route-entityId="@entityRouteVal">Import</a>
+            <a class="btn btn-sm btn-outline-primary" asp-action="Forecast" asp-route-year="@year" asp-route-entityId="@entityRouteVal">Forecast to complete</a>
+            <a class="btn btn-sm btn-outline-success" asp-action="BudgetVsActualExport" asp-route-year="@year" asp-route-entityId="@entityRouteVal">&#8681; Export Excel</a>
+            @* Export currently reflects the GL/Category view. *@
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label mb-1 small">Year</label>
+                    <select name="year" class="form-select form-select-sm" asp-items="yearOptions"></select>
+                </div>
+                <div class="col">
+                    <label class="form-label mb-1 small">Entity</label>
+                    <select name="entityId" class="form-select form-select-sm" asp-items="entityOptions"></select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                </div>
+                <input type="hidden" name="dim" value="@dim" />
+            </form>
+        </div>
+    </div>
+
+    <ul class="nav nav-pills nav-sm mb-3 gap-1">
+        @foreach (var d in dims)
+        {
+            <li class="nav-item">
+                <a class="nav-link py-1 px-3 @(d.Key == dim ? "active" : "")"
+                   asp-action="BudgetVsActual" asp-route-year="@year" asp-route-entityId="@entityRouteVal" asp-route-dim="@d.Key">@d.Label</a>
+            </li>
+        }
+    </ul>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            @if (Model.Groups.Count == 0)
+            {
+                <div class="alert alert-info m-3 mb-0">No budget or actual data for this filter. Import actuals or check the selected year/entity.</div>
+            }
+            else if (dim == "gl")
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>GL</th>
+                                <th class="text-end num">Budget</th>
+                                <th class="text-end num">Actual YTD</th>
+                                <th class="text-end num">Forecast</th>
+                                <th class="text-end num">Full Year</th>
+                                <th class="text-end num">Variance</th>
+                                <th class="text-end num">Var %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var g in Model.Groups)
+                        {
+                            <tr class="cat-row">
+                                <td>@g.Category</td>
+                                <td class="text-end num">@g.Budget.ToString("N0")</td>
+                                <td class="text-end num">@g.ActualYtd.ToString("N0")</td>
+                                <td class="text-end num">@g.Forecast.ToString("N0")</td>
+                                <td class="text-end num">@g.FullYear.ToString("N0")</td>
+                                <td class="text-end num @VarClass(g.Variance)">@g.Variance.ToString("N0")</td>
+                                <td class="text-end num"></td>
+                            </tr>
+                            foreach (var row in g.Rows)
+                            {
+                                <tr>
+                                    <td><span class="text-muted">@row.GLCode</span> @row.GLName</td>
+                                    <td class="text-end num">@row.Budget.ToString("N0")</td>
+                                    <td class="text-end num">@row.ActualYtd.ToString("N0")</td>
+                                    <td class="text-end num">@row.Forecast.ToString("N0")</td>
+                                    <td class="text-end num">@row.FullYear.ToString("N0")</td>
+                                    <td class="text-end num @VarClass(row.Variance)">@row.Variance.ToString("N0")</td>
+                                    <td class="text-end num">@(row.VariancePct.HasValue ? row.VariancePct.Value.ToString("0.0") + "%" : "-")</td>
+                                </tr>
+                            }
+                        }
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td>GRAND TOTAL</td>
+                                <td class="text-end num">@grandBudget.ToString("N0")</td>
+                                <td class="text-end num">@grandActual.ToString("N0")</td>
+                                <td class="text-end num">@grandForecast.ToString("N0")</td>
+                                <td class="text-end num">@grandFull.ToString("N0")</td>
+                                <td class="text-end num @VarClass(grandVar)">@grandVar.ToString("N0")</td>
+                                <td class="text-end num"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+            else if (dim == "tree")
+            {
+                if (tree == null || tree.Programs.Count == 0)
+                {
+                    <div class="alert alert-info m-3 mb-0">No programme / activity data for this filter.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Programme / Activity</th>
+                                    <th class="text-end num">Budget</th>
+                                    <th class="text-end num">Actual YTD</th>
+                                    <th class="text-end num">Forecast</th>
+                                    <th class="text-end num">Full Year</th>
+                                    <th class="text-end num">Variance</th>
+                                    <th class="text-end num">Var %</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var p in tree.Programs)
+                            {
+                                <tr class="cat-row">
+                                    <td>@p.Label</td>
+                                    <td class="text-end num">@p.Budget.ToString("N0")</td>
+                                    <td class="text-end num">@p.ActualYtd.ToString("N0")</td>
+                                    <td class="text-end num">@p.Forecast.ToString("N0")</td>
+                                    <td class="text-end num">@p.FullYear.ToString("N0")</td>
+                                    <td class="text-end num @VarClass(p.Variance)">@p.Variance.ToString("N0")</td>
+                                    <td class="text-end num">@(p.VariancePct.HasValue ? p.VariancePct.Value.ToString("0.0") + "%" : "-")</td>
+                                </tr>
+                                foreach (var a in p.Activities)
+                                {
+                                    <tr>
+                                        <td class="ps-4 text-muted">@a.Label</td>
+                                        <td class="text-end num">@a.Budget.ToString("N0")</td>
+                                        <td class="text-end num">@a.ActualYtd.ToString("N0")</td>
+                                        <td class="text-end num">@a.Forecast.ToString("N0")</td>
+                                        <td class="text-end num">@a.FullYear.ToString("N0")</td>
+                                        <td class="text-end num @VarClass(a.Variance)">@a.Variance.ToString("N0")</td>
+                                        <td class="text-end num">@(a.VariancePct.HasValue ? a.VariancePct.Value.ToString("0.0") + "%" : "-")</td>
+                                    </tr>
+                                }
+                            }
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td>GRAND TOTAL</td>
+                                    <td class="text-end num">@tree.Budget.ToString("N0")</td>
+                                    <td class="text-end num">@tree.ActualYtd.ToString("N0")</td>
+                                    <td class="text-end num">@tree.Forecast.ToString("N0")</td>
+                                    <td class="text-end num">@tree.FullYear.ToString("N0")</td>
+                                    <td class="text-end num @VarClass(tree.Variance)">@tree.Variance.ToString("N0")</td>
+                                    <td class="text-end num"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
+            }
+            else if (breakdown == null || breakdown.Rows.Count == 0)
+            {
+                <div class="alert alert-info m-3 mb-0">No @DimLabel(dim) breakdown available for this filter.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>@DimLabel(dim)</th>
+                                <th class="text-end num">Budget</th>
+                                <th class="text-end num">Actual YTD</th>
+                                <th class="text-end num">Forecast</th>
+                                <th class="text-end num">Full Year</th>
+                                <th class="text-end num">Variance</th>
+                                <th class="text-end num">Var %</th>
+                                <th>Basis</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var row in breakdown.Rows)
+                        {
+                            <tr>
+                                <td>@row.Label</td>
+                                <td class="text-end num">@row.Budget.ToString("N0")</td>
+                                <td class="text-end num">@row.ActualYtd.ToString("N0")</td>
+                                <td class="text-end num">@row.Forecast.ToString("N0")</td>
+                                <td class="text-end num">@row.FullYear.ToString("N0")</td>
+                                <td class="text-end num @VarClass(row.Variance)">@row.Variance.ToString("N0")</td>
+                                <td class="text-end num">@(row.VariancePct.HasValue ? row.VariancePct.Value.ToString("0.0") + "%" : "-")</td>
+                                <td>
+                                    @if (row.IsDerived)
+                                    {
+                                        <span class="badge bg-warning text-dark">Derived</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge dof-badge">Posted</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td>GRAND TOTAL</td>
+                                <td class="text-end num">@breakdown.Budget.ToString("N0")</td>
+                                <td class="text-end num">@breakdown.ActualYtd.ToString("N0")</td>
+                                <td class="text-end num">@breakdown.Forecast.ToString("N0")</td>
+                                <td class="text-end num">@breakdown.FullYear.ToString("N0")</td>
+                                <td class="text-end num @VarClass(breakdown.Variance)">@breakdown.Variance.ToString("N0")</td>
+                                <td class="text-end num"></td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+        </div>
+        <div class="card-footer py-2 text-muted small">
+            Variance = Budget &minus; Full Year (positive = under budget / favourable for costs).
+            @if (dim == "gl")
+            {
+                <text>GL and Category totals are posted (exact) from the SAP GL import.</text>
+            }
+            else if (dim == "item")
+            {
+                <text>Item actuals are exact where the SAP file carried an item code, otherwise derived by budget-share within each GL.</text>
+            }
+            else if (dim == "tree")
+            {
+                <text>Activities are rolled up into their programmes. HR is exact (employee actual &times; budgeted allocation rate); Revenue / OPEX / CAPEX are derived by budget-share of each GL's posted actual. &ldquo;Unassigned / no activity&rdquo; holds costs not tagged to an activity.</text>
+            }
+            else
+            {
+                <text>@DimLabel(dim) actuals are <strong>derived</strong> by splitting each GL's posted actual across members in proportion to their budget on that GL. HR is <strong>exact</strong> where per-employee HR actuals were imported (employee actual &times; budgeted allocation rate). &ldquo;Unassigned / overhead&rdquo; holds actuals on GLs with no matching budget.</text>
+            }
+        </div>
+    </div>
+</div>

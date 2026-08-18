@@ -1,0 +1,177 @@
+﻿Application Onboarding Questionnaire
+Data and Insight Department  ·  Electronic Government Authority
+Purpose and Scope
+
+Generative AI coding tools have made it substantially easier for government departments to develop their own applications. The Electronic Government Authority (EGA) welcomes this. It also means that applications now reach EGA for hosting without necessarily having passed through the design, review and testing stages that a procured system would ordinarily undergo.
+This questionnaire exists so that EGA can establish, consistently and without presumption, what it needs to know before accepting such an application onto government infrastructure. It applies to any application developed in-house by a department or entity, including one developed wholly or partly with the assistance of generative AI coding tools. It does not replace the procurement and assurance process applicable to systems supplied by an external vendor under contract.
+The information provided will form the basis of EGA's technical and security assessment and will be discussed at a subsequent review meeting with the submitting department. Please complete all applicable items. Where a question does not apply, please indicate this rather than leaving it blank. Incomplete answers will delay the review rather than expedite it.
+Applicant Information
+
+Application name:Date submitted:Submitting department / entity:Contact person:Contact email:Contact phone:1. Development and Provenance
+
+1.1  How was this application developed? Entirely in-house by departmental staff
+By an external vendor or contractor under contract
+In-house with the assistance of generative AI coding tools A combination of the above
+If a combination, please describe:
+1.2  If generative AI coding tools were used, to what extent?
+Not used
+Limited: scaffolding, boilerplate or code completion only
+Substantial: significant components generated, then reviewed and modified by a developer
+Predominant: most of the application generated, with limited manual review Unsure
+1.3  Which development tools or AI coding assistants were used (for example GitHub Copilot, Cursor, Claude Code)?
+1.4  Do the individuals who developed the application hold professional software engineering experience or qualifications?
+Yes, one or more are experienced software developers
+Partly: the team includes both technical and non-technical members
+No: developed primarily by staff from a business or functional background Prefer to discuss at the review meeting
+1.5  Who currently maintains and understands the codebase?
+A dedicated internal development team
+A single individual
+An external contractor Other
+If other, please specify:
+1.6  Has the code been reviewed by anyone other than its author or authors?
+Yes, through a formal code review process
+Yes, informally
+No
+Unsure
+1.7  What is the current release and change process, including who authorizes and who deploys changes?
+2. Ownership and Continuity
+
+2.1  Accountable business owner (name and position):
+2.2  Technical owner responsible for ongoing support (name and position):
+2.3  Where is the source code held, and does the department retain full ownership of and access to it?
+2.4  If the individuals who built the application became unavailable, could the department continue to maintain and change it?
+Yes, others hold working knowledge of the codebase
+Partly: some knowledge is held by others
+No: knowledge rests with one person Unsure
+2.5  After go-live, who will provide application-level support (defect resolution and enhancements)?
+The department's internal team
+An external vendor
+Request that EGA provide this
+Not yet decided
+2.6  Expected operational lifespan of the application, and any planned review or replacement point:
+3. Scope, Usage and Timeline
+
+3.1  Please describe the purpose of the application and the process it supports, in two or three sentences.
+3.2  Expected number of users at go-live, and the number of departments or entities involved:
+3.3  Is use of this application mandatory or optional for its intended users?
+Mandatory
+Optional
+Not yet decided
+3.4  Is the application already in use?
+No, not yet in use
+Yes, in pilot or limited use
+Yes, in full operational use on departmental infrastructure Yes, in use on external or cloud-hosted infrastructure
+If already in use, please state since when and on what infrastructure:
+3.5  Requested go-live date, and any fixed deadline or business cycle driving it:
+3.6  Does this application integrate with, replace, or run in parallel to any existing EGA-hosted or government-wide system?
+3.7  Were any paid AI tools, subscriptions or third-party APIs used to build or to operate this application?
+No
+Yes, for development only (one-time)
+Yes, on an ongoing basis or at runtime Unsure
+If yes, please state which, and whose budget currently covers the cost:
+4. Architecture, Data and Testing
+
+4.1  Please summarize the technology stack: language and framework, database, and hosting model.
+4.2  Expected data volume at go-live, annual growth, peak concurrent users, and any seasonal peak periods:
+4.3  What automated test coverage exists?
+None
+Unit tests only
+Unit and integration tests
+Unit, integration and end-to-end tests Unsure
+4.4  Has the application undergone load or performance testing?
+Yes
+Planned before go-live
+No
+Unsure
+4.5  If the application will be used by more than one department or entity, how is separation of their data enforced, and how has this been verified?
+4.6  Please list any external services the application depends on at runtime, including content delivery networks, third-party APIs and hosted libraries.
+4.7  Does the application maintain an audit trail of user actions and data changes?
+Yes, comprehensive
+Yes, partial
+No
+Unsure
+5. Security, Data Protection and Compliance
+
+5.1  How is the information held by the application classified?
+Public
+Internal
+Confidential
+Restricted
+Not yet classified
+5.2  Does the application hold personal data relating to identifiable individuals?
+No
+Yes
+Unsure
+If yes, please describe the categories of personal data held:
+5.3  How do users currently authenticate?
+Local accounts with passwords held by the application
+Active Directory or Entra single sign-on
+UAE PASS
+Other
+If other, please specify:
+5.4  If not already integrated, is the department open to Active Directory or Entra single sign-on?
+Yes
+No
+Open to discussion Already integrated
+5.5  Is multi-factor authentication in place or planned?
+Already implemented
+Planned before go-live
+No current plan
+5.6  How are administrative privileges granted, recorded and periodically reviewed?
+5.7  Has any security assessment been performed on the application?
+No assessment performed
+Internal review only
+External or third-party review Penetration test performed
+If assessed, please state by whom and when:
+5.8  Have the licensing terms of all third-party and open-source components been reviewed and confirmed as suitable for government use?
+Yes
+Partly
+No
+Unsure
+5.9  Are you aware of any known security weaknesses, unresolved defects, or temporary configurations that should be addressed before go-live? Disclosure here assists the review; it does not prejudice it.
+6. Hosting, Backup and Recovery
+
+6.1  Hosting environment preference:
+EGA government data center
+Approved cloud environment No preference, defer to EGA
+6.2  Which environments are required?
+Production only
+Production and user acceptance testing
+Production, user acceptance testing and development
+6.3  Required Recovery Point Objective (maximum acceptable data loss):
+6.4  Required Recovery Time Objective (maximum acceptable period of unavailability):
+6.5  Required backup retention period, and any policy or regulatory basis for it:
+6.6  Expectations for monitoring, alerting and log retention, including who should receive alerts:
+7. Support and Documentation
+
+7.1  Which documentation exists and can be provided to EGA? Please select all that apply.
+Select all that apply.
+Architecture or design documentation
+Deployment and release guide
+Administrator or operations guide
+End-user guide or training material None currently available
+7.2  What level of availability does the department require?
+Business hours
+Extended hours
+Continuous (24 hours, 7 days)
+7.3  Is there any further information EGA should be aware of in assessing this request?
+8. Declaration
+
+I confirm that the information provided in this questionnaire is accurate and complete to the best of my knowledge, and that the Electronic Government Authority may rely upon it in assessing this request.
+Name:Position:Department / entity:Date:Signature:
+
+Submission
+
+Please return the completed questionnaire, together with any supporting documentation identified in section 7, to the EGA Data and Insight Department, quoting the application name in the subject line. Upon review, the Department will arrange a review meeting with the submitting department to discuss the responses and to agree the conditions and sequence for onboarding.
+Form EGA/DI/AOQ-01  ·  Version 1.0  ·  Classification: Internal	
+
+Form EGA/DI/AOQ-01  ·  Version 1.0  ·  Classification: Internal	
+
+Electronic Government Authority  |  Data and Insight Department  |  P.O. Box 4114, Ras Al Khaimah, UAE  |  Tel +971 7 233 7551  |  www.ega.rak.ae	Page 1 of 9
+
+Electronic Government Authority  |  Data and Insight Department  |  P.O. Box 4114, Ras Al Khaimah, UAE  |  Tel +971 7 233 7551  |  www.ega.rak.ae	Page 1 of 9
+
+Form EGA/DI/AOQ-01  ·  Version 1.0  ·  Classification: Internal	
+
+Electronic Government Authority  |  Data and Insight Department  |  P.O. Box 4114, Ras Al Khaimah, UAE  |  Tel +971 7 233 7551  |  www.ega.rak.ae	Page 1 of 9
+

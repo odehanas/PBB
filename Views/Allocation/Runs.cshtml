@@ -1,0 +1,155 @@
+@model GovBudget.Controllers.AllocationRunsVm
+@{
+    ViewData["Title"] = "Allocation Runs";
+    string Prog(int id) => Model.ProgramMap.TryGetValue(id, out var v) ? v : ("#" + id);
+    string Ent(int? id) => id.HasValue && Model.EntityMap.TryGetValue(id.Value, out var v) ? v : (id.HasValue ? "#" + id : "All entities");
+    var msg = TempData["AllocMsg"] as string;
+    var selectedRun = Model.Runs.FirstOrDefault(r => r.RunId == Model.SelectedRunId);
+
+    string StatusBadge(string s) => s == "Posted" ? "success" : (s == "Superseded" ? "secondary" : "info");
+}
+
+<style>
+    .alloc-hist .run-item { border-left: 3px solid transparent; }
+    .alloc-hist .run-item.active { border-left-color: #0d6efd; }
+    .alloc-hist .table { font-size: .82rem; }
+    .alloc-hist .table th, .alloc-hist .table td { padding: .35rem .5rem; }
+    .alloc-hist .meta dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; }
+    .alloc-hist .meta dd { margin-bottom: .5rem; font-size: .85rem; }
+</style>
+
+<div class="container-fluid py-3 alloc-hist">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="mb-0">Allocation runs &amp; audit</h3>
+            <div class="text-muted small">Full history of every allocation run. <strong>Superseded</strong> runs are retained with all their detail &mdash; select any run to inspect it. Reports use the latest <strong>Posted</strong> run.</div>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary" asp-action="Index" asp-route-year="@Model.Year" asp-route-entityId="@Model.EntityId">Back to allocation</a>
+    </div>
+
+    @if (!string.IsNullOrEmpty(msg))
+    {
+        <div class="alert alert-info py-2">@msg</div>
+    }
+
+    <form method="get" class="row g-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label class="form-label small mb-1">Year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="Model.YearOptions"></select>
+        </div>
+        @if (Model.EntityId.HasValue)
+        {
+            <input type="hidden" name="entityId" value="@Model.EntityId" />
+        }
+        <div class="col-auto">
+            <button class="btn btn-sm btn-primary">Show</button>
+        </div>
+    </form>
+
+    <div class="row g-3">
+        <div class="col-lg-5">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                    <span>Run history</span>
+                    <span class="badge bg-light text-dark">@Model.Runs.Count run(s)</span>
+                </div>
+                <div class="list-group list-group-flush">
+                    @foreach (var r in Model.Runs)
+                    {
+                        var count = Model.RunTxnCounts.TryGetValue(r.RunId, out var c) ? c : 0;
+                        var total = Model.RunTotals.TryGetValue(r.RunId, out var tot) ? tot : 0m;
+                        <a class="list-group-item list-group-item-action run-item @(Model.SelectedRunId == r.RunId ? "active" : "")"
+                           asp-action="Runs" asp-route-year="@Model.Year" asp-route-entityId="@Model.EntityId" asp-route-runId="@r.RunId">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fw-bold">Run #@r.RunId</span>
+                                <span class="badge bg-@StatusBadge(r.Status)">@r.Status</span>
+                            </div>
+                            <div class="small @(Model.SelectedRunId == r.RunId ? "" : "text-muted")">
+                                @r.RunAt.ToString("yyyy-MM-dd HH:mm") UTC
+                                @if (!string.IsNullOrWhiteSpace(r.RunBy)) { <text>&middot; by @r.RunBy</text> }
+                            </div>
+                            @if (Model.ShowEntityColumn)
+                            {
+                                <div class="small @(Model.SelectedRunId == r.RunId ? "" : "text-muted")">@Ent(r.EntityId)</div>
+                            }
+                            <div class="small @(Model.SelectedRunId == r.RunId ? "" : "text-muted")">
+                                @count txn(s) &middot; @total.ToString("N2") allocated
+                                &middot; @(r.ReconciledOk ? "reconciled OK" : "MISMATCH")
+                            </div>
+                        </a>
+                    }
+                    @if (Model.Runs.Count == 0)
+                    {
+                        <div class="list-group-item text-muted small">No runs yet for @Model.Year.</div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-7">
+            @if (selectedRun != null)
+            {
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                        <span>Run #@selectedRun.RunId details</span>
+                        <span class="badge bg-@StatusBadge(selectedRun.Status)">@selectedRun.Status</span>
+                    </div>
+                    <div class="card-body py-2">
+                        @if (selectedRun.Status == "Superseded")
+                        {
+                            <div class="alert alert-secondary py-1 px-2 small mb-2">This run was superseded by a newer posted run. It is kept here for full audit history.</div>
+                        }
+                        <div class="row meta g-0">
+                            <div class="col-sm-4"><dl class="mb-0"><dt>Entity</dt><dd>@Ent(selectedRun.EntityId)</dd></dl></div>
+                            <div class="col-sm-4"><dl class="mb-0"><dt>Method</dt><dd>@selectedRun.Method &middot; @selectedRun.Period</dd></dl></div>
+                            <div class="col-sm-4"><dl class="mb-0"><dt>Run at</dt><dd>@selectedRun.RunAt.ToString("yyyy-MM-dd HH:mm") UTC</dd></dl></div>
+                            <div class="col-sm-4"><dl class="mb-0"><dt>Run by</dt><dd>@(string.IsNullOrWhiteSpace(selectedRun.RunBy) ? "-" : selectedRun.RunBy)</dd></dl></div>
+                            <div class="col-sm-4"><dl class="mb-0"><dt>Reconciliation</dt><dd class="@(selectedRun.ReconciledOk ? "text-success" : "text-danger")">@(selectedRun.ReconciledOk ? "OK" : "MISMATCH")</dd></dl></div>
+                            <div class="col-sm-4"><dl class="mb-0"><dt>Transactions</dt><dd>@Model.Transactions.Count</dd></dl></div>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(selectedRun.Notes))
+                        {
+                            <div class="small text-muted">@selectedRun.Notes</div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="card shadow-sm">
+                <div class="card-header bg-white fw-bold">Transactions @(Model.SelectedRunId.HasValue ? "(run #" + Model.SelectedRunId + ")" : "")</div>
+                <div class="card-body p-0">
+                    @if (Model.Transactions.Count == 0)
+                    {
+                        <div class="text-muted small p-3">No transactions for this run.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-striped align-middle mb-0">
+                                <thead class="table-light"><tr><th>From (Support)</th><th>To (Mandate)</th><th>Cat</th><th class="text-end">Basis</th><th class="text-end">%</th><th class="text-end">Amount</th></tr></thead>
+                                <tbody>
+                                @foreach (var t in Model.Transactions.OrderBy(t => Prog(t.SourceProgramId)).ThenBy(t => Prog(t.TargetProgramId)))
+                                {
+                                    <tr>
+                                        <td class="small">@Prog(t.SourceProgramId)</td>
+                                        <td class="small">@Prog(t.TargetProgramId)</td>
+                                        <td>@t.SourceCategoryCode</td>
+                                        <td class="text-end small">@t.BasisValue.ToString("N2") / @t.BasisTotal.ToString("N2")</td>
+                                        <td class="text-end">@((t.AllocationPct * 100m).ToString("N1"))%</td>
+                                        <td class="text-end">@t.Amount.ToString("N2")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                                <tfoot>
+                                    <tr class="fw-bold table-light">
+                                        <td colspan="5" class="text-end">Total allocated</td>
+                                        <td class="text-end">@Model.Transactions.Sum(t => t.Amount).ToString("N2")</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

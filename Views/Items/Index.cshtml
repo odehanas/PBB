@@ -1,0 +1,146 @@
+@model IEnumerable<GovBudget.Models.Items>
+
+@{
+    ViewData["Title"] = "Index";
+}
+
+<h1>Index</h1>
+
+@{
+    var query = ViewBag.Query as string ?? "";
+    var totalCount = ViewBag.TotalCount as int? ?? Model.Count();
+    var inactiveCount = ViewBag.InactiveCount as int? ?? Model.Count(i => !i.IsActive);
+    var shownCount = Model.Count();
+    var isFiltered = !string.IsNullOrWhiteSpace(query);
+}
+
+<div class="mb-3 d-flex flex-wrap gap-2">
+    <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">&larr; Back to Admin Room</a>
+    <a asp-action="Create" class="btn btn-primary">Create New</a>
+    <a asp-action="Template" class="btn btn-outline-primary">Download Template</a>
+    <a asp-action="Export" asp-route-q="@query" class="btn btn-success">Export to Excel@(isFiltered ? " (filtered)" : "")</a>
+    @if (inactiveCount > 0)
+    {
+        <form asp-action="ActivateAll" method="post" class="d-inline" onsubmit="return confirm('Activate all @inactiveCount inactive item(s)?');">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-warning">Activate All (@inactiveCount)</button>
+        </form>
+    }
+</div>
+
+<form asp-action="Index" method="get" class="mb-3">
+    <div class="row g-2 align-items-center">
+        <div class="col-auto">
+            <input type="search" name="q" value="@query" class="form-control" style="min-width: 280px;"
+                   placeholder="Search item code, name or GL account" aria-label="Search items" />
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-primary">Search</button>
+        </div>
+        @if (isFiltered)
+        {
+            <div class="col-auto">
+                <a asp-action="Index" class="btn btn-outline-secondary">Clear</a>
+            </div>
+            <div class="col-auto text-muted small">
+                Showing <strong>@shownCount</strong> of @totalCount item(s) matching “@query”.
+            </div>
+        }
+        else
+        {
+            <div class="col-auto text-muted small">@totalCount item(s).</div>
+        }
+    </div>
+</form>
+
+@if (isFiltered && shownCount == 0)
+{
+    <div class="alert alert-warning">No item matches “@query”.</div>
+}
+
+@if (inactiveCount > 0)
+{
+    <div class="alert alert-info">
+        @inactiveCount item(s) are currently <strong>inactive</strong> and will not appear in Budget Entry. Use <strong>Activate All</strong> above to enable them.
+        Also confirm each item's <strong>GLType</strong> below is one of REVENUE, OPEX, CAPEX or HR &mdash; items on other types stay hidden.
+    </div>
+}
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success">@TempData["Success"]</div>
+}
+else if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger" style="white-space: pre-line;">@TempData["Error"]</div>
+}
+
+<form asp-action="Upload" method="post" enctype="multipart/form-data" class="mb-3">
+    @Html.AntiForgeryToken()
+    <div class="row g-2 align-items-center">
+        <div class="col-auto">
+            <input type="file" name="file" class="form-control" accept=".xlsx" />
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-success">Upload Excel</button>
+        </div>
+    </div>
+</form>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>
+                @Html.DisplayNameFor(model => model.ItemCode)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.ItemName)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.IsActive)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.GLAccount)
+            </th>
+            <th>GLType</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+@foreach (var item in Model) {
+        <tr>
+            <td>
+                @Html.DisplayFor(modelItem => item.ItemCode)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.ItemName)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.IsActive)
+            </td>
+            <td>
+                @(item.GLAccount.GLCode + " - " + item.GLAccount.GLName)
+            </td>
+            <td>
+                @{
+                    var glType = item.GLAccount.GLType ?? "";
+                    var validType = glType is "REVENUE" or "OPEX" or "CAPEX" or "HR";
+                }
+                @if (validType)
+                {
+                    <span class="badge bg-secondary">@glType</span>
+                }
+                else
+                {
+                    <span class="badge bg-danger" title="Not a Budget Entry tab type; items on this GL are hidden">@(string.IsNullOrEmpty(glType) ? "(none)" : glType)</span>
+                }
+            </td>
+            <td>
+                <a asp-action="Edit" asp-route-id="@item.ItemId">Edit</a> |
+                <a asp-action="Details" asp-route-id="@item.ItemId">Details</a> |
+                <a asp-action="Delete" asp-route-id="@item.ItemId">Delete</a>
+            </td>
+        </tr>
+}
+    </tbody>
+</table>

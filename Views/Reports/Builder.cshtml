@@ -1,0 +1,348 @@
+@model GovBudget.Controllers.ReportBuilderVm
+@{
+    ViewData["Title"] = "Report Builder";
+    var result = Model.Result;
+    var chartTypes = new[] { ("table", "Table"), ("bar", "Bar"), ("pie", "Pie"), ("line", "Line") };
+    var catQuery = string.Concat(Model.SelectedCategories.Select(c => "&categories=" + Uri.EscapeDataString(c)));
+}
+
+<style>
+    /* Denser report tables so more columns/rows fit, esp. with sidebar hidden */
+    .report-dense .table { font-size: .8rem; }
+    .report-dense .table th, .report-dense .table td { padding: .3rem .45rem; vertical-align: middle; }
+    .report-dense .table thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .02em; white-space: nowrap; }
+    .report-dense .table td.text-end, .report-dense .table th.text-end { white-space: nowrap; }
+    .report-dense .card-header { padding: .5rem .75rem; }
+
+    /* Pivoted (cross-tab) builder table: keep wide tables readable */
+    .pivot-scroll { max-height: 70vh; overflow: auto; }
+    .pivot-table { border-collapse: separate; border-spacing: 0; }
+    /* Sticky header row */
+    .pivot-table thead th { position: sticky; top: 0; z-index: 3; background: #f1f3f5; }
+    /* Sticky first (row-label) column so it stays visible when scrolling sideways */
+    .pivot-table thead th:first-child { left: 0; z-index: 4; }
+    .pivot-table tbody td:first-child,
+    .pivot-table tfoot td:first-child { position: sticky; left: 0; z-index: 2; background: #fff; font-weight: 500; }
+    .pivot-table tfoot td:first-child { background: #f1f3f5; }
+    .pivot-table tbody tr:hover td:first-child { background: #f8f9fa; }
+    /* Column headers: readable, wrap instead of forcing one very wide line */
+    .pivot-table thead th.pivot-col {
+        text-transform: none; letter-spacing: 0; white-space: normal;
+        min-width: 90px; max-width: 150px; vertical-align: bottom; font-weight: 600;
+    }
+    .pivot-table th:first-child { min-width: 160px; max-width: 260px; white-space: normal; }
+</style>
+
+<div class="container-fluid py-3 report-dense">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="mb-0">Report Builder</h3>
+            <div class="text-muted small">Choose dimensions and a measure, then view as a table or chart. Respects your entity access.</div>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary d-print-none" asp-action="Index" asp-route-report="income" asp-route-year="@Model.Year">Back to Reports</a>
+    </div>
+
+    <form method="get" asp-action="Builder" class="card shadow-sm mb-3 d-print-none">
+        <input type="hidden" name="run" value="true" />
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-6 col-md-2">
+                    <label class="form-label">Year</label>
+                    <select name="year" class="form-select form-select-sm" asp-items="Model.YearOptions"></select>
+                </div>
+                @if (Model.IsAdmin)
+                {
+                    <div class="col-6 col-md-4">
+                        <label class="form-label">Entity</label>
+                        <select name="entityId" class="form-select form-select-sm" asp-items="Model.EntityOptions"></select>
+                    </div>
+                }
+                <div class="col-6 col-md-3">
+                    <label class="form-label">Group rows by</label>
+                    <select id="rowDimSel" name="rowDim" class="form-select form-select-sm" asp-items="Model.RowDimOptions"></select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label d-flex justify-content-between align-items-center">
+                        <span>Split columns by <span class="text-muted">(optional)</span></span>
+                        <button type="button" id="swapDims" class="btn btn-link btn-sm p-0 text-decoration-none" title="Swap rows and columns">&#8646; Swap</button>
+                    </label>
+                    <select id="colDimSel" name="colDim" class="form-select form-select-sm" asp-items="Model.ColDimOptions"></select>
+                    <div class="form-text">Leave as <strong>(none)</strong> for a simple row list. Only pick a column dimension for a cross-tab.</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label">Measure</label>
+                    <select name="measure" class="form-select form-select-sm" asp-items="Model.MeasureOptions"></select>
+                </div>
+                <div class="col-12 col-md-6">
+                    <label class="form-label">Category filter</label>
+                    <div class="d-flex gap-2 align-items-start">
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Category mode">
+                            <input type="radio" class="btn-check" name="categoryMode" id="catInc" value="Include" autocomplete="off" @(Model.CategoryMode != "Exclude" ? "checked" : "") />
+                            <label class="btn btn-outline-secondary" for="catInc">Include</label>
+                            <input type="radio" class="btn-check" name="categoryMode" id="catExc" value="Exclude" autocomplete="off" @(Model.CategoryMode == "Exclude" ? "checked" : "") />
+                            <label class="btn btn-outline-secondary" for="catExc">Exclude</label>
+                        </div>
+                        <select name="categories" multiple size="3" class="form-select form-select-sm" style="min-width:160px;">
+                            @foreach (var c in Model.CategoryCodes)
+                            {
+                                <option value="@c" selected="@(Model.SelectedCategories.Contains(c, StringComparer.OrdinalIgnoreCase))">@c</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-text">No selection = all categories. <strong>Include</strong> shows only selected; <strong>Exclude</strong> hides selected.</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label">Program type</label>
+                    <select name="programType" class="form-select form-select-sm">
+                        <option value="" selected="@(string.IsNullOrEmpty(Model.ProgramType))">All</option>
+                        <option value="Mandate" selected="@(Model.ProgramType == "Mandate")">Mandate</option>
+                        <option value="Support" selected="@(Model.ProgramType == "Support")">Support</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label">Cost basis</label>
+                    <select name="costBasis" class="form-select form-select-sm">
+                        <option value="Direct" selected="@(Model.CostBasis != "Total")">Direct</option>
+                        <option value="Total" selected="@(Model.CostBasis == "Total")">Total (fully loaded)</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label">Output</label>
+                    <select name="chartType" class="form-select form-select-sm">
+                        @foreach (var (val, label) in chartTypes)
+                        {
+                            <option value="@val" selected="@(val == Model.ChartType)">@label</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-6 col-md-3 d-flex align-items-end">
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" name="includeHr" value="true" id="includeHr" @(Model.IncludeHr ? "checked" : "") />
+                        <label class="form-check-label" for="includeHr">Include allocated HR cost</label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-sm btn-primary">Generate</button>
+                    <a class="btn btn-sm btn-outline-success"
+                       href="@(Url.Action("BuilderExport", new { year = Model.Year, entityId = Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "", rowDim = Model.RowDim, colDim = Model.ColDim, measure = Model.Measure, includeHr = Model.IncludeHr.ToString().ToLower(), categoryMode = Model.CategoryMode, programType = Model.ProgramType, costBasis = Model.CostBasis }) + catQuery)">
+                        Download Excel
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">Print</button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    @* ---------- Saved reports ---------- *@
+    <div class="card shadow-sm mb-3 d-print-none">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Saved reports</label>
+                    @if (Model.SavedReportsUnavailable)
+                    {
+                        <div class="alert alert-warning py-2 mb-0 small">Saved reports are not available yet. Run the database migration (<code>PBB_PerformanceSchema.sql</code>) to create <code>core.SavedReports</code>.</div>
+                    }
+                    else if (Model.SavedReports.Count == 0)
+                    {
+                        <div class="text-muted small">No saved reports yet. Configure a report above, then save it on the right.</div>
+                    }
+                    else
+                    {
+                        <ul class="list-group list-group-flush">
+                        @foreach (var s in Model.SavedReports)
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-1 @(Model.SavedId == s.SavedReportId ? "fw-bold" : "")">
+                                <a asp-action="Builder" asp-route-savedId="@s.SavedReportId">@s.Name</a>
+                                <form method="post" asp-action="DeleteReport" class="d-inline" onsubmit="return confirm('Delete saved report \'@s.Name\'?');">
+                                    <input type="hidden" name="id" value="@s.SavedReportId" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0">Delete</button>
+                                </form>
+                            </li>
+                        }
+                        </ul>
+                    }
+                </div>
+                <div class="col-md-6">
+                  @if (!Model.SavedReportsUnavailable)
+                  {
+                    <form method="post" asp-action="SaveReport" class="row g-2 align-items-end">
+                        <input type="hidden" name="year" value="@Model.Year" />
+                        <input type="hidden" name="entityId" value="@(Model.EntityId?.ToString() ?? "")" />
+                        <input type="hidden" name="rowDim" value="@Model.RowDim" />
+                        <input type="hidden" name="colDim" value="@Model.ColDim" />
+                        <input type="hidden" name="measure" value="@Model.Measure" />
+                        <input type="hidden" name="includeHr" value="@Model.IncludeHr.ToString().ToLower()" />
+                        <input type="hidden" name="chartType" value="@Model.ChartType" />
+                        <input type="hidden" name="categoryMode" value="@Model.CategoryMode" />
+                        <input type="hidden" name="programType" value="@Model.ProgramType" />
+                        <input type="hidden" name="costBasis" value="@Model.CostBasis" />
+                        @foreach (var c in Model.SelectedCategories)
+                        {
+                            <input type="hidden" name="categories" value="@c" />
+                        }
+                        <div class="col">
+                            <label class="form-label">Save current configuration as</label>
+                            <input name="name" class="form-control form-control-sm" placeholder="e.g. Opex by Programme (monthly)" required />
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-sm btn-outline-primary">Save</button>
+                        </div>
+                    </form>
+                    <div class="form-text">Saves your current dimensions, measure and filters. Only you can see your saved reports.</div>
+                  }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (result == null || !result.HasResult)
+    {
+        <div class="alert alert-info">Pick your dimensions and measure, then click <strong>Generate</strong>.</div>
+    }
+    else if (result.Rows.Count == 0)
+    {
+        <div class="alert alert-warning">No data for the selected filters.</div>
+    }
+    else
+    {
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold">
+                @result.MeasureLabel by @result.RowDimLabel @(result.Pivoted ? $"× {result.ColDimLabel}" : "")
+            </div>
+            <div class="card-body">
+                @if (Model.CostBasis == "Total")
+                {
+                    <div class="alert alert-secondary py-2 small mb-2"><strong>Total (fully loaded) cost basis:</strong> Support program costs from the latest posted allocation run are added to Mandate programs (allocated-in) and removed from Support programs (allocated-out). If no run is posted, figures fall back to Direct cost.</div>
+                }
+                @if (Model.ColDim == "month")
+                {
+                    <div class="text-muted small mb-2">Monthly columns use the budget distribution (M01-M12); the chosen measure applies to the row totals view.</div>
+                }
+                @if (Model.ChartType != "table")
+                {
+                    <div style="position:relative; height:60vh;">
+                        <canvas id="reportChart"></canvas>
+                    </div>
+                    @if (result.Rows.Count > 25)
+                    {
+                        <div class="text-muted small mt-2">Chart shows top 25 rows by value. Full data is in the table below and the Excel export.</div>
+                    }
+                    <hr />
+                }
+
+                @if (result.Pivoted)
+                {
+                    <div class="text-muted small mb-2">
+                        Cross-tab: <strong>@result.RowDimLabel</strong> as rows, <strong>@result.ColDimLabel</strong> as columns.
+                        Wide? Swap them with <em>Group rows by</em> / <em>Split columns by</em>, or set <em>Split columns by</em> to <em>(none)</em> for a simple list.
+                    </div>
+                }
+                <div class="@(result.Pivoted ? "pivot-scroll" : "table-responsive")">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0 @(result.Pivoted ? "pivot-table" : "")">
+                        <thead class="table-light">
+                            <tr>
+                                <th>@result.RowDimLabel</th>
+                                @if (result.Pivoted)
+                                {
+                                    foreach (var ck in result.ColumnKeys)
+                                    {
+                                        <th class="text-end pivot-col">@ck</th>
+                                    }
+                                    <th class="text-end fw-bold">Total</th>
+                                }
+                                else
+                                {
+                                    <th class="text-end">@result.MeasureLabel</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var row in result.Rows)
+                        {
+                            <tr>
+                                <td>@row.Key</td>
+                                @if (result.Pivoted)
+                                {
+                                    for (var i = 0; i < row.Cells.Count; i++)
+                                    {
+                                        <td class="text-end">@row.Cells[i].ToString("N2")</td>
+                                    }
+                                    <td class="text-end fw-bold">@row.Total.ToString("N2")</td>
+                                }
+                                else
+                                {
+                                    <td class="text-end">@row.Total.ToString("N2")</td>
+                                }
+                            </tr>
+                        }
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold table-light">
+                                <td>@(result.IsNet ? "Net (Revenue - Expenses)" : "Grand Total")</td>
+                                @if (result.Pivoted)
+                                {
+                                    foreach (var ct in result.ColumnTotals)
+                                    {
+                                        <td class="text-end">@ct.ToString("N2")</td>
+                                    }
+                                    <td class="text-end">@result.GrandTotal.ToString("N2")</td>
+                                }
+                                else
+                                {
+                                    <td class="text-end">@result.GrandTotal.ToString("N2")</td>
+                                }
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                @if (result.IsNet)
+                {
+                    <div class="text-muted small mt-2">Totals are <strong>net</strong>: revenue minus expenses (HR, CAPEX, OPEX). Row values are shown as positive magnitudes, so the net total does not equal their visual sum.</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var btn = document.getElementById('swapDims');
+            var rowSel = document.getElementById('rowDimSel');
+            var colSel = document.getElementById('colDimSel');
+            if (!btn || !rowSel || !colSel) return;
+            function hasOption(sel, val) {
+                return Array.prototype.some.call(sel.options, function (o) { return o.value === val; });
+            }
+            btn.addEventListener('click', function () {
+                var r = rowSel.value, c = colSel.value;
+                // colDim can be '(none)' or 'month', which are not valid rows.
+                if (c === '' || c === 'month' || !hasOption(rowSel, c)) {
+                    alert('That column dimension cannot be used as rows. Pick a normal dimension (Entity, Program, Activity, etc.) to swap.');
+                    return;
+                }
+                rowSel.value = c;
+                colSel.value = hasOption(colSel, r) ? r : '';
+            });
+        })();
+    </script>
+    @if (result != null && result.HasResult && result.Rows.Count > 0 && Model.ChartType != "table")
+    {
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+        <script>
+            (function () {
+                const cfg = @Html.Raw(Model.ChartJson);
+                const ctx = document.getElementById('reportChart');
+                if (ctx && cfg) {
+                    cfg.options = {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: cfg.type === 'pie' || (cfg.data.datasets && cfg.data.datasets.length > 1) } }
+                    };
+                    new Chart(ctx, cfg);
+                }
+            })();
+        </script>
+    }
+}

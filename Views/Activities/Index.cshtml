@@ -1,0 +1,84 @@
+@model IEnumerable<GovBudget.Models.Activities>
+
+@{
+    ViewData["Title"] = "Index";
+}
+
+<h1>Index</h1>
+
+<div class="mb-3">
+    <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">&larr; Back to Admin Room</a>
+    <a asp-action="Create" class="btn btn-primary">Create New</a>
+    <a asp-action="Template" class="btn btn-outline-primary">Download Template</a>
+    <a asp-action="Export" class="btn btn-success">Export to Excel</a>
+</div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success">@TempData["Success"]</div>
+}
+else if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger" style="white-space: pre-line;">@TempData["Error"]</div>
+}
+
+<form asp-action="Upload" method="post" enctype="multipart/form-data" class="mb-3">
+    @Html.AntiForgeryToken()
+    <div class="row g-2 align-items-center">
+        <div class="col-auto">
+            <input type="file" name="file" class="form-control" accept=".xlsx" />
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-success">Upload Excel</button>
+        </div>
+    </div>
+</form>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>
+                @Html.DisplayNameFor(model => model.ActivityCode)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.ActivityName)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.IsActive)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.Department)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.Program)
+            </th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+@foreach (var item in Model) {
+        <tr>
+            <td>
+                @Html.DisplayFor(modelItem => item.ActivityCode)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.ActivityName)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.IsActive)
+            </td>
+            <td>
+                @(item.Department.DeptCode + " - " + item.Department.DeptName)
+            </td>
+            <td>
+                @(item.Program.ProgramCode + " - " + item.Program.ProgramName)
+            </td>
+            <td>
+                <a asp-action="Edit" asp-route-id="@item.ActivityId">Edit</a> |
+                <a asp-action="Details" asp-route-id="@item.ActivityId">Details</a> |
+                <a asp-action="Delete" asp-route-id="@item.ActivityId">Delete</a>
+            </td>
+        </tr>
+}
+    </tbody>
+</table>

@@ -1,0 +1,61 @@
+@{
+    ViewData["Title"] = "Import HR Costs";
+    var isBudget = ViewBag.IsBudget as bool? ?? false;
+}
+
+<div class="container py-4" style="max-width: 900px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1 class="mb-0">Import HR Costs</h1>
+            <div class="text-muted">Upload an Excel file (.xlsx) to import employee annual costs.</div>
+        </div>
+        <div class="d-flex gap-2">
+            @if (!isBudget)
+            {
+                <a asp-action="Template" class="btn btn-outline-secondary">Download Template</a>
+                <a asp-action="Index" class="btn btn-secondary">&larr; Back</a>
+            }
+            else
+            {
+                <a asp-action="BudgetTemplate" class="btn btn-outline-secondary">Download Template</a>
+                <a asp-action="Budget" class="btn btn-secondary">&larr; Back</a>
+            }
+        </div>
+    </div>
+
+    <div asp-validation-summary="All" class="text-danger mb-3"></div>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form asp-action="@(isBudget ? "BudgetImport" : "Import")" method="post" enctype="multipart/form-data">
+                @Html.AntiForgeryToken()
+
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Budget Year</label>
+                        <select name="budgetYear" class="form-select" asp-items="ViewBag.BudgetYear"></select>
+                    </div>
+                    <div class="col-md-9">
+                        <label class="form-label">Excel File (.xlsx)</label>
+                        <input type="file" name="file" class="form-control" accept=".xlsx" />
+                        <div class="form-text">
+                            Required (HR Costs sheet): EmployeeID, Employee Name, Entity Name, Department Name, Annual Cost, GL Account Code, GL Kind. Optional (HR Costs sheet): Occupation (job title). Optional (HR Allocations sheet): EmployeeID, Activity Code (or ActivityId), and Allocated Percent or Allocated Amount.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Import</button>
+                    @if (!isBudget)
+                    {
+                        <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+                    }
+                    else
+                    {
+                        <a asp-action="Budget" class="btn btn-outline-secondary">Cancel</a>
+                    }
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

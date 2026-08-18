@@ -1,0 +1,313 @@
+@model GovBudget.Models.HrEmployeeCosts
+
+@{
+    ViewData["Title"] = "Allocate Employee Cost";
+    var isBudget = ViewBag.IsBudget as bool? ?? false;
+    var budgetValue = isBudget ? "true" : "false";
+    decimal allocated = ViewBag.Allocated ?? 0m;
+    decimal remaining = ViewBag.Remaining ?? 0m;
+    decimal allocatedPct = ViewBag.AllocatedPct ?? 0m;
+    decimal remainingPct = ViewBag.RemainingPct ?? 0m;
+}
+
+<div class="container-fluid py-3" style="max-width: 1200px;">
+    @if (isBudget)
+    {
+        <ul class="nav nav-tabs mb-3">
+            <li class="nav-item">
+                <a class="nav-link"
+                   asp-controller="BudgetLines" asp-action="Entry" asp-route-category="REVENUE">REVENUE</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active"
+                   asp-controller="HrCosts" asp-action="Budget" asp-route-year="@Model.BudgetYear">HR</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link"
+                   asp-controller="BudgetLines" asp-action="Entry" asp-route-category="CAPEX">CAPEX</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link"
+                   asp-controller="BudgetLines" asp-action="Entry" asp-route-category="OPEX">OPEX</a>
+            </li>
+        </ul>
+    }
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1 class="mb-0">Employee Cost Allocation</h1>
+            <div class="text-muted">Allocate annual employee cost to activities (mandatory) and projects (optional).</div>
+        </div>
+        <div class="d-flex gap-2">
+            @if (isBudget)
+            {
+                <a asp-action="Budget" asp-route-year="@Model.BudgetYear" class="btn btn-secondary">&larr; Back</a>
+            }
+            else
+            {
+                <a asp-action="Index" class="btn btn-secondary">&larr; Back</a>
+            }
+        </div>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="text-muted small">Employee</div>
+                    <div class="fw-bold">@Model.EmployeeId</div>
+                    <div>@Model.EmployeeName</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">Entity</div>
+                    <div class="fw-bold">@Model.EntityName</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">Cost Center</div>
+                    <div class="fw-bold">@Model.DepartmentName</div>
+                </div>
+                <div class="col-md-3 text-md-end">
+                    <div class="text-muted small">Annual Cost</div>
+                    <div class="fw-bold fs-5">@Model.AnnualCost.ToString("N2")</div>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <div class="d-flex justify-content-between">
+                    <div class="fw-bold">Allocated: @allocated.ToString("N2") (@allocatedPct.ToString("N2")%)</div>
+                    <div class="fw-bold">Remaining: @remaining.ToString("N2") (@remainingPct.ToString("N2")%)</div>
+                </div>
+                <div class="progress mt-2" style="height: 22px;">
+                    <div class="progress-bar bg-primary" role="progressbar" style="width: @allocatedPct%;" aria-valuenow="@allocatedPct" aria-valuemin="0" aria-valuemax="100">
+                        @allocatedPct.ToString("N2")%
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light fw-bold">Add Allocation</div>
+        <div class="card-body">
+            <form asp-action="AddAllocation" method="post" class="row g-3 align-items-end">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="employeeCostId" value="@Model.EmployeeCostId" />
+                <input type="hidden" name="budget" value="@budgetValue" />
+
+                <div class="col-md-2">
+                    <label class="form-label">Mode</label>
+                    <select name="allocationMode" class="form-select" id="allocMode">
+                        <option value="amount" selected>Amount</option>
+                        <option value="percent">Percent</option>
+                    </select>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Activity (mandatory)</label>
+                    <select name="activityId" class="form-select" asp-items="ViewBag.Activities" required></select>
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label">Project (optional)</label>
+                    <select name="projectId" class="form-select" asp-items="ViewBag.Projects">
+                        <option value="">-- None --</option>
+                    </select>
+                </div>
+
+                <div class="col-md-2" id="allocAmountWrap">
+                    <label class="form-label">Amount</label>
+                    <input type="number" step="0.01" min="0" name="allocatedAmount" class="form-control" id="allocAmount" required />
+                </div>
+
+                <div class="col-md-2 d-none" id="allocPercentWrap">
+                    <label class="form-label">Percent</label>
+                    <div class="input-group">
+                        <input type="number" step="0.01" min="0" max="100" name="allocatedPercent" class="form-control" id="allocPercent" />
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">Save Allocation</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-light fw-bold">Allocation Log</div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Activity</th>
+                            <th>Project</th>
+                            <th class="text-end">Amount</th>
+                            <th class="text-end">%</th>
+                            <th class="text-end">Date</th>
+                            <th class="text-end"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @{
+                        var activityItems = ViewBag.ActivityItems as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem> ?? new List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>();
+                        var projectItems = ViewBag.ProjectItems as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem> ?? new List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>();
+                    }
+                    @foreach (var a in Model.HrEmployeeCostAllocations.OrderByDescending(x => x.CreatedAt))
+                    {
+                        var pct = Model.AnnualCost <= 0m ? 0m : Math.Round((a.AllocatedAmount / Model.AnnualCost) * 100m, 2);
+                        var amountStr = a.AllocatedAmount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                        var pctStr = pct.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                        <tr>
+                            <td>@(a.Activity.ActivityCode + " - " + a.Activity.ActivityName)</td>
+                            <td>@(a.Project != null ? (a.Project.ProjectCode + " - " + a.Project.ProjectName) : "")</td>
+                            <td class="text-end">@a.AllocatedAmount.ToString("N2")</td>
+                            <td class="text-end">@pct.ToString("0.##")%</td>
+                            <td class="text-end">@a.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="text-end text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="toggleAllocEdit(@a.AllocationId)">Edit</button>
+                                <form asp-action="DeleteAllocation" method="post" class="d-inline" onsubmit="return confirm('Delete this allocation?');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="allocationId" value="@a.AllocationId" />
+                                    <input type="hidden" name="employeeCostId" value="@Model.EmployeeCostId" />
+                                    <input type="hidden" name="budget" value="@budgetValue" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        <tr class="d-none bg-light" id="allocEditRow-@a.AllocationId">
+                            <td colspan="6">
+                                <form asp-action="EditAllocation" method="post" class="row g-2 align-items-end">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="allocationId" value="@a.AllocationId" />
+                                    <input type="hidden" name="employeeCostId" value="@Model.EmployeeCostId" />
+                                    <input type="hidden" name="budget" value="@budgetValue" />
+
+                                    <div class="col-md-2">
+                                        <label class="form-label small mb-0">Mode</label>
+                                        <select name="allocationMode" class="form-select form-select-sm alloc-edit-mode" data-alloc="@a.AllocationId">
+                                            <option value="amount" selected>Amount</option>
+                                            <option value="percent">Percent</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="col-md-4">
+                                        <label class="form-label small mb-0">Activity</label>
+                                        <select name="activityId" class="form-select form-select-sm" required>
+                                            @foreach (var it in activityItems)
+                                            {
+                                                if (it.Value == a.ActivityId.ToString())
+                                                {
+                                                    <option value="@it.Value" selected>@it.Text</option>
+                                                }
+                                                else
+                                                {
+                                                    <option value="@it.Value">@it.Text</option>
+                                                }
+                                            }
+                                        </select>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <label class="form-label small mb-0">Project</label>
+                                        <select name="projectId" class="form-select form-select-sm">
+                                            <option value="">-- None --</option>
+                                            @foreach (var it in projectItems)
+                                            {
+                                                if (a.ProjectId.HasValue && it.Value == a.ProjectId.Value.ToString())
+                                                {
+                                                    <option value="@it.Value" selected>@it.Text</option>
+                                                }
+                                                else
+                                                {
+                                                    <option value="@it.Value">@it.Text</option>
+                                                }
+                                            }
+                                        </select>
+                                    </div>
+
+                                    <div class="col-md-3 alloc-edit-amount" data-alloc="@a.AllocationId">
+                                        <label class="form-label small mb-0">Amount</label>
+                                        <input type="number" step="0.01" min="0" name="allocatedAmount" class="form-control form-control-sm" value="@amountStr" />
+                                    </div>
+
+                                    <div class="col-md-3 alloc-edit-percent d-none" data-alloc="@a.AllocationId">
+                                        <label class="form-label small mb-0">Percent</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="number" step="0.01" min="0" max="100" name="allocatedPercent" class="form-control" value="@pctStr" />
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12">
+                                        <button type="submit" class="btn btn-sm btn-success">Save changes</button>
+                                        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleAllocEdit(@a.AllocationId)">Cancel</button>
+                                    </div>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var mode = document.getElementById('allocMode');
+            var amountWrap = document.getElementById('allocAmountWrap');
+            var percentWrap = document.getElementById('allocPercentWrap');
+            var amount = document.getElementById('allocAmount');
+            var percent = document.getElementById('allocPercent');
+            if (!mode || !amountWrap || !percentWrap || !amount || !percent) return;
+
+            function apply() {
+                var v = (mode.value || 'amount').toLowerCase();
+                var isPercent = v === 'percent';
+
+                amountWrap.classList.toggle('d-none', isPercent);
+                percentWrap.classList.toggle('d-none', !isPercent);
+
+                amount.required = !isPercent;
+                percent.required = isPercent;
+
+                if (isPercent) amount.value = '';
+                else percent.value = '';
+            }
+
+            mode.addEventListener('change', apply);
+            apply();
+        })();
+
+        function toggleAllocEdit(id) {
+            var row = document.getElementById('allocEditRow-' + id);
+            if (row) row.classList.toggle('d-none');
+        }
+
+        (function () {
+            document.querySelectorAll('.alloc-edit-mode').forEach(function (sel) {
+                sel.addEventListener('change', function () {
+                    var id = sel.getAttribute('data-alloc');
+                    var isPercent = (sel.value || 'amount').toLowerCase() === 'percent';
+                    var amt = document.querySelector('.alloc-edit-amount[data-alloc="' + id + '"]');
+                    var pct = document.querySelector('.alloc-edit-percent[data-alloc="' + id + '"]');
+                    if (amt) amt.classList.toggle('d-none', isPercent);
+                    if (pct) pct.classList.toggle('d-none', !isPercent);
+                });
+            });
+        })();
+    </script>
+}

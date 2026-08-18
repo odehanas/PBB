@@ -1,0 +1,362 @@
+@{
+    ViewData["Title"] = "Admin Room";
+    var entityClaim = User.Claims.FirstOrDefault(c => c.Type == "EntityId")?.Value;
+    var hasEntityScope = int.TryParse(entityClaim, out var scopedEntityId) && scopedEntityId > 0;
+    var isGlobalAdmin = User.IsInRole("SYSADMIN") || (User.IsInRole("ADMIN") && !hasEntityScope);
+    var canManageHistorical = User.IsInRole("SYSADMIN") || User.IsInRole("ADMIN");
+}
+
+<div class="container py-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <h1 class="mb-0">Admin Room</h1>
+
+        <ul class="nav nav-pills" id="adminRoomViewTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="admin-room-cards-tab" data-bs-toggle="tab" data-bs-target="#admin-room-cards" type="button" role="tab" aria-controls="admin-room-cards" aria-selected="true">
+                    Cards
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="admin-room-list-tab" data-bs-toggle="tab" data-bs-target="#admin-room-list" type="button" role="tab" aria-controls="admin-room-list" aria-selected="false">
+                    List
+                </button>
+            </li>
+        </ul>
+    </div>
+
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="admin-room-cards" role="tabpanel" aria-labelledby="admin-room-cards-tab" tabindex="0">
+            <div class="row g-3 row-cols-1 row-cols-md-2 row-cols-lg-3">
+
+                @if (isGlobalAdmin)
+                {
+                    <div class="col">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Entities</h5>
+                                <p class="card-text">Manage government entities.</p>
+                                <a asp-controller="Entities" asp-action="Index" class="btn btn-primary">Open</a>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="col">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">Cost Centers</h5>
+                            <p class="card-text">Create and maintain cost centers per entity.</p>
+                            <a asp-controller="Departments" asp-action="Index" class="btn btn-primary">Open</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">Users</h5>
+                            <p class="card-text">Create users and link them to entities/departments.</p>
+                            <a asp-controller="AppUsers" asp-action="Index" class="btn btn-primary">Open</a>
+                        </div>
+                    </div>
+                </div>
+
+                @if (isGlobalAdmin)
+                {
+                    <div class="col">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">GL Accounts</h5>
+                                <p class="card-text">Chart of Accounts (Revenue, OPEX, CAPEX).</p>
+                                <a asp-controller="GLAccounts" asp-action="Index" class="btn btn-primary">Open</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Items</h5>
+                                <p class="card-text">Items mapped to GL Accounts.</p>
+                                <a asp-controller="Items" asp-action="Index" class="btn btn-primary">Open</a>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="col">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">Programs</h5>
+                            <p class="card-text">Programs per Entity.</p>
+                            <a asp-controller="Programs" asp-action="Index" class="btn btn-primary">Open</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">Activities</h5>
+                            <p class="card-text">Activities mapped to Programs &amp; Departments.</p>
+                            <a asp-controller="Activities" asp-action="Index" class="btn btn-primary">Open</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col">
+                    <div class="card h-100 border-info">
+                        <div class="card-body">
+                            <h5 class="card-title">Program Structure</h5>
+                            <p class="card-text">Tree view: Entity &rarr; Cost Center &rarr; Program &rarr; Activity &rarr; Projects.</p>
+                            <a asp-controller="Admin" asp-action="Structure" class="btn btn-info">Open Tree</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">Projects</h5>
+                            <p class="card-text">Manage Projects (General or Department-specific).</p>
+                            <a asp-controller="Projects" asp-action="Index" class="btn btn-primary">Open</a>
+                        </div>
+                    </div>
+                </div>
+
+                @if (isGlobalAdmin)
+                {
+                    <div class="col">
+                        <div class="card h-100 border-warning">
+                            <div class="card-body">
+                                <h5 class="card-title">Audit Logs</h5>
+                                <p class="card-text">View system access and transaction history.</p>
+                                <a asp-controller="AuditLogs" asp-action="Index" class="btn btn-warning">View Logs</a>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="col">
+                    <div class="card h-100 border-info">
+                        <div class="card-body">
+                            <h5 class="card-title">HR Costs</h5>
+                            <p class="card-text">Import employee annual costs and allocate to activities.</p>
+                            <a asp-controller="HrCosts" asp-action="Index" class="btn btn-info">Open</a>
+                        </div>
+                    </div>
+                </div>
+
+                @if (canManageHistorical)
+                {
+                    <div class="col">
+                        <div class="card h-100 border-dark">
+                            <div class="card-body">
+                                <h5 class="card-title">Historical Actuals</h5>
+                                <p class="card-text">Upload prior-year actuals (Entity / Dept / GL) for trend analysis.</p>
+                                <a asp-controller="Admin" asp-action="HistoricalActuals" class="btn btn-outline-dark">Open</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col">
+                        <div class="card h-100 border-dark">
+                            <div class="card-body">
+                                <h5 class="card-title">Mid-Year Actuals</h5>
+                                <p class="card-text">Upload H1 actuals (Entity / GL) for year-end estimate.</p>
+                                <a asp-controller="Admin" asp-action="MidYearActuals" class="btn btn-outline-dark">Open</a>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="col">
+                    <div class="card h-100 border-primary">
+                        <div class="card-body">
+                            <h5 class="card-title">Budget Entry</h5>
+                            <p class="card-text">Add OPEX, CAPEX, and Revenue lines with monthly and forecast splits.</p>
+                            <a asp-controller="BudgetLines" asp-action="Entry" asp-route-category="REVENUE" class="btn btn-outline-primary">
+                                Open Budget Entry
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col">
+                    <div class="card h-100 border-success">
+                        <div class="card-body">
+                            <h5 class="card-title">Budget Approvals</h5>
+                            <p class="card-text">Review and approve submitted budgets, then send to central finance.</p>
+                            <a asp-controller="Admin" asp-action="Submissions" class="btn btn-success">Open</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col">
+                    <div class="card h-100 border-secondary">
+                        <div class="card-body">
+                            <h5 class="card-title">User Requests</h5>
+                            <p class="card-text">Inbox for master data requests from users.</p>
+                            <a asp-controller="InternalMessages" asp-action="AdminInbox" class="btn btn-secondary">Open</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col">
+                    <div class="card h-100 border-danger">
+                        <div class="card-body">
+                            <h5 class="card-title">Password Reset Requests</h5>
+                            <p class="card-text">Approve reset requests and issue reset links to users.</p>
+                            <a asp-controller="Admin" asp-action="PasswordResets" class="btn btn-outline-danger">Open</a>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="admin-room-list" role="tabpanel" aria-labelledby="admin-room-list-tab" tabindex="0">
+            <div class="table-responsive">
+                <table class="table table-striped align-middle">
+                    <thead>
+                        <tr>
+                            <th style="width: 260px;">Module</th>
+                            <th>Description</th>
+                            <th class="text-end" style="width: 180px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Entities</td>
+                            <td>Manage government entities.</td>
+                            <td class="text-end">
+                                <a asp-controller="Entities" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Cost Centers</td>
+                            <td>Create and maintain cost centers per entity.</td>
+                            <td class="text-end">
+                                <a asp-controller="Departments" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Users</td>
+                            <td>Create users and link them to entities/departments.</td>
+                            <td class="text-end">
+                                <a asp-controller="AppUsers" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
+                            </td>
+                        </tr>
+                        @if (isGlobalAdmin)
+                        {
+                            <tr>
+                                <td>GL Accounts</td>
+                                <td>Chart of Accounts (Revenue, OPEX, CAPEX).</td>
+                                <td class="text-end">
+                                    <a asp-controller="GLAccounts" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Items</td>
+                                <td>Items mapped to GL Accounts.</td>
+                                <td class="text-end">
+                                    <a asp-controller="Items" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
+                                </td>
+                            </tr>
+                        }
+                        <tr>
+                            <td>Programs</td>
+                            <td>Programs per Entity.</td>
+                            <td class="text-end">
+                                <a asp-controller="Programs" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Activities</td>
+                            <td>Activities mapped to Programs &amp; Departments.</td>
+                            <td class="text-end">
+                                <a asp-controller="Activities" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Program Structure</td>
+                            <td>Tree view: Entity &rarr; Cost Center &rarr; Program &rarr; Activity &rarr; Projects.</td>
+                            <td class="text-end">
+                                <a asp-controller="Admin" asp-action="Structure" class="btn btn-sm btn-info">Open Tree</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Projects</td>
+                            <td>Manage Projects (General or Department-specific).</td>
+                            <td class="text-end">
+                                <a asp-controller="Projects" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
+                            </td>
+                        </tr>
+                        @if (isGlobalAdmin)
+                        {
+                            <tr>
+                                <td>Audit Logs</td>
+                                <td>View system access and transaction history.</td>
+                                <td class="text-end">
+                                    <a asp-controller="AuditLogs" asp-action="Index" class="btn btn-sm btn-warning">View Logs</a>
+                                </td>
+                            </tr>
+                        }
+                        <tr>
+                            <td>HR Costs</td>
+                            <td>Import employee annual costs and allocate to activities.</td>
+                            <td class="text-end">
+                                <a asp-controller="HrCosts" asp-action="Index" class="btn btn-sm btn-info">Open</a>
+                            </td>
+                        </tr>
+                        @if (canManageHistorical)
+                        {
+                            <tr>
+                                <td>Historical Actuals</td>
+                                <td>Upload prior-year actuals (Entity / Dept / GL) for trend analysis.</td>
+                                <td class="text-end">
+                                    <a asp-controller="Admin" asp-action="HistoricalActuals" class="btn btn-sm btn-outline-dark">Open</a>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Mid-Year Actuals</td>
+                                <td>Upload H1 actuals (Entity / GL) for year-end estimate.</td>
+                                <td class="text-end">
+                                    <a asp-controller="Admin" asp-action="MidYearActuals" class="btn btn-sm btn-outline-dark">Open</a>
+                                </td>
+                            </tr>
+                        }
+                        <tr>
+                            <td>Budget Entry</td>
+                            <td>Add OPEX, CAPEX, and Revenue lines with monthly and forecast splits.</td>
+                            <td class="text-end">
+                                <a asp-controller="BudgetLines" asp-action="Entry" asp-route-category="REVENUE" class="btn btn-sm btn-outline-primary">Open</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Budget Approvals</td>
+                            <td>Review and approve submitted budgets, then send to central finance.</td>
+                            <td class="text-end">
+                                <a asp-controller="Admin" asp-action="Submissions" class="btn btn-sm btn-success">Open</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>User Requests</td>
+                            <td>Inbox for master data requests from users.</td>
+                            <td class="text-end">
+                                <a asp-controller="InternalMessages" asp-action="AdminInbox" class="btn btn-sm btn-secondary">Open</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Password Reset Requests</td>
+                            <td>Approve reset requests and issue reset links to users.</td>
+                            <td class="text-end">
+                                <a asp-controller="Admin" asp-action="PasswordResets" class="btn btn-sm btn-outline-danger">Open</a>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

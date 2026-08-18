@@ -1,0 +1,173 @@
+@model GovBudget.Controllers.ProjectCostDetailVm
+@{
+    var opexTotal = Model.OpexLines.Sum(x => x.Amount);
+    var capexTotal = Model.CapexLines.Sum(x => x.Amount);
+    var revenueTotal = Model.RevenueLines.Sum(x => x.Amount);
+    var hrTotal = Model.HrLines.Sum(x => x.Amount);
+}
+
+<div class="p-2 bg-white border-top">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+        <div class="fw-bold text-blue">@Model.ProjectLabel</div>
+        <div class="text-muted small">Year @Model.Year</div>
+    </div>
+
+    @if (Model.OpexLines.Count > 0)
+    {
+        <div class="mb-3 detail-section" data-section="opex">
+            <div class="fw-bold small text-uppercase text-muted mb-1">OPEX budget lines (@Model.OpexLines.Count)</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Item</th>
+                            <th>GL</th>
+                            <th class="text-end">Qty</th>
+                            <th class="text-end">Unit Price</th>
+                            <th class="text-end">Amount</th>
+                            <th class="text-end">Forecast 1</th>
+                            <th class="text-end">Forecast 2</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var l in Model.OpexLines)
+                        {
+                            <tr>
+                                <td>@l.ItemCode - @l.ItemName</td>
+                                <td>@l.GLCode - @l.GLName</td>
+                                <td class="text-end">@l.Quantity.ToString("N4")</td>
+                                <td class="text-end">@l.UnitPrice.ToString("N4")</td>
+                                <td class="text-end">@l.Amount.ToString("N2")</td>
+                                <td class="text-end">@l.Forecast1.ToString("N2")</td>
+                                <td class="text-end">@l.Forecast2.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr class="fw-bold table-light">
+                            <td colspan="4" class="text-end">OPEX total</td>
+                            <td class="text-end">@opexTotal.ToString("N2")</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (Model.CapexLines.Count > 0)
+    {
+        <div class="mb-3 detail-section" data-section="capex">
+            <div class="fw-bold small text-uppercase text-muted mb-1">CAPEX budget lines (@Model.CapexLines.Count)</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Item</th>
+                            <th>GL</th>
+                            <th class="text-end">Qty</th>
+                            <th class="text-end">Unit Price</th>
+                            <th class="text-end">Amount</th>
+                            <th class="text-end">Forecast 1</th>
+                            <th class="text-end">Forecast 2</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var l in Model.CapexLines)
+                        {
+                            <tr>
+                                <td>@l.ItemCode - @l.ItemName</td>
+                                <td>@l.GLCode - @l.GLName</td>
+                                <td class="text-end">@l.Quantity.ToString("N4")</td>
+                                <td class="text-end">@l.UnitPrice.ToString("N4")</td>
+                                <td class="text-end">@l.Amount.ToString("N2")</td>
+                                <td class="text-end">@l.Forecast1.ToString("N2")</td>
+                                <td class="text-end">@l.Forecast2.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr class="fw-bold table-light">
+                            <td colspan="4" class="text-end">CAPEX total</td>
+                            <td class="text-end">@capexTotal.ToString("N2")</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (Model.HrLines.Count > 0)
+    {
+        <div class="mb-3 detail-section" data-section="hr">
+            <div class="fw-bold small text-uppercase text-muted mb-1">HR allocations (@Model.HrLines.Count)</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Employee</th>
+                            <th>GL</th>
+                            <th class="text-end">Allocated Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var h in Model.HrLines)
+                        {
+                            <tr>
+                                <td>@h.EmployeeId - @h.EmployeeName</td>
+                                <td>@h.GLCode - @h.GLName</td>
+                                <td class="text-end">@h.Amount.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr class="fw-bold table-light">
+                            <td colspan="2" class="text-end">HR total</td>
+                            <td class="text-end">@hrTotal.ToString("N2")</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (Model.RevenueLines.Count > 0)
+    {
+        <div class="mb-3 detail-section" data-section="revenue">
+            <div class="fw-bold small text-uppercase text-muted mb-1">Revenue budget lines (@Model.RevenueLines.Count)</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Item</th>
+                            <th>GL</th>
+                            <th class="text-end">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var l in Model.RevenueLines)
+                        {
+                            <tr>
+                                <td>@l.ItemCode - @l.ItemName</td>
+                                <td>@l.GLCode - @l.GLName</td>
+                                <td class="text-end">@l.Amount.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr class="fw-bold table-light">
+                            <td colspan="2" class="text-end">Revenue total</td>
+                            <td class="text-end">@revenueTotal.ToString("N2")</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (Model.OpexLines.Count == 0 && Model.CapexLines.Count == 0 && Model.HrLines.Count == 0 && Model.RevenueLines.Count == 0)
+    {
+        <div class="alert alert-info mb-0">No underlying transactions found for this project.</div>
+    }
+</div>

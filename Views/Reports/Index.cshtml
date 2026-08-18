@@ -1,0 +1,787 @@
+@model GovBudget.Controllers.ReportsIndexVm
+
+@{
+    ViewData["Title"] = "Reports";
+    var report = (Model.Report ?? "income").ToLowerInvariant();
+}
+
+<style>
+    /* Denser report tables so more columns/rows fit, esp. with sidebar hidden */
+    .report-dense .table { font-size: .8rem; }
+    .report-dense .table th, .report-dense .table td { padding: .3rem .45rem; vertical-align: middle; }
+    .report-dense .table thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .02em; white-space: nowrap; }
+    .report-dense .table td.text-end, .report-dense .table th.text-end { white-space: nowrap; }
+    .report-dense .card-header { padding: .5rem .75rem; }
+    /* Cost drill-down */
+    .cost-cell { color: #0d6efd; text-decoration: underline dotted; cursor: pointer; }
+    .cost-cell:hover { background-color: rgba(13,110,253,.08); }
+    .detail-section.section-flash { animation: sectionFlash 1.6s ease-out; }
+    @@keyframes sectionFlash {
+        0% { background-color: rgba(255,193,7,.45); }
+        100% { background-color: transparent; }
+    }
+</style>
+
+<script>
+    // Shared inline drill-down for Activity Costs and Project Costs tables.
+    // rowSelector: CSS selector for clickable summary rows (must be immediately followed by a .cost-detail-row).
+    // urlAction: server endpoint; idParam/idAttr: query param name and the row's data attribute holding the id.
+    window.initCostDrilldown = function (rowSelector, urlAction, idParam, idAttr, year, entityId, entityAttr) {
+        function scrollToSection(body, section) {
+            if (!section) return;
+            var target = body.querySelector('.detail-section[data-section="' + section + '"]');
+            if (!target) return;
+            target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            target.classList.remove('section-flash');
+            void target.offsetWidth; // restart animation
+            target.classList.add('section-flash');
+        }
+
+        function ensureOpen(row, detailRow, body, caret, section) {
+            if (detailRow.classList.contains('d-none')) {
+                detailRow.classList.remove('d-none');
+                if (caret) caret.innerHTML = '&#9662;';
+            }
+            if (row.getAttribute('data-loaded') === 'true') {
+                scrollToSection(body, section);
+                return;
+            }
+            if (row.getAttribute('data-loading') === 'true') return;
+            row.setAttribute('data-loading', 'true');
+            body.innerHTML = '<div class="p-3 text-muted small">Loading transactions&hellip;</div>';
+            var rowEntity = entityAttr ? row.getAttribute(entityAttr) : '';
+            var effEntity = (rowEntity && rowEntity !== '0') ? rowEntity : entityId;
+            var url = urlAction + '?' + idParam + '=' + encodeURIComponent(row.getAttribute(idAttr))
+                + '&year=' + encodeURIComponent(year)
+                + (effEntity ? '&entityId=' + encodeURIComponent(effEntity) : '');
+            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (resp) {
+                    if (!resp.ok) throw new Error('Failed to load (' + resp.status + ')');
+                    return resp.text();
+                })
+                .then(function (html) {
+                    body.innerHTML = html;
+                    row.setAttribute('data-loaded', 'true');
+                    row.setAttribute('data-loading', 'false');
+                    scrollToSection(body, section);
+                })
+                .catch(function (err) {
+                    body.innerHTML = '<div class="p-3 text-danger small">' + err.message + '</div>';
+                    row.setAttribute('data-loading', 'false');
+                });
+        }
+
+        document.querySelectorAll(rowSelector).forEach(function (row) {
+            row.addEventListener('click', function (e) {
+                var detailRow = row.nextElementSibling;
+                if (!detailRow || !detailRow.classList.contains('cost-detail-row')) return;
+                var body = detailRow.querySelector('.cost-detail-body');
+                var caret = row.querySelector('.cost-caret');
+                var cell = e.target.closest('.cost-cell');
+                var section = cell ? cell.getAttribute('data-section') : null;
+
+                if (section) {
+                    // Clicking a specific amount always opens (never collapses) and scrolls to that section.
+                    ensureOpen(row, detailRow, body, caret, section);
+                    return;
+                }
+                // Clicking elsewhere on the row toggles the panel.
+                if (detailRow.classList.contains('d-none')) {
+                    ensureOpen(row, detailRow, body, caret, null);
+                } else {
+                    detailRow.classList.add('d-none');
+                    if (caret) caret.innerHTML = '&#9656;';
+                }
+            });
+        });
+    };
+</script>
+
+<div class="container-fluid py-3 report-dense">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="mb-0">Reports</h3>
+            <div class="text-muted small">Financial layout and cost reports.</div>
+            @if (ViewBag.ActiveScenarioName != null)
+            {
+                <div class="mt-1 d-print-none">
+                    <span class="badge bg-warning text-dark">What-If Active: @ViewBag.ActiveScenarioName</span>
+                    <a class="ms-2 small" asp-controller="WhatIf" asp-action="Index">Manage</a>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="d-print-none mb-3">
+        <ul class="nav nav-pills flex-wrap gap-2">
+            <li class="nav-item">
+                <a class="nav-link @(report == "income" ? "active" : "")"
+                   asp-controller="Reports" asp-action="Index"
+                   asp-route-report="income" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-file-earmark-text app-nav-icon"></i>Income Statement
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(report == "gl" ? "active" : "")"
+                   asp-controller="Reports" asp-action="Index"
+                   asp-route-report="gl" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-list-columns-reverse app-nav-icon"></i>GL View
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(report == "projects" ? "active" : "")"
+                   asp-controller="Reports" asp-action="Index"
+                   asp-route-report="projects" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-folder2-open app-nav-icon"></i>Project Costs
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(report == "activities" ? "active" : "")"
+                   asp-controller="Reports" asp-action="Index"
+                   asp-route-report="activities" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-diagram-3 app-nav-icon"></i>Activity Costs
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(report == "activitiesalloc" ? "active" : "")"
+                   asp-controller="Reports" asp-action="Index"
+                   asp-route-report="activitiesalloc" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-diagram-3-fill app-nav-icon"></i>Activity Costs (After Allocation)
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(report == "hralloc" ? "active" : "")"
+                   asp-controller="Reports" asp-action="Index"
+                   asp-route-report="hralloc" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-people app-nav-icon"></i>HR Allocations (Employee)
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(report == "entitysummary" ? "active" : "")"
+                   asp-controller="Reports" asp-action="Index"
+                   asp-route-report="entitysummary" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-building app-nav-icon"></i>Entity Budget Summary
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(report == "trend" ? "active" : "")"
+                   asp-controller="Reports" asp-action="Index"
+                   asp-route-report="trend" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-graph-up-arrow app-nav-icon"></i>Trend Summary
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link"
+                   asp-controller="Reports" asp-action="Builder"
+                   asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-tools app-nav-icon"></i>Report Builder
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link fw-semibold"
+                   asp-controller="Reports" asp-action="Presentation"
+                   asp-route-year="@Model.Year" asp-route-entityId="@(Model.EntityId?.ToString() ?? "")"
+                   target="_blank" rel="noopener"
+                   title="Open the executive PBB vs Traditional slide deck (opens in a new tab)">
+                    <i class="bi bi-easel2 app-nav-icon"></i>Executive Deck <i class="bi bi-box-arrow-up-right small"></i>
+                </a>
+            </li>
+            @if (User.IsInRole("SYSADMIN") || User.IsInRole("ADMIN"))
+            {
+                <li class="nav-item">
+                    <a class="nav-link"
+                       asp-controller="Allocation" asp-action="Index"
+                       asp-route-year="@Model.Year">
+                        <i class="bi bi-shuffle app-nav-icon"></i>Cost Allocation
+                    </a>
+                </li>
+            }
+        </ul>
+    </div>
+
+    <form method="get" class="row g-2 align-items-end mb-3 d-print-none">
+        <input type="hidden" name="report" value="@Model.Report" />
+
+        <div class="col-auto">
+            <label class="form-label">Year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="Model.YearOptions"></select>
+        </div>
+
+        @if (Model.IsAdmin)
+        {
+            <div class="col-md-6">
+                <label class="form-label">Entity</label>
+                <select name="entityId" class="form-select form-select-sm" asp-items="Model.EntityOptions"></select>
+            </div>
+        }
+
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+
+        <div class="col-auto">
+            <a class="btn btn-sm btn-outline-success"
+               asp-controller="Reports" asp-action="Export"
+               asp-route-report="@Model.Report"
+               asp-route-year="@Model.Year"
+               asp-route-entityId="@(Model.EntityId?.ToString() ?? "")">
+                Download Excel
+            </a>
+        </div>
+
+        <div class="col-auto">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">Print</button>
+        </div>
+
+    </form>
+
+            @if (report == "income")
+            {
+                if (Model.Income == null || Model.Income.Lines.Count == 0)
+                {
+                    <div class="alert alert-info">No data found for the selected filters.</div>
+                }
+                else
+                {
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                            <span>Summary</span>
+                            <span class="text-muted small fw-normal">Click a metric to drill down to its detail lines</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th></th>
+                                            <th class="text-end">Current</th>
+                                            <th class="text-end">Forecast 1</th>
+                                            <th class="text-end">Forecast 2</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr class="income-metric" data-filter="revenue" style="cursor: pointer;" title="Drill down to revenue lines">
+                                            <td class="cost-cell">Total Revenue</td>
+                                            <td class="text-end fw-bold">@Model.Income.TotalRevenue.ToString("N2")</td>
+                                            <td class="text-end fw-bold">@Model.Income.Forecast1TotalRevenue.ToString("N2")</td>
+                                            <td class="text-end fw-bold">@Model.Income.Forecast2TotalRevenue.ToString("N2")</td>
+                                        </tr>
+                                        <tr class="income-metric" data-filter="expense" style="cursor: pointer;" title="Drill down to expenditure lines (HR + CAPEX + OPEX)">
+                                            <td class="cost-cell">Total Expenditures</td>
+                                            <td class="text-end fw-bold">@Model.Income.TotalExpense.ToString("N2")</td>
+                                            <td class="text-end fw-bold">@Model.Income.Forecast1TotalExpense.ToString("N2")</td>
+                                            <td class="text-end fw-bold">@Model.Income.Forecast2TotalExpense.ToString("N2")</td>
+                                        </tr>
+                                        <tr class="income-metric" data-filter="all" style="cursor: pointer;" title="Drill down to all lines">
+                                            <td class="cost-cell">Net</td>
+                                            <td class="text-end fw-bold">@Model.Income.SurplusDeficit.ToString("N2")</td>
+                                            <td class="text-end fw-bold">@Model.Income.Forecast1SurplusDeficit.ToString("N2")</td>
+                                            <td class="text-end fw-bold">@Model.Income.Forecast2SurplusDeficit.ToString("N2")</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-2 small">
+                                <span class="text-muted me-1">Expenditure breakdown:</span>
+                                <span class="badge bg-light text-dark border income-metric" data-filter="HR" style="cursor: pointer;">HR: @Model.Income.TotalHr.ToString("N2")</span>
+                                <span class="badge bg-light text-dark border income-metric" data-filter="CAPEX" style="cursor: pointer;">CAPEX: @Model.Income.TotalCapex.ToString("N2")</span>
+                                <span class="badge bg-light text-dark border income-metric" data-filter="OPEX" style="cursor: pointer;">OPEX: @Model.Income.TotalOpex.ToString("N2")</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow-sm d-none detail-section" id="incomeDetails" data-section="income">
+                        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                            <span class="fw-bold">Details (Program → Activity → GL) — <span id="incomeFilterLabel" class="text-primary">All</span></span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="incomeShowAll">Show all</button>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Program</th>
+                                            <th>Activity</th>
+                                            <th>GL</th>
+                                            <th>GL Name</th>
+                                            <th>Type</th>
+                                            <th class="text-end">Amount</th>
+                                            <th class="text-end">Forecast 1</th>
+                                            <th class="text-end">Forecast 2</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach (var r in Model.Income.Lines)
+                                    {
+                                        <tr data-cat="@r.CategoryCode">
+                                            <td>@(string.IsNullOrWhiteSpace(r.ProgramCode) ? "" : (r.ProgramCode + " - " + r.ProgramName))</td>
+                                            <td>@(string.IsNullOrWhiteSpace(r.ActivityCode) ? "" : (r.ActivityCode + " - " + r.ActivityName))</td>
+                                            <td>@r.GLCode</td>
+                                            <td>@r.GLName</td>
+                                            <td>@r.CategoryCode</td>
+                                            <td class="text-end">@r.Amount.ToString("N2")</td>
+                                            <td class="text-end">@r.Forecast1Amount.ToString("N2")</td>
+                                            <td class="text-end">@r.Forecast2Amount.ToString("N2")</td>
+                                        </tr>
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                        (function () {
+                            var details = document.getElementById('incomeDetails');
+                            if (!details) return;
+                            var labelEl = document.getElementById('incomeFilterLabel');
+                            var filterMap = {
+                                revenue: { cats: ['REVENUE'], label: 'Revenue' },
+                                expense: { cats: ['HR', 'CAPEX', 'OPEX'], label: 'Expenditures' },
+                                all: { cats: null, label: 'All' },
+                                HR: { cats: ['HR'], label: 'HR' },
+                                CAPEX: { cats: ['CAPEX'], label: 'CAPEX' },
+                                OPEX: { cats: ['OPEX'], label: 'OPEX' }
+                            };
+                            function applyFilter(key) {
+                                var cfg = filterMap[key] || filterMap.all;
+                                details.classList.remove('d-none');
+                                details.querySelectorAll('tbody tr[data-cat]').forEach(function (tr) {
+                                    var cat = tr.getAttribute('data-cat');
+                                    tr.style.display = (!cfg.cats || cfg.cats.indexOf(cat) >= 0) ? '' : 'none';
+                                });
+                                labelEl.textContent = cfg.label;
+                                details.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                details.classList.remove('section-flash');
+                                void details.offsetWidth;
+                                details.classList.add('section-flash');
+                            }
+                            document.querySelectorAll('.income-metric').forEach(function (el) {
+                                el.addEventListener('click', function () {
+                                    applyFilter(el.getAttribute('data-filter'));
+                                });
+                            });
+                            var showAll = document.getElementById('incomeShowAll');
+                            if (showAll) showAll.addEventListener('click', function () { applyFilter('all'); });
+                        })();
+                    </script>
+                }
+            }
+            else if (report == "gl")
+            {
+                if (Model.GlSummary == null || Model.GlSummary.Count == 0)
+                {
+                    <div class="alert alert-info">No data found for the selected filters.</div>
+                }
+                else
+                {
+                    var totalRevenue = Model.GlSummary.Sum(x => x.Revenue);
+                    var totalHr = Model.GlSummary.Sum(x => x.Hr);
+                    var totalCapex = Model.GlSummary.Sum(x => x.Capex);
+                    var totalOpex = Model.GlSummary.Sum(x => x.Opex);
+                    var totalNet = Model.GlSummary.Sum(x => x.Net);
+
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-white fw-bold">GL View</div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>GL</th>
+                                            <th>GL Name</th>
+                                            <th class="text-end">Revenue</th>
+                                            <th class="text-end">HR</th>
+                                            <th class="text-end">CAPEX</th>
+                                            <th class="text-end">OPEX</th>
+                                            <th class="text-end">Net</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach (var r in Model.GlSummary)
+                                    {
+                                        <tr class="gl-row" style="cursor: pointer;" data-gl-code="@r.GLCode" data-entity-id="@(r.EntityId > 0 ? r.EntityId : (Model.EntityId ?? 0))" data-loaded="false" title="Click to view underlying transactions">
+                                            <td><span class="cost-caret text-muted me-1">&#9656;</span>@r.GLCode</td>
+                                            <td>@r.GLName</td>
+                                            <td class="text-end cost-cell" data-section="revenue" title="View revenue transactions">@r.Revenue.ToString("N2")</td>
+                                            <td class="text-end cost-cell" data-section="hr" title="View HR (imported)">@r.Hr.ToString("N2")</td>
+                                            <td class="text-end cost-cell" data-section="capex" title="View CAPEX transactions">@r.Capex.ToString("N2")</td>
+                                            <td class="text-end cost-cell" data-section="opex" title="View OPEX transactions">@r.Opex.ToString("N2")</td>
+                                            <td class="text-end">@r.Net.ToString("N2")</td>
+                                        </tr>
+                                        <tr class="cost-detail-row d-none">
+                                            <td colspan="7" class="p-0 bg-light">
+                                                <div class="cost-detail-body"></div>
+                                            </td>
+                                        </tr>
+                                    }
+                                        <tr class="table-light fw-bold">
+                                            <td></td>
+                                            <td>Total</td>
+                                            <td class="text-end">@totalRevenue.ToString("N2")</td>
+                                            <td class="text-end">@totalHr.ToString("N2")</td>
+                                            <td class="text-end">@totalCapex.ToString("N2")</td>
+                                            <td class="text-end">@totalOpex.ToString("N2")</td>
+                                            <td class="text-end">@totalNet.ToString("N2")</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                        (function () {
+                            var year = @Model.Year;
+                            var entityId = '@(Model.EntityId?.ToString() ?? "")';
+                            window.initCostDrilldown('.gl-row', '@Url.Action("GlDetail", "Reports")', 'glCode', 'data-gl-code', year, entityId, 'data-entity-id');
+                        })();
+                    </script>
+                }
+            }
+            else if (report == "projects")
+            {
+                if (Model.ProjectCosts == null || Model.ProjectCosts.Count == 0)
+                {
+                    <div class="alert alert-info">No data found for the selected filters.</div>
+                }
+                else
+                {
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-white fw-bold">Project Costs</div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Project</th>
+                                            <th class="text-end">Revenue</th>
+                                            <th class="text-end">HR</th>
+                                            <th class="text-end">CAPEX</th>
+                                            <th class="text-end">OPEX</th>
+                                            <th class="text-end">Total Expense</th>
+                                            <th class="text-end">Net</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach (var r in Model.ProjectCosts)
+                                    {
+                                        <tr class="project-row" style="cursor: pointer;" data-project-id="@r.ProjectId" data-loaded="false" title="Click to view underlying transactions">
+                                            <td><span class="cost-caret text-muted me-1">&#9656;</span>@(r.ProjectCode + " - " + r.ProjectName)</td>
+                                            <td class="text-end cost-cell" data-section="revenue" title="View revenue transactions">@r.Revenue.ToString("N2")</td>
+                                            <td class="text-end cost-cell" data-section="hr" title="View HR allocations">@r.Hr.ToString("N2")</td>
+                                            <td class="text-end cost-cell" data-section="capex" title="View CAPEX transactions">@r.Capex.ToString("N2")</td>
+                                            <td class="text-end cost-cell" data-section="opex" title="View OPEX transactions">@r.Opex.ToString("N2")</td>
+                                            <td class="text-end">@r.TotalExpense.ToString("N2")</td>
+                                            <td class="text-end">@r.Net.ToString("N2")</td>
+                                        </tr>
+                                        <tr class="cost-detail-row d-none">
+                                            <td colspan="7" class="p-0 bg-light">
+                                                <div class="cost-detail-body"></div>
+                                            </td>
+                                        </tr>
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                        (function () {
+                            var year = @Model.Year;
+                            var entityId = '@(Model.EntityId?.ToString() ?? "")';
+                            window.initCostDrilldown('.project-row', '@Url.Action("ProjectCostDetail", "Reports")', 'projectId', 'data-project-id', year, entityId);
+                        })();
+                    </script>
+                }
+            }
+            else if (report == "activities" || report == "activitiesalloc")
+            {
+                var afterAlloc = Model.AfterAllocation;
+                var colCount = afterAlloc ? 11 : 10;
+                if (Model.ActivityCosts == null || Model.ActivityCosts.Count == 0)
+                {
+                    <div class="alert alert-info">No data found for the selected filters.</div>
+                }
+                else
+                {
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                            <span>@(afterAlloc ? "Activity Costs (After Allocation)" : "Activity Costs")</span>
+                        </div>
+                        @if (afterAlloc)
+                        {
+                            <div class="alert alert-secondary rounded-0 border-0 border-bottom py-2 mb-0 small">
+                                Costs below include the latest posted <strong>step-down allocation</strong> (Support &rarr; Mandate), spread onto each programme's activities pro-rata by their direct cost in the same category. The <strong>Allocated</strong> column is the net moved in (+) or out (&minus;). CAPEX is never reallocated. This updates automatically whenever the allocation is re-run.
+                            </div>
+                        }
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Program</th>
+                                            <th>Activity</th>
+                                            <th class="text-end">Revenue</th>
+                                            <th class="text-end">HR</th>
+                                            <th class="text-end">CAPEX</th>
+                                            <th class="text-end">OPEX</th>
+                                            @if (afterAlloc)
+                                            {
+                                                <th class="text-end">Allocated</th>
+                                            }
+                                            <th class="text-end">Total Expense</th>
+                                            <th class="text-end">Net</th>
+                                            <th class="text-end">Forecast 1 Total</th>
+                                            <th class="text-end">Forecast 2 Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @{
+                                        var programGroups = Model.ActivityCosts
+                                            .GroupBy(x => new { x.ProgramCode, x.ProgramName })
+                                            .OrderBy(g => g.Key.ProgramCode);
+                                    }
+                                    @foreach (var g in programGroups)
+                                    {
+                                        var programLabel = string.IsNullOrWhiteSpace(g.Key.ProgramCode) ? "No Program" : (g.Key.ProgramCode + " - " + g.Key.ProgramName);
+                                        var totalRevenue = g.Sum(x => x.Revenue);
+                                        var totalHr = g.Sum(x => x.Hr);
+                                        var totalCapex = g.Sum(x => x.Capex);
+                                        var totalOpex = g.Sum(x => x.Opex);
+                                        var totalAllocated = g.Sum(x => x.Allocated);
+                                        var totalExpense = g.Sum(x => x.TotalExpense);
+                                        var totalNet = g.Sum(x => x.Net);
+                                        var totalF1 = g.Sum(x => x.Forecast1TotalExpense);
+                                        var totalF2 = g.Sum(x => x.Forecast2TotalExpense);
+
+                                        <tr class="table-light fw-bold">
+                                            <td colspan="2">@programLabel</td>
+                                            <td class="text-end">@totalRevenue.ToString("N2")</td>
+                                            <td class="text-end">@totalHr.ToString("N2")</td>
+                                            <td class="text-end">@totalCapex.ToString("N2")</td>
+                                            <td class="text-end">@totalOpex.ToString("N2")</td>
+                                            @if (afterAlloc)
+                                            {
+                                                <td class="text-end">@totalAllocated.ToString("N2")</td>
+                                            }
+                                            <td class="text-end">@totalExpense.ToString("N2")</td>
+                                            <td class="text-end">@totalNet.ToString("N2")</td>
+                                            <td class="text-end">@totalF1.ToString("N2")</td>
+                                            <td class="text-end">@totalF2.ToString("N2")</td>
+                                        </tr>
+
+                                        foreach (var r in g.OrderBy(x => x.ActivityCode))
+                                        {
+                                            var clickable = r.ActivityId > 0;
+                                            <tr class="@(clickable ? "activity-row" : "")" style="@(clickable ? "cursor: pointer;" : "")" data-activity-id="@r.ActivityId" data-loaded="false" title="@(clickable ? "Click to view underlying transactions" : "")">
+                                                <td></td>
+                                                <td>@if (clickable) { <span class="cost-caret text-muted me-1">&#9656;</span> }@(r.ActivityCode + " - " + r.ActivityName)</td>
+                                                <td class="text-end @(clickable ? "cost-cell" : "")" data-section="revenue">@r.Revenue.ToString("N2")</td>
+                                                <td class="text-end @(clickable ? "cost-cell" : "")" data-section="hr">@r.Hr.ToString("N2")</td>
+                                                <td class="text-end @(clickable ? "cost-cell" : "")" data-section="capex">@r.Capex.ToString("N2")</td>
+                                                <td class="text-end @(clickable ? "cost-cell" : "")" data-section="opex">@r.Opex.ToString("N2")</td>
+                                                @if (afterAlloc)
+                                                {
+                                                    <td class="text-end @(r.Allocated < 0 ? "text-danger" : (r.Allocated > 0 ? "text-success" : ""))">@r.Allocated.ToString("N2")</td>
+                                                }
+                                                <td class="text-end">@r.TotalExpense.ToString("N2")</td>
+                                                <td class="text-end">@r.Net.ToString("N2")</td>
+                                                <td class="text-end">@r.Forecast1TotalExpense.ToString("N2")</td>
+                                                <td class="text-end">@r.Forecast2TotalExpense.ToString("N2")</td>
+                                            </tr>
+                                            @if (clickable)
+                                            {
+                                                <tr class="cost-detail-row d-none">
+                                                    <td colspan="@colCount" class="p-0 bg-light">
+                                                        <div class="cost-detail-body"></div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                        (function () {
+                            var year = @Model.Year;
+                            var entityId = '@(Model.EntityId?.ToString() ?? "")';
+                            window.initCostDrilldown('.activity-row', '@Url.Action("ActivityCostDetail", "Reports")', 'activityId', 'data-activity-id', year, entityId);
+                        })();
+                    </script>
+                }
+            }
+            else if (report == "hralloc")
+            {
+                if (Model.HrAllocations == null || Model.HrAllocations.Count == 0)
+                {
+                    <div class="alert alert-info">No data found for the selected filters.</div>
+                }
+                else
+                {
+                    var importedTotal = ViewBag.HrImportedTotal != null ? (decimal)ViewBag.HrImportedTotal : 0m;
+                    var allocatedTotal = ViewBag.HrAllocatedTotal != null ? (decimal)ViewBag.HrAllocatedTotal : 0m;
+                    var unallocatedTotal = ViewBag.HrUnallocatedTotal != null ? (decimal)ViewBag.HrUnallocatedTotal : 0m;
+
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-header bg-white fw-bold">HR Allocation Summary</div>
+                        <div class="card-body">
+                            <div class="row g-2">
+                                <div class="col-md-4">
+                                    <div class="text-muted small">Imported HR (Annual Cost)</div>
+                                    <div class="fw-bold">@importedTotal.ToString("N2")</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="text-muted small">Allocated HR</div>
+                                    <div class="fw-bold">@allocatedTotal.ToString("N2")</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="text-muted small">Unallocated HR</div>
+                                    <div class="fw-bold">@unallocatedTotal.ToString("N2")</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-white fw-bold">HR Allocations (Employee → Program → Activity → GL)</div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Employee</th>
+                                            <th>Entity</th>
+                                            <th>Cost Center</th>
+                                            <th>Program</th>
+                                            <th>Activity</th>
+                                            <th>GL</th>
+                                            <th class="text-end">Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach (var r in Model.HrAllocations)
+                                    {
+                                        <tr>
+                                            <td>@(r.EmployeeId + " - " + r.EmployeeName)</td>
+                                            <td>@r.EntityName</td>
+                                            <td>@r.DepartmentName</td>
+                                            <td>@(string.IsNullOrWhiteSpace(r.ProgramCode) ? "" : (r.ProgramCode + " - " + r.ProgramName))</td>
+                                            <td>@(r.ActivityCode + " - " + r.ActivityName)</td>
+                                            <td>@(string.IsNullOrWhiteSpace(r.GLName) ? r.GLCode : (r.GLCode + " - " + r.GLName))</td>
+                                            <td class="text-end">@r.Amount.ToString("N2")</td>
+                                        </tr>
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+            else if (report == "entitysummary")
+            {
+                if (Model.EntitySummary == null || Model.EntitySummary.Count == 0)
+                {
+                    <div class="alert alert-info">No data found for the selected filters.</div>
+                }
+                else
+                {
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-white fw-bold">Entity Budget Summary</div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Entity</th>
+                                            <th class="text-end">Revenue</th>
+                                            <th class="text-end">HR Cost</th>
+                                            <th class="text-end">Head Count</th>
+                                            <th class="text-end">CAPEX</th>
+                                            <th class="text-end">OPEX</th>
+                                            <th class="text-end">Total Expense</th>
+                                            <th class="text-end">Net</th>
+                                            <th class="text-end">Forecast 1 Revenue</th>
+                                            <th class="text-end">Forecast 1 Total Expense</th>
+                                            <th class="text-end">Forecast 1 Net</th>
+                                            <th class="text-end">Forecast 2 Revenue</th>
+                                            <th class="text-end">Forecast 2 Total Expense</th>
+                                            <th class="text-end">Forecast 2 Net</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach (var r in Model.EntitySummary)
+                                    {
+                                        <tr>
+                                            <td>@(r.EntityCode + " - " + r.EntityName)</td>
+                                            <td class="text-end">@r.Revenue.ToString("N2")</td>
+                                            <td class="text-end">@r.HrCost.ToString("N2")</td>
+                                            <td class="text-end">@r.HeadCount.ToString("N0")</td>
+                                            <td class="text-end">@r.Capex.ToString("N2")</td>
+                                            <td class="text-end">@r.Opex.ToString("N2")</td>
+                                            <td class="text-end">@r.TotalExpense.ToString("N2")</td>
+                                            <td class="text-end">@r.Net.ToString("N2")</td>
+                                            <td class="text-end">@r.Forecast1Revenue.ToString("N2")</td>
+                                            <td class="text-end">@r.Forecast1TotalExpense.ToString("N2")</td>
+                                            <td class="text-end">@r.Forecast1Net.ToString("N2")</td>
+                                            <td class="text-end">@r.Forecast2Revenue.ToString("N2")</td>
+                                            <td class="text-end">@r.Forecast2TotalExpense.ToString("N2")</td>
+                                            <td class="text-end">@r.Forecast2Net.ToString("N2")</td>
+                                        </tr>
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+            else if (report == "trend")
+            {
+                if (Model.TrendSummary == null || Model.TrendSummary.Count == 0)
+                {
+                    <div class="alert alert-info">No data found for the selected filters.</div>
+                }
+                else
+                {
+                    var y = Model.Year;
+
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-white fw-bold">Trend Summary (Actuals + Budget + Forecasts)</div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Line</th>
+                                            <th class="text-end">@((y - 1).ToString()) Actual</th>
+                                            <th class="text-end">@y Budget</th>
+                                            <th class="text-end">@((y + 1).ToString()) Forecast</th>
+                                            <th class="text-end">@((y + 2).ToString()) Forecast</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach (var r in Model.TrendSummary)
+                                    {
+                                        <tr>
+                                            <td>@r.Line</td>
+                                            <td class="text-end">@r.Actual.ToString("N2")</td>
+                                            <td class="text-end">@r.Budget.ToString("N2")</td>
+                                            <td class="text-end">@r.Forecast1.ToString("N2")</td>
+                                            <td class="text-end">@r.Forecast2.ToString("N2")</td>
+                                        </tr>
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+</div>

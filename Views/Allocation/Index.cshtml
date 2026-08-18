@@ -1,0 +1,326 @@
+@model GovBudget.Controllers.AllocationIndexVm
+@{
+    ViewData["Title"] = "Cost Allocation";
+    string Prog(int id) => Model.ProgramMap.TryGetValue(id, out var v) ? v : ("#" + id);
+}
+<link rel="stylesheet" href="~/css/tour.css" />
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div data-tour="intro">
+            <div class="d-flex align-items-center gap-2">
+                <h3 class="mb-0">Cost Allocation</h3>
+                <button type="button" id="startAllocTour" class="btn btn-sm btn-outline-primary">Take a tour</button>
+            </div>
+            <div class="text-muted small">Classify programs, define reallocation rules, and run the step-down allocation. Entity admins manage their own entity; system admins manage all.</div>
+        </div>
+        <div class="d-flex gap-2" data-tour="navlinks">
+            <a class="btn btn-sm btn-outline-secondary" asp-action="Drivers" asp-route-year="@Model.Year" asp-route-entityId="@Model.EntityId">Driver values</a>
+            <a class="btn btn-sm btn-outline-secondary" asp-action="Runs" asp-route-year="@Model.Year" asp-route-entityId="@Model.EntityId">Runs &amp; audit</a>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
+        <form method="get" class="row g-2 align-items-end" data-tour="filter">
+            <div class="col-auto">
+                <label class="form-label">Year</label>
+                <select name="year" class="form-select form-select-sm" asp-items="Model.YearOptions"></select>
+            </div>
+            <div class="col-auto">
+                <label class="form-label">Entity</label>
+                <select name="entityId" class="form-select form-select-sm" asp-items="Model.EntityOptions"></select>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-sm btn-primary">Apply</button>
+            </div>
+        </form>
+        <form method="post" asp-action="Run" class="ms-auto" data-tour="run" onsubmit="return confirm('Run step-down allocation for @Model.Year? This supersedes the previous posted run.');">
+            <input type="hidden" name="year" value="@Model.Year" />
+            <input type="hidden" name="entityId" value="@(Model.EntityId?.ToString() ?? "")" />
+            <button class="btn btn-sm btn-success">Run allocation</button>
+        </form>
+    </div>
+
+    <div class="alert alert-primary py-2 small mb-3">
+        <strong>Full-allocation mode:</strong> every run allocates <strong>100% of each Support program's cost</strong>
+        (OPEX, CAPEX, HR &mdash; all categories) to Mandate programs. Rules below only choose the <em>split method &amp; targets</em>
+        (explicit weights / driver / equal); a Support program with no rule is split equally across all Mandate programs in its entity.
+        The per-rule <em>Category scope</em> and <em>Source %</em> are ignored for Support programs.
+    </div>
+
+    @if (Model.LatestRun != null)
+    {
+        <div class="alert @(Model.LatestRun.ReconciledOk ? "alert-success" : "alert-warning") py-2" data-tour="status">
+            Latest posted run #@Model.LatestRun.RunId at @Model.LatestRun.RunAt.ToString("yyyy-MM-dd HH:mm") UTC -
+            @(Model.LatestRun.ReconciledOk ? "reconciled OK" : "RECONCILIATION MISMATCH"). @Model.LatestRun.Notes
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-info py-2" data-tour="status">No posted allocation run yet for @Model.Year. Define rules below and click <strong>Run allocation</strong>.</div>
+    }
+
+    <div class="row g-3">
+        @* ---------- Program classification ---------- *@
+        <div class="col-lg-5">
+            <div class="card shadow-sm h-100" data-tour="classify">
+                <div class="card-header bg-white fw-bold">Program classification</div>
+                <div class="card-body">
+                    <div class="text-muted small mb-2">Support programs are reallocated to Mandate programs. Sequence sets step-down order (lower runs first).</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light"><tr><th>Program</th><th>Type</th><th>Seq</th><th></th></tr></thead>
+                            <tbody>
+                            @foreach (var p in Model.Programs)
+                            {
+                                <tr>
+                                    <td>
+                                        <div>@p.ProgramCode</div>
+                                        <div class="text-muted small">@p.ProgramName</div>
+                                    </td>
+                                    <td colspan="3">
+                                        <form method="post" asp-action="ClassifyProgram" class="row g-1 align-items-center">
+                                            <input type="hidden" name="programId" value="@p.ProgramId" />
+                                            <input type="hidden" name="year" value="@Model.Year" />
+                                            <input type="hidden" name="entityId" value="@(Model.EntityId?.ToString() ?? "")" />
+                                            <div class="col-auto">
+                                                <select name="programType" class="form-select form-select-sm">
+                                                    <option value="Mandate" selected="@(p.ProgramType != "Support")">Mandate</option>
+                                                    <option value="Support" selected="@(p.ProgramType == "Support")">Support</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-auto">
+                                                <input name="allocationSequence" type="number" class="form-control form-control-sm" style="width:80px" placeholder="seq" value="@(p.AllocationSequence?.ToString() ?? "")" />
+                                            </div>
+                                            <div class="col-auto">
+                                                <button class="btn btn-sm btn-outline-primary">Save</button>
+                                            </div>
+                                        </form>
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ---------- Rules ---------- *@
+        <div class="col-lg-7">
+            <div class="card shadow-sm mb-3" data-tour="rules">
+                <div class="card-header bg-white fw-bold">Allocation rules (@Model.Year)</div>
+                <div class="card-body">
+                    @if (Model.Rules.Count == 0)
+                    {
+                        <div class="text-muted small">No rules yet. Add one below.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle">
+                                <thead class="table-light"><tr><th>Source (Support)</th><th>Method</th><th>Categories</th><th>Targets</th><th>%</th><th>Seq</th><th></th></tr></thead>
+                                <tbody>
+                                @foreach (var r in Model.Rules)
+                                {
+                                    <tr class="@(r.IsActive ? "" : "text-muted")">
+                                        <td>@Prog(r.SourceProgramId)</td>
+                                        <td>@r.Method @(r.DriverId.HasValue ? "(drv " + r.DriverId + ")" : "")</td>
+                                        <td>@r.CategoryScopeCsv</td>
+                                        <td>@r.TargetScope</td>
+                                        <td>@r.SourcePercent.ToString("0.#")</td>
+                                        <td>@r.Sequence</td>
+                                        <td>
+                                            <form method="post" asp-action="RuleDelete" onsubmit="return confirm('Delete this rule?');">
+                                                <input type="hidden" name="ruleId" value="@r.RuleId" />
+                                                <input type="hidden" name="year" value="@Model.Year" />
+                                                <input type="hidden" name="entityId" value="@(Model.EntityId?.ToString() ?? "")" />
+                                                <button class="btn btn-sm btn-outline-danger py-0">Delete</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="card shadow-sm" data-tour="addrule">
+                <div class="card-header bg-white fw-bold">Add rule</div>
+                <div class="card-body">
+                    @if (Model.SupportPrograms.Count == 0)
+                    {
+                        <div class="alert alert-warning py-2 mb-0">Classify at least one program as <strong>Support</strong> first.</div>
+                    }
+                    else
+                    {
+                        <form method="post" asp-action="RuleSave" class="row g-2">
+                            <input type="hidden" name="ruleId" value="0" />
+                            <input type="hidden" name="year" value="@Model.Year" />
+                            <input type="hidden" name="entityIdFilter" value="@(Model.EntityId?.ToString() ?? "")" />
+                            <div class="col-md-6">
+                                <label class="form-label">Source Support program</label>
+                                <select name="sourceProgramId" class="form-select form-select-sm" id="srcProg" required>
+                                    @foreach (var p in Model.SupportPrograms)
+                                    {
+                                        <option value="@p.ProgramId" data-entity="@p.EntityId">@p.ProgramCode - @p.ProgramName</option>
+                                    }
+                                </select>
+                                <input type="hidden" name="ruleEntityId" id="ruleEntityId" value="@(Model.SupportPrograms.FirstOrDefault()?.EntityId ?? 0)" />
+                            </div>
+                            <div class="col-md-3" data-tour="method">
+                                <label class="form-label">Method</label>
+                                <select name="method" class="form-select form-select-sm" id="ruleMethod">
+                                    <option value="Equal">Equal</option>
+                                    <option value="Percentage">Percentage</option>
+                                    <option value="Headcount">Headcount</option>
+                                    <option value="Driver">Driver</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Driver</label>
+                                <select name="driverId" class="form-select form-select-sm">
+                                    <option value="">(none)</option>
+                                    @foreach (var d in Model.Drivers)
+                                    {
+                                        <option value="@d.DriverId">@d.DriverName</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Categories (CSV)</label>
+                                <input name="categoryScopeCsv" class="form-control form-control-sm" value="OPEX,HR" />
+                                <div class="form-text small">Only these categories are reallocated. <strong>CAPEX is intentionally excluded</strong> (capital costs are not spread as overhead); add it here only if you want it reallocated too.</div>
+                            </div>
+                            <div class="col-md-3" data-tour="target">
+                                <label class="form-label">Target scope</label>
+                                <select name="targetScope" class="form-select form-select-sm">
+                                    <option value="AllMandate">All Mandate</option>
+                                    <option value="Explicit">Explicit weights</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Source %</label>
+                                <input name="sourcePercent" type="number" step="0.1" class="form-control form-control-sm" value="100" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Sequence</label>
+                                <input name="sequence" type="number" class="form-control form-control-sm" value="100" />
+                            </div>
+                            <div class="col-md-1 d-flex align-items-end">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="isActive" value="true" checked id="ruleActive" />
+                                    <label class="form-check-label" for="ruleActive">On</label>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <details>
+                                    <summary class="small text-muted">Explicit target weights (only used when Target scope = Explicit)</summary>
+                                    <div class="row g-1 mt-1">
+                                        @foreach (var p in Model.MandatePrograms)
+                                        {
+                                            <div class="col-md-4 d-flex align-items-center gap-1">
+                                                <input type="hidden" name="targetProgramIds" value="@p.ProgramId" />
+                                                <span class="small flex-grow-1">@p.ProgramCode</span>
+                                                <input name="targetWeights" type="number" step="0.01" class="form-control form-control-sm" style="width:90px" value="0" />
+                                            </div>
+                                        }
+                                    </div>
+                                </details>
+                            </div>
+
+                            <div class="col-12">
+                                <button class="btn btn-sm btn-primary">Add rule</button>
+                            </div>
+                        </form>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var src = document.getElementById('srcProg');
+            var ent = document.getElementById('ruleEntityId');
+            if (src && ent) {
+                function sync() {
+                    var opt = src.options[src.selectedIndex];
+                    if (opt) ent.value = opt.getAttribute('data-entity') || '0';
+                }
+                src.addEventListener('change', sync);
+                sync();
+            }
+        })();
+    </script>
+
+    <script src="~/js/tour.js"></script>
+    <script>
+        (function () {
+            var startBtn = document.getElementById('startAllocTour');
+            if (!startBtn || !window.GovTour) return;
+
+            var steps = [
+                {
+                    el: '[data-tour="intro"]', side: 'bottom',
+                    title: 'What this screen does',
+                    text: 'Cost Allocation reallocates <b>Support</b> program costs onto <b>Mandate</b> programs via a step-down run. It is additive and auditable &mdash; it never edits original budget lines. Entity admins manage their own entity; system admins manage all.'
+                },
+                {
+                    el: '[data-tour="filter"]', side: 'bottom',
+                    title: 'Choose year & entity',
+                    text: 'Pick the <b>Budget Year</b> and <b>Entity</b>, then <b>Apply</b>. Everything below (classification, rules, runs) applies to this selection.'
+                },
+                {
+                    el: '[data-tour="status"]', side: 'bottom',
+                    title: 'Latest run status',
+                    text: 'Shows whether a posted run exists for the year and if it <b>reconciled OK</b>. Each new run supersedes the previous one.'
+                },
+                {
+                    el: '[data-tour="classify"]', side: 'right',
+                    title: '1) Classify programs',
+                    text: 'Mark each program as <b>Mandate</b> (receives cost) or <b>Support</b> (its cost is pushed out). <b>Seq</b> sets the step-down order &mdash; lower numbers run first. Click <b>Save</b> per program.'
+                },
+                {
+                    el: '[data-tour="rules"]', side: 'top',
+                    title: '2) Existing rules',
+                    text: 'Lists the reallocation rules for the year: source Support program, method, category scope, targets, % and sequence. You can delete a rule here.'
+                },
+                {
+                    el: '[data-tour="addrule"]', side: 'top',
+                    title: '3) Add a rule',
+                    text: 'Create a rule by choosing the <b>Source Support program</b> whose cost to reallocate. (You must classify at least one program as Support first.)'
+                },
+                {
+                    el: '[data-tour="method"]', side: 'top',
+                    title: 'Allocation method',
+                    text: '<b>Equal</b> splits evenly; <b>Percentage</b> uses weights; <b>Headcount</b> / <b>Driver</b> use driver values. For those, set the <b>Driver</b> and maintain its figures under <b>Driver values</b>.'
+                },
+                {
+                    el: '[data-tour="target"]', side: 'top',
+                    title: 'Targets, % and sequence',
+                    text: '<b>All Mandate</b> spreads to every mandate program; <b>Explicit weights</b> targets specific ones. <b>Source %</b> sets how much of the support cost to push; <b>Sequence</b> orders multiple rules.'
+                },
+                {
+                    el: '[data-tour="navlinks"]', side: 'left',
+                    title: 'Driver values & audit',
+                    text: '<b>Driver values</b> maintains the figures used by Headcount/Driver methods. <b>Runs & audit</b> shows the history and reconciliation of every posted run.'
+                },
+                {
+                    el: '[data-tour="run"]', side: 'left',
+                    title: '4) Run allocation',
+                    text: 'When classification and rules are ready, click <b>Run allocation</b>. It posts a new step-down run that supersedes the previous one &mdash; original budgets stay untouched.'
+                }
+            ];
+
+            startBtn.addEventListener('click', function () {
+                GovTour.start(steps);
+            });
+        })();
+    </script>
+}

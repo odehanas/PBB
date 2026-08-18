@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="240" viewBox="0 0 360 240">
+  <defs>
+    <pattern id="tile" width="120" height="120" patternUnits="userSpaceOnUse">
+      <rect width="120" height="120" fill="#e6e6e6" />
+      <g stroke="#5fa3ab" stroke-width="1" opacity="0.55" fill="none">
+        <path d="M0 0 L120 120" />
+        <path d="M120 0 L0 120" />
+        <path d="M60 0 L60 120" />
+        <path d="M0 60 L120 60" />
+      </g>
+      <g stroke="#4f96a0" stroke-width="1" opacity="0.5" fill="none">
+        <path d="M10 25 L40 10 L70 25 L40 40 Z" />
+        <path d="M50 85 L80 70 L110 85 L80 100 Z" />
+        <path d="M10 85 L40 70 L70 85 L40 100 Z" />
+        <path d="M50 25 L80 10 L110 25 L80 40 Z" />
+      </g>
+    </pattern>
+  </defs>
+  <rect width="360" height="240" fill="url(#tile)" />
+</svg>

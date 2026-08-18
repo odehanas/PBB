@@ -1,0 +1,92 @@
+@model GovBudget.Models.WhatIfScenarios
+@{
+    ViewData["Title"] = "Edit What-If Scenario";
+    var rows = ViewBag.ProjectRows as List<GovBudget.Controllers.WhatIfController.ProjectRateRowVm>
+               ?? new List<GovBudget.Controllers.WhatIfController.ProjectRateRowVm>();
+    var defaults = Model.WhatIfScenarioDefaults;
+}
+
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="mb-0">Edit Scenario</h3>
+            <div class="text-muted small">Rates are percentages (example: 5 means +5%).</div>
+        </div>
+        <div>
+            <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Back</a>
+        </div>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+    else if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+
+    <form asp-action="Edit" method="post">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="id" value="@Model.ScenarioId" />
+
+        <div class="card mb-4">
+            <div class="card-header fw-bold">Scenario</div>
+            <div class="card-body">
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label">Scenario Name</label>
+                        <input name="scenarioName" class="form-control" maxlength="200" value="@Model.ScenarioName" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Cost Inflation %</label>
+                        <input name="costInflationRate" class="form-control" type="number" step="0.0001" value="@(defaults?.CostInflationRate ?? 0m)" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Revenue Growth %</label>
+                        <input name="revenueGrowthRate" class="form-control" type="number" step="0.0001" value="@(defaults?.RevenueGrowthRate ?? 0m)" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header fw-bold">Project Overrides</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Project</th>
+                                <th class="text-end">Cost Inflation %</th>
+                                <th class="text-end">Revenue Growth %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < rows.Count; i++)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="fw-bold">@rows[i].ProjectCode</div>
+                                        <div class="text-muted small">@rows[i].ProjectName</div>
+                                        <input type="hidden" name="projectId" value="@rows[i].ProjectId" />
+                                    </td>
+                                    <td class="text-end" style="max-width: 180px;">
+                                        <input name="projectCostInflationRate" class="form-control form-control-sm text-end" type="number" step="0.0001" value="@(rows[i].CostInflationRate?.ToString() ?? "")" />
+                                    </td>
+                                    <td class="text-end" style="max-width: 180px;">
+                                        <input name="projectRevenueGrowthRate" class="form-control form-control-sm text-end" type="number" step="0.0001" value="@(rows[i].RevenueGrowthRate?.ToString() ?? "")" />
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+    </form>
+</div>

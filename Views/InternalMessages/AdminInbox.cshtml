@@ -1,0 +1,59 @@
+@model IEnumerable<GovBudget.Models.InternalMessages>
+@{
+    ViewData["Title"] = "User Requests";
+    var filterStatus = ViewBag.FilterStatus as string ?? "";
+}
+
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">User Requests</h3>
+        <div>
+            <a asp-action="AdminInbox" asp-route-status="" class="btn btn-sm @(string.IsNullOrWhiteSpace(filterStatus) ? "btn-primary" : "btn-outline-primary")">All</a>
+            <a asp-action="AdminInbox" asp-route-status="Pending" class="btn btn-sm @(filterStatus == "Pending" ? "btn-primary" : "btn-outline-primary")">Pending</a>
+            <a asp-action="AdminInbox" asp-route-status="Responded" class="btn btn-sm @(filterStatus == "Responded" ? "btn-primary" : "btn-outline-primary")">Responded</a>
+        </div>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+    else if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+
+    <div class="table-responsive">
+        <table class="table table-sm table-striped table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Created</th>
+                    <th>From</th>
+                    <th>Entity</th>
+                    <th>Dept</th>
+                    <th>Subject</th>
+                    <th>Status</th>
+                    <th>Read</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in Model)
+                {
+                    <tr>
+                        <td class="text-nowrap">@m.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@m.FromUser</td>
+                        <td class="text-nowrap">@m.FromEntityCode</td>
+                        <td class="text-nowrap">@m.FromDeptCode</td>
+                        <td>@m.Subject</td>
+                        <td class="text-nowrap">@m.Status</td>
+                        <td class="text-nowrap">@(m.ReadAt == null ? "No" : "Yes")</td>
+                        <td class="text-end">
+                            <a asp-action="Review" asp-route-id="@m.MessageId" class="btn btn-sm btn-outline-primary">Open</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

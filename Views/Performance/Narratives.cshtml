@@ -1,0 +1,116 @@
+@model List<GovBudget.Models.ReviewNarratives>
+@{
+    ViewData["Title"] = "Findings & Plan";
+    var year = (int)ViewBag.Year;
+    var yearOptions = ViewBag.YearOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var editing = ViewBag.Editing as GovBudget.Models.ReviewNarratives;
+    var sections = new[] { "Finding", "Recommendation", "Action" };
+
+    string SectionLabel(string s) => s == "Finding" ? "Headline Finding" : s == "Recommendation" ? "Recommendation" : "90-Day Plan Action";
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Findings, Recommendations &amp; 90-Day Plan</h3>
+        <a class="btn btn-sm btn-outline-secondary" asp-action="Index">Back</a>
+    </div>
+
+    <form method="get" class="row g-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label class="form-label">Year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="yearOptions"></select>
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+    </form>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold">@(editing != null && editing.ReviewNarrativeId > 0 ? "Edit item" : "Add item")</div>
+        <div class="card-body">
+            <form method="post" asp-action="NarrativeSave" class="row g-2 align-items-end">
+                <input type="hidden" name="reviewNarrativeId" value="@(editing?.ReviewNarrativeId ?? 0)" />
+                <input type="hidden" name="year" value="@year" />
+                <div class="col-md-2">
+                    <label class="form-label">Section</label>
+                    <select name="section" class="form-select form-select-sm">
+                        @foreach (var s in sections)
+                        {
+                            <option value="@s" selected="@(s == editing?.Section)">@SectionLabel(s)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Title / Action</label>
+                    <input name="title" value="@editing?.Title" class="form-control form-control-sm" />
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Body / Detail</label>
+                    <textarea name="body" rows="1" class="form-control form-control-sm">@editing?.Body</textarea>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">Order</label>
+                    <input name="sortOrder" type="number" value="@(editing?.SortOrder ?? 0)" class="form-control form-control-sm" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Owner <span class="text-muted">(90-day)</span></label>
+                    <input name="owner" value="@editing?.Owner" class="form-control form-control-sm" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Due <span class="text-muted">(90-day)</span></label>
+                    <input name="dueText" value="@editing?.DueText" class="form-control form-control-sm" placeholder="End Q3 FY25" />
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Success Measure <span class="text-muted">(90-day)</span></label>
+                    <input name="successMeasure" value="@editing?.SuccessMeasure" class="form-control form-control-sm" />
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
+                    @if (editing != null && editing.ReviewNarrativeId > 0)
+                    {
+                        <a class="btn btn-sm btn-outline-secondary w-100 mt-1" asp-action="Narratives" asp-route-year="@year">Cancel edit</a>
+                    }
+                </div>
+            </form>
+            <div class="form-text mt-2">Owner / Due / Success Measure apply to <strong>90-Day Plan Action</strong> items only.</div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            @if (Model.Count == 0)
+            {
+                <div class="alert alert-info m-3 mb-0">No items yet for @year.</div>
+            }
+            else
+            {
+                <table class="table table-sm table-striped align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th style="width:130px;">Section</th><th>Title</th><th>Detail</th><th>Owner</th><th>Due</th><th style="width:60px;">Order</th><th style="width:130px;"></th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var n in Model)
+                    {
+                        <tr>
+                            <td><span class="badge @(n.Section == "Finding" ? "bg-info text-dark" : n.Section == "Recommendation" ? "bg-primary" : "bg-secondary")">@SectionLabel(n.Section)</span></td>
+                            <td>@n.Title</td>
+                            <td>@n.Body</td>
+                            <td>@n.Owner</td>
+                            <td>@n.DueText</td>
+                            <td>@n.SortOrder</td>
+                            <td>
+                                <a class="btn btn-sm btn-outline-primary" asp-action="Narratives" asp-route-year="@year" asp-route-id="@n.ReviewNarrativeId">Edit</a>
+                                <form method="post" asp-action="NarrativeDelete" class="d-inline" onsubmit="return confirm('Delete this item?');">
+                                    <input type="hidden" name="id" value="@n.ReviewNarrativeId" />
+                                    <input type="hidden" name="year" value="@year" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Del</button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+</div>

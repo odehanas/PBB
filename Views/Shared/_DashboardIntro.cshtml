@@ -1,0 +1,205 @@
+@*
+    Dashboard entrance animation (Phase 2)
+    A lightweight, dependency-free SVG "doors open into the office" intro.
+    Plays once per browser session and is skipped for prefers-reduced-motion.
+*@
+<div id="gbIntro" aria-hidden="true">
+    <!-- The office you "walk into" -->
+    <div class="gb-scene">
+        <svg viewBox="0 0 960 600" role="img" aria-label="GovBudget office">
+            <defs>
+                <linearGradient id="gbWall" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#F3F9F7" />
+                    <stop offset="1" stop-color="#E1EDEA" />
+                </linearGradient>
+                <linearGradient id="gbSky" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#CFEDF2" />
+                    <stop offset="1" stop-color="#EAF8F6" />
+                </linearGradient>
+            </defs>
+
+            <!-- Room -->
+            <rect x="0" y="0" width="960" height="440" fill="url(#gbWall)" />
+            <rect x="0" y="430" width="960" height="14" fill="#C2D2CE" />
+            <rect x="0" y="444" width="960" height="156" fill="#D6E2DF" />
+            <ellipse cx="560" cy="540" rx="360" ry="26" fill="#000" opacity=".05" />
+
+            <!-- Ceiling pendant lights -->
+            <g>
+                <rect x="300" y="0" width="4" height="44" fill="#9FB3B0" />
+                <path d="M280 44 h44 l-8 26 h-28 Z" fill="#0D6668" />
+                <circle class="gb-glow" cx="302" cy="78" r="15" fill="#FFE59A" />
+                <rect x="636" y="0" width="4" height="58" fill="#9FB3B0" />
+                <path d="M616 58 h44 l-8 26 h-28 Z" fill="#0D6668" />
+                <circle class="gb-glow" cx="638" cy="92" r="15" fill="#FFE59A" />
+            </g>
+
+            <!-- Wall clock -->
+            <g>
+                <circle cx="742" cy="120" r="32" fill="#FFFFFF" stroke="#0A4F52" stroke-width="4" />
+                <circle cx="742" cy="120" r="3" fill="#0A4F52" />
+                <line class="gb-hand-h" x1="742" y1="120" x2="742" y2="104" stroke="#0A4F52" stroke-width="4" stroke-linecap="round" />
+                <line class="gb-hand-m" x1="742" y1="120" x2="742" y2="98" stroke="#0D6668" stroke-width="3" stroke-linecap="round" />
+            </g>
+
+            <!-- Window with RAK skyline -->
+            <g transform="translate(64,84)">
+                <rect x="-6" y="-6" width="312" height="252" rx="8" fill="#0A4F52" />
+                <rect x="8" y="8" width="284" height="224" fill="url(#gbSky)" />
+                <circle cx="238" cy="56" r="26" fill="#FFD36E" />
+                <!-- skyline -->
+                <rect x="24" y="150" width="42" height="74" fill="#2E7D7E" />
+                <rect x="72" y="118" width="48" height="106" fill="#0D6668" />
+                <rect x="128" y="140" width="38" height="84" fill="#3E8B8D" />
+                <rect x="176" y="104" width="52" height="120" fill="#0A5B5D" />
+                <rect x="236" y="150" width="42" height="74" fill="#2E7D7E" />
+                <rect x="8" y="206" width="284" height="26" fill="#7FC5CE" opacity=".65" />
+                <!-- mullions -->
+                <rect x="147" y="8" width="6" height="224" fill="#0A4F52" />
+                <rect x="8" y="116" width="284" height="6" fill="#0A4F52" />
+            </g>
+
+            <!-- Framed DOF emblem on the wall -->
+            <g transform="translate(470,120)">
+                <rect x="0" y="0" width="150" height="104" rx="6" fill="#FFFFFF" stroke="#0A4F52" stroke-width="4" />
+                <path d="M78 16 L118 88 L96 88 L66 40 Z" fill="#0A4F52" />
+                <path d="M54 48 L84 88 L60 88 L44 66 Z" fill="#4C8D8E" />
+                <rect x="20" y="94" width="110" height="0" />
+            </g>
+
+            <!-- Chair (drawn before desk so desk overlaps it) -->
+            <g transform="translate(300,360)">
+                <rect x="356" y="-64" width="120" height="98" rx="20" fill="#0D6668" />
+                <rect x="372" y="-48" width="88" height="66" rx="14" fill="#128184" />
+                <rect x="408" y="30" width="12" height="70" fill="#7C8A87" />
+                <rect x="374" y="96" width="80" height="10" rx="5" fill="#7C8A87" />
+            </g>
+
+            <!-- Desk -->
+            <g transform="translate(300,360)">
+                <rect x="86" y="40" width="368" height="112" fill="#E2ECE9" />
+                <rect x="60" y="40" width="26" height="140" fill="#C2D2CE" />
+                <rect x="454" y="40" width="26" height="140" fill="#C2D2CE" />
+                <rect x="0" y="0" width="540" height="28" rx="7" fill="#EEF4F2" stroke="#CBD9D6" stroke-width="2" />
+            </g>
+
+            <!-- Monitor with a budget bar chart -->
+            <g transform="translate(470,208)">
+                <rect x="66" y="120" width="16" height="30" fill="#7C8A87" />
+                <ellipse cx="74" cy="152" rx="38" ry="8" fill="#7C8A87" />
+                <rect x="0" y="0" width="150" height="112" rx="8" fill="#0A4F52" />
+                <rect x="8" y="8" width="134" height="96" rx="3" fill="#FFFFFF" />
+                <rect x="16" y="98" width="122" height="3" fill="#C9D6D3" />
+                <rect class="gb-bar" style="animation-delay:.80s" x="24" y="72" width="16" height="26" fill="#1E9E57" />
+                <rect class="gb-bar" style="animation-delay:.90s" x="48" y="56" width="16" height="42" fill="#0D6668" />
+                <rect class="gb-bar" style="animation-delay:1.00s" x="72" y="42" width="16" height="56" fill="#3E8B8D" />
+                <rect class="gb-bar" style="animation-delay:1.10s" x="96" y="60" width="16" height="38" fill="#6FB6B7" />
+                <rect class="gb-bar" style="animation-delay:1.20s" x="120" y="50" width="12" height="48" fill="#1E9E57" />
+                <polyline class="gb-trend" points="32,80 56,64 80,48 104,66 126,56" fill="none" stroke="#0A4F52" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </g>
+
+            <!-- Coffee cup -->
+            <g transform="translate(348,332)">
+                <rect x="0" y="0" width="26" height="22" rx="3" fill="#FFFFFF" stroke="#C9D6D3" stroke-width="2" />
+                <path d="M26 5 q10 0 10 8 q0 8 -10 8" fill="none" stroke="#C9D6D3" stroke-width="2" />
+            </g>
+
+            <!-- Plant -->
+            <g transform="translate(812,300)">
+                <path d="M8 92 L60 92 L52 156 L16 156 Z" fill="#B5623A" />
+                <rect x="0" y="82" width="68" height="16" rx="3" fill="#C97B4A" />
+                <path d="M34 86 C 6 58, 10 20, 30 2 C 40 30, 44 62, 34 86 Z" fill="#1E9E57" />
+                <path d="M34 86 C 62 58, 58 20, 38 2 C 28 30, 24 62, 34 86 Z" fill="#0D6668" />
+                <path d="M34 88 C 20 66, 20 34, 34 16 C 48 34, 48 66, 34 88 Z" fill="#2E9E57" />
+            </g>
+
+            <!-- RAK desk flag -->
+            <g transform="translate(690,300)">
+                <rect x="0" y="-2" width="4" height="66" fill="#7C8A87" />
+                <ellipse cx="2" cy="64" rx="14" ry="4" fill="#7C8A87" />
+                <g class="gb-flag">
+                    <rect x="4" y="0" width="52" height="32" fill="#C8102E" />
+                    <rect x="4" y="0" width="12" height="32" fill="#FFFFFF" />
+                </g>
+            </g>
+
+            <!-- Colleague -->
+            <g transform="translate(150,306)" fill="#0D6668" opacity=".88">
+                <circle cx="0" cy="0" r="19" />
+                <path d="M-25 118 Q-25 40 0 40 Q25 40 25 118 Z" />
+            </g>
+        </svg>
+    </div>
+
+    <!-- The doors -->
+    <div class="gb-door gb-door-left"><span class="gb-handle"></span></div>
+    <div class="gb-door gb-door-right"><span class="gb-handle"></span></div>
+
+    <!-- Seal shown on the closed doors -->
+    <div class="gb-seal" aria-hidden="true">
+        <svg viewBox="0 0 120 120" width="96" height="96">
+            <path d="M70 14 L104 82 L82 82 L58 34 Z" fill="#0A4F52" />
+            <path d="M46 46 L74 82 L50 82 L36 62 Z" fill="#4C8D8E" />
+        </svg>
+    </div>
+
+    <div class="gb-hint">Welcome to GovBudget</div>
+</div>
+
+<script>
+    (function () {
+        var el = document.getElementById('gbIntro');
+        if (!el) return;
+
+        // Always start from a clean slate: never let a previous overlay linger
+        // (e.g. if a prior teardown was interrupted by a navigation).
+        var stale = document.querySelectorAll('#gbIntro');
+        for (var i = 0; i < stale.length; i++) {
+            if (stale[i] !== el && stale[i].parentNode) stale[i].parentNode.removeChild(stale[i]);
+        }
+
+        var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var seen = false;
+        try { seen = sessionStorage.getItem('gb_intro_seen') === '1'; } catch (e) { }
+
+        // The intro is a full-page "doors open" animation meant for the initial
+        // load only. If it has already played this session, if the user prefers
+        // reduced motion, or if this content arrived via an htmx boosted swap
+        // (where a fixed overlay would be trapped inside the transformed content
+        // region and cover the dashboard), remove it immediately.
+        var boosted = !!(el.closest && el.closest('#appContent') && document.body.classList.contains('gb-boosted'));
+        if (reduce || seen || boosted) {
+            if (el.parentNode) el.parentNode.removeChild(el);
+            return;
+        }
+        try { sessionStorage.setItem('gb_intro_seen', '1'); } catch (e) { }
+
+        // Reparent to <body> so position:fixed covers the true viewport and is
+        // not confined by any transformed ancestor (e.g. the page fade-in).
+        if (el.parentNode !== document.body) document.body.appendChild(el);
+
+        var prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        var finished = false;
+        function done() {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+            document.body.style.overflow = prevOverflow;
+            document.removeEventListener('htmx:beforeRequest', done);
+        }
+
+        requestAnimationFrame(function () { el.classList.add('play'); });
+
+        // Primary: remove when the fade-out animation ends. Fallbacks: a hard
+        // timer, a click to skip, and any navigation guarantee it never lingers.
+        el.addEventListener('animationend', function (e) {
+            if (e.animationName === 'gbIntroFade') done();
+        });
+        var timer = setTimeout(done, 3000);
+        el.addEventListener('click', done);
+        document.addEventListener('htmx:beforeRequest', done);
+    })();
+</script>

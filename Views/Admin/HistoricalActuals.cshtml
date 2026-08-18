@@ -1,0 +1,139 @@
+@using Microsoft.AspNetCore.Mvc.Rendering
+@model IEnumerable<GovBudget.Models.HistoricalGlActuals>
+
+@{
+    ViewData["Title"] = "Historical Actuals";
+    var selectedYear = (int)(ViewBag.SelectedYear ?? DateTime.Now.Year);
+    var yearOptions = ViewBag.YearOptions as List<SelectListItem> ?? new List<SelectListItem>();
+    var entityOptions = ViewBag.EntityOptions as List<SelectListItem> ?? new List<SelectListItem>();
+    var departmentOptions = ViewBag.DepartmentOptions as List<SelectListItem> ?? new List<SelectListItem>();
+    var glCode = (string)(ViewBag.GlCode ?? "");
+    var effectiveEntityId = ViewBag.EffectiveEntityId as int?;
+    var isSysAdmin = User.IsInRole("SYSADMIN");
+}
+
+<div class="container py-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <h1 class="mb-0">Historical Actuals</h1>
+        <div class="d-flex gap-2 flex-wrap">
+            <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">&larr; Back to Admin Room</a>
+            <a asp-controller="Admin" asp-action="HistoricalActualsTemplate" class="btn btn-outline-secondary">Download Template</a>
+        </div>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+
+    <div class="row g-3">
+        <div class="col-12 col-lg-7">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Filter</h5>
+
+                    <form method="get" asp-controller="Admin" asp-action="HistoricalActuals" class="row g-2 align-items-end">
+                        <div class="col-6 col-md-3">
+                            <label class="form-label">Year</label>
+                            <select class="form-select" name="year" asp-items="yearOptions"></select>
+                        </div>
+
+                        @if (isSysAdmin)
+                        {
+                            <div class="col-12 col-md-5">
+                                <label class="form-label">Entity</label>
+                                <select class="form-select" name="entityId" asp-items="entityOptions"></select>
+                            </div>
+                        }
+                        else
+                        {
+                            <input type="hidden" name="entityId" value="@(effectiveEntityId?.ToString() ?? "")" />
+                        }
+
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">Department</label>
+                            <select class="form-select" name="departmentId" asp-items="departmentOptions"></select>
+                        </div>
+
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">GL Code contains</label>
+                            <input class="form-control" name="glCode" value="@glCode" />
+                        </div>
+
+                        <div class="col-12 col-md-3">
+                            <button type="submit" class="btn btn-primary w-100">Apply</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-5">
+            <div class="card border-info">
+                <div class="card-body">
+                    <h5 class="card-title">Upload Excel</h5>
+                    <form method="post" enctype="multipart/form-data" asp-controller="Admin" asp-action="UploadHistoricalActuals" class="d-flex gap-2 flex-wrap">
+                        @Html.AntiForgeryToken()
+                        <input class="form-control" type="file" name="file" accept=".xlsx" />
+                        <button type="submit" class="btn btn-info">Upload</button>
+                    </form>
+                    <div class="text-muted small mt-2">Columns: BudgetYear, EntityCode, DeptCode, GLCode, GLType (Revenue/HR/Opex/Capex), Amount</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <h5 class="card-title mb-0">Rows (up to 500)</h5>
+                <div class="text-muted">Year: @selectedYear</div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-striped align-middle">
+                    <thead>
+                        <tr>
+                            <th>Entity</th>
+                            <th>Department</th>
+                            <th>GL</th>
+                            <th>GL Type</th>
+                            <th class="text-end">Amount</th>
+                            <th>Source</th>
+                            <th class="text-nowrap">Created</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in Model)
+                        {
+                            <tr>
+                                <td class="text-nowrap">@r.Entity.EntityCode</td>
+                                <td class="text-nowrap">@r.Department.DeptCode</td>
+                                <td class="text-nowrap">@r.GLCode</td>
+                                <td class="text-nowrap">@r.GLType</td>
+                                <td class="text-end">@r.Amount.ToString("#,##0.00")</td>
+                                <td class="text-truncate" style="max-width: 220px;">@r.SourceFile</td>
+                                <td class="text-nowrap">@r.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                <td class="text-end">
+                                    <form method="post" asp-controller="Admin" asp-action="DeleteHistoricalActual" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.HistoricalActualId" />
+                                        <input type="hidden" name="year" value="@selectedYear" />
+                                        <input type="hidden" name="entityId" value="@(effectiveEntityId?.ToString() ?? "")" />
+                                        <input type="hidden" name="glCode" value="@glCode" />
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

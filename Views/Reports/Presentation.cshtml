@@ -1,0 +1,577 @@
+@model GovBudget.Controllers.PbbPresentationVm
+@{
+    Layout = null;
+    var m = Model;
+
+    string F(decimal v) => v.ToString("N0");
+    string Pct(decimal v, decimal t) => t == 0 ? "0%" : (v / t * 100m).ToString("0.#") + "%";
+
+    var expenseMix = m.TotalHr + m.TotalOpex + m.TotalCapex;
+    var scopeLabel = m.IsAllEntities ? "All Entities (Consolidated)" : m.EntityLabel;
+
+    // Programme chart data (top 8 + Other).
+    var topProg = m.Programmes.Take(8).ToList();
+    var otherExp = m.Programmes.Skip(8).Sum(p => p.Expense);
+    var progLabels = topProg
+        .Select(p => string.IsNullOrWhiteSpace(p.ProgramName) ? p.ProgramCode : p.ProgramName)
+        .ToList();
+    var progValues = topProg.Select(p => p.Expense).ToList();
+    if (otherExp > 0)
+    {
+        progLabels.Add("Other programmes");
+        progValues.Add(otherExp);
+    }
+
+    var progLabelsJson = System.Text.Json.JsonSerializer.Serialize(progLabels);
+    var progValuesJson = System.Text.Json.JsonSerializer.Serialize(progValues);
+    var catValuesJson = System.Text.Json.JsonSerializer.Serialize(new[] { m.TotalHr, m.TotalOpex, m.TotalCapex });
+
+    var hasData = m.TotalExpense != 0 || m.TotalRevenue != 0 || m.Programmes.Count > 0;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <title>Performance-Based Budgeting — @scopeLabel — FY @m.Year</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+    <style>
+        :root {
+            /* RAK Government – Department of Finance brand palette */
+            --navy: #0A4F52;       /* darkest teal (cover / headings) */
+            --navy-2: #0D6668;     /* DOF deep teal */
+            --navy-3: #12797C;     /* teal for gradients */
+            --steel: #3E8B8D;      /* muted teal (secondary) */
+            --gold: #1E9E57;       /* DOF green accent */
+            --ice: #E7F1F0;
+            --gray: #F4F7F7;
+            --muted: #8AA6A6;
+            --revenue: #1E9E57;
+            --hr: #0D6668;
+            --opex: #6FB6B7;
+            --capex: #1E9E57;
+        }
+
+        .reveal { font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #16324F; font-size: 30px; }
+        .reveal .slides { text-align: left; }
+        .reveal section { background: #ffffff; }
+        .reveal h1, .reveal h2, .reveal h3, .reveal h4 { color: var(--navy); font-weight: 700; letter-spacing: -.01em; text-transform: none; margin: 0 0 .4em 0; }
+        .reveal h1 { font-size: 1.9em; line-height: 1.05; }
+        .reveal h2 { font-size: 1.35em; }
+        .reveal h3 { font-size: 1.05em; }
+        .reveal p, .reveal li { line-height: 1.35; }
+        .reveal strong { color: var(--navy-2); }
+        .reveal em { color: var(--steel); font-style: normal; font-weight: 600; }
+        .reveal a { color: var(--steel); }
+
+        /* Kicker / section number */
+        .kicker { color: var(--gold); font-weight: 700; text-transform: uppercase; letter-spacing: .16em; font-size: .5em; margin-bottom: .6em; }
+        .rule { width: 90px; height: 4px; background: var(--gold); border: 0; margin: .2em 0 .8em; }
+
+        /* Cover */
+        .cover { background: radial-gradient(1200px 600px at 20% -10%, var(--navy-3), var(--navy) 60%) !important; color: #fff; height: 100%; padding: 8% 8% !important; }
+        .cover h1, .cover h2, .cover h3 { color: #fff; }
+        .cover .brand { position: absolute; top: 6%; left: 8%; font-weight: 800; letter-spacing: .28em; color: var(--gold); font-size: .55em; }
+        .cover .sub { color: var(--ice); font-size: .8em; margin-top: .6em; }
+        .cover .meta { position: absolute; bottom: 8%; left: 8%; color: var(--muted); font-size: .5em; letter-spacing: .05em; }
+        .cover .chip { display: inline-block; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); padding: .25em .8em; border-radius: 999px; color: #fff; font-size: .6em; margin-top: 1.2em; }
+        .cover .logo-card { display: inline-block; background: #fff; border-radius: 12px; padding: 12px 16px; box-shadow: 0 6px 20px rgba(0,0,0,.28); margin-bottom: 1em; }
+        .cover .logo-card img { height: 52px; display: block; }
+
+        /* Slide chrome */
+        .pad { padding: 3% 5%; position: relative; }
+        .pad::after { content: ""; position: absolute; top: 20px; right: 26px; width: 152px; height: 44px; background: url('/images/rak-dof-logo.png') right center / contain no-repeat; opacity: .92; }
+
+        /* Two-column */
+        .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1em; align-items: start; }
+        .cols-2-3 { display: grid; grid-template-columns: 1.1fr 1fr; gap: 1.1em; align-items: center; }
+
+        /* Cards / tiles */
+        .tile { background: var(--gray); border: 1px solid #E1E8F0; border-left: 5px solid var(--steel); border-radius: 10px; padding: .7em .9em; }
+        .tile .k { color: var(--steel); font-size: .5em; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; }
+        .tile .v { color: var(--navy); font-size: 1.15em; font-weight: 800; margin-top: .1em; }
+        .tile.rev { border-left-color: var(--revenue); } .tile.rev .k { color: var(--revenue); }
+        .tile.exp { border-left-color: var(--capex); } .tile.exp .k { color: var(--capex); }
+        .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7em; }
+        .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7em; }
+
+        .panel { border-radius: 12px; padding: 1em 1.1em; }
+        .panel.trad { background: #FBF7EE; border: 1px solid #EADFC4; }
+        .panel.pbb { background: var(--ice); border: 1px solid #CFE0F0; }
+        .panel h3 .tag { font-size: .6em; font-weight: 700; padding: .15em .6em; border-radius: 999px; margin-left: .4em; vertical-align: middle; }
+        .panel.trad .tag { background: var(--gold); color: #3b2c07; }
+        .panel.pbb .tag { background: var(--steel); color: #fff; }
+
+        /* Tables */
+        table.data { width: 100%; border-collapse: collapse; font-size: .62em; }
+        table.data th, table.data td { padding: .45em .6em; border-bottom: 1px solid #E1E8F0; }
+        table.data thead th { background: var(--navy); color: #fff; text-align: left; font-weight: 600; }
+        table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        table.data tbody tr:nth-child(even) { background: #F7FAFD; }
+        table.data tfoot td { font-weight: 800; color: var(--navy); border-top: 2px solid var(--navy); }
+
+        .vs table { width: 100%; border-collapse: collapse; font-size: .66em; }
+        .vs th, .vs td { padding: .55em .7em; border-bottom: 1px solid #E1E8F0; vertical-align: top; }
+        .vs thead th { background: var(--navy); color: #fff; }
+        .vs thead th.pbbcol { background: var(--steel); }
+        .vs td.dim { color: var(--steel); font-weight: 700; width: 26%; }
+
+        /* Pipeline */
+        .flow { display: flex; align-items: stretch; gap: .5em; margin: .6em 0 1em; }
+        .flow .step { flex: 1; background: var(--gray); border: 1px solid #E1E8F0; border-top: 4px solid var(--steel); border-radius: 10px; padding: .6em .5em; text-align: center; }
+        .flow .step .n { font-size: 1.3em; font-weight: 800; color: var(--navy); }
+        .flow .step .l { font-size: .52em; text-transform: uppercase; letter-spacing: .08em; color: var(--steel); font-weight: 700; }
+        .flow .step small { display: block; font-size: .5em; color: #5B7389; margin-top: .2em; }
+        .flow .arrow { align-self: center; color: var(--gold); font-weight: 800; font-size: 1.2em; }
+
+        .lead { font-size: 1.15em; color: var(--navy-2); }
+        ul.clean { list-style: none; margin: 0; padding: 0; }
+        ul.clean li { padding: .32em 0 .32em 1.4em; position: relative; }
+        ul.clean li:before { content: "▸"; color: var(--gold); position: absolute; left: 0; font-weight: 800; }
+        .callout { background: var(--navy); color: #fff; border-radius: 12px; padding: 1em 1.2em; }
+        .callout .big { font-size: 1.5em; font-weight: 800; color: #fff; }
+        .callout small { color: var(--ice); }
+
+        .chart-wrap { position: relative; height: 380px; }
+        .note { color: #6B8299; font-size: .55em; margin-top: .5em; }
+        .footer { position: absolute; bottom: 14px; left: 24px; right: 24px; display: flex; justify-content: space-between; color: var(--muted); font-size: .42em; letter-spacing: .05em; border-top: 1px solid #E1E8F0; padding-top: 6px; }
+
+        /* Control bar (screen only) */
+        #ctl { position: fixed; z-index: 60; top: 0; left: 0; right: 0; background: var(--navy); color: #fff; display: flex; gap: .6rem; align-items: center; padding: 6px 12px; font-family: "Segoe UI", sans-serif; font-size: 13px; }
+        #ctl .grow { flex: 1; }
+        #ctl select { background: #fff; border: 0; border-radius: 6px; padding: 3px 6px; font-size: 13px; }
+        #ctl a, #ctl button { background: var(--gold); color: #2b2205; border: 0; border-radius: 6px; padding: 4px 10px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 12px; }
+        #ctl .ghost { background: transparent; color: var(--ice); border: 1px solid rgba(255,255,255,.3); }
+        #ctl label { display: inline-flex; gap: 4px; align-items: center; margin: 0; }
+        .reveal { top: 44px !important; height: calc(100vh - 44px) !important; }
+
+        @@media print { #ctl { display: none !important; } .reveal { top: 0 !important; height: 100vh !important; } }
+    </style>
+</head>
+<body>
+    <div id="ctl" class="no-print">
+        <strong style="letter-spacing:.15em;color:var(--gold)">GOVBUDGET</strong>
+        <span>Executive Deck</span>
+        <span class="grow"></span>
+        <form method="get" asp-controller="Reports" asp-action="Presentation" style="display:flex;gap:.5rem;align-items:center;margin:0;">
+            <label>Year
+                <select name="year" onchange="this.form.submit()">
+                    @foreach (var y in m.YearOptions)
+                    {
+                        <option value="@y.Value" selected="@(y.Selected ? "selected" : null)">@y.Text</option>
+                    }
+                </select>
+            </label>
+            <label>Scope
+                <select name="entityId" onchange="this.form.submit()">
+                    @foreach (var e in m.EntityOptions)
+                    {
+                        <option value="@e.Value" selected="@(e.Selected ? "selected" : null)">@e.Text</option>
+                    }
+                </select>
+            </label>
+        </form>
+        <a href="?print-pdf" target="_blank" title="Opens a print-optimised view; use your browser's Print dialog and choose 'Save as PDF'.">Print / PDF</a>
+        <a class="ghost" asp-controller="Reports" asp-action="Index">Back to Reports</a>
+    </div>
+
+    <div class="reveal">
+        <div class="slides">
+
+            <!-- 1. COVER -->
+            <section data-background-color="#0A4F52">
+                <div class="cover">
+                    <div class="logo-card"><img src="/images/rak-dof-logo.png" alt="Ras Al Khaimah Government – Department of Finance" /></div>
+                    <div class="kicker" style="color:var(--gold)">Executive Briefing</div>
+                    <h1>Performance-Based Budgeting</h1>
+                    <h2 style="font-weight:400;color:var(--ice)">Funding <em style="color:var(--gold)">results</em>, not just <em style="color:#fff">inputs</em></h2>
+                    <div class="sub">A comparison of Traditional (line-item) budgeting and Performance-Based Budgeting (PBB)</div>
+                    <div class="chip">@scopeLabel &nbsp;•&nbsp; Budget Year @m.Year</div>
+                    <div class="meta">Prepared for Higher Management &nbsp;|&nbsp; Source: GovBudget system &nbsp;|&nbsp; @DateTime.Now.ToString("dd MMM yyyy")</div>
+                </div>
+            </section>
+
+            <!-- 2. THE SHIFT -->
+            <section class="pad">
+                <div class="kicker">01 — The Question That Changes</div>
+                <hr class="rule" />
+                <div class="cols-2-3">
+                    <div>
+                        <div class="panel trad" style="margin-bottom:.7em">
+                            <h3>Traditional budgeting asks <span class="tag">INPUTS</span></h3>
+                            <p class="lead">&ldquo;<strong>What</strong> do we spend money on?&rdquo;</p>
+                            <p style="font-size:.7em;color:#6B5A2E">Salaries, assets, utilities, supplies — organised by GL account and cost category.</p>
+                        </div>
+                        <div class="panel pbb">
+                            <h3>Performance-Based budgeting asks <span class="tag">RESULTS</span></h3>
+                            <p class="lead">&ldquo;<strong>What do we achieve</strong> for that money?&rdquo;</p>
+                            <p style="font-size:.7em;color:#33506B">The same money, organised by the programmes and activities that deliver outputs and outcomes.</p>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="callout">
+                            <div class="kicker" style="color:var(--gold)">The core idea</div>
+                            <div class="big">Same budget.<br />Two lenses.</div>
+                            <p><small>Traditional shows the <strong style="color:#fff">cost structure</strong>. PBB shows the <strong style="color:#fff">value structure</strong> — where the money goes to create results and how it links to KPIs.</small></p>
+                        </div>
+                        <p class="note">Both views are produced from the very same budget lines already captured in GovBudget — no re-keying, no separate books.</p>
+                    </div>
+                </div>
+                <div class="footer"><span>GovBudget • Performance-Based Budgeting</span><span>@scopeLabel • FY @m.Year</span></div>
+            </section>
+
+            <!-- 3. SIDE BY SIDE -->
+            <section class="pad vs">
+                <div class="kicker">02 — Traditional vs Performance-Based</div>
+                <hr class="rule" />
+                <table>
+                    <thead>
+                        <tr><th style="width:26%">Dimension</th><th>Traditional (Line-item)</th><th class="pbbcol">Performance-Based (PBB)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="dim">Primary focus</td><td>Inputs — what is purchased</td><td>Outputs &amp; outcomes — what is delivered</td></tr>
+                        <tr><td class="dim">Structure</td><td>GL accounts &amp; categories (Revenue, HR, CAPEX, OPEX)</td><td>Programmes → Activities → Projects</td></tr>
+                        <tr><td class="dim">Key question</td><td>&ldquo;Are we within our spending limits?&rdquo;</td><td>&ldquo;Are we getting results for the spend?&rdquo;</td></tr>
+                        <tr><td class="dim">Support costs</td><td>Shown as separate overhead lines</td><td>Allocated down onto the programmes they enable</td></tr>
+                        <tr><td class="dim">Link to strategy</td><td>Weak / indirect</td><td>Direct — every activity ties to KPIs &amp; targets</td></tr>
+                        <tr><td class="dim">Best for</td><td>Control &amp; compliance</td><td>Prioritisation &amp; accountability for results</td></tr>
+                    </tbody>
+                </table>
+                <p class="note">PBB does not replace financial control — it adds the performance lens on top of it.</p>
+                <div class="footer"><span>GovBudget • Performance-Based Budgeting</span><span>@scopeLabel • FY @m.Year</span></div>
+            </section>
+
+            <!-- 4. TRADITIONAL VIEW (REAL NUMBERS) -->
+            <section class="pad">
+                <div class="kicker">03 — The Traditional View — Real Figures</div>
+                <hr class="rule" />
+                <h2>Budget by input category</h2>
+                <div class="cols-2-3">
+                    <div>
+                        <div class="grid4" style="margin-bottom:.6em">
+                            <div class="tile rev"><div class="k">Revenue</div><div class="v">@F(m.TotalRevenue)</div></div>
+                            <div class="tile"><div class="k">HR</div><div class="v">@F(m.TotalHr)</div></div>
+                            <div class="tile"><div class="k">OPEX</div><div class="v">@F(m.TotalOpex)</div></div>
+                            <div class="tile"><div class="k">CAPEX</div><div class="v">@F(m.TotalCapex)</div></div>
+                        </div>
+                        <table class="data">
+                            <thead><tr><th>Expense category</th><th class="num">Amount</th><th class="num">Share</th></tr></thead>
+                            <tbody>
+                                <tr><td>HR (personnel)</td><td class="num">@F(m.TotalHr)</td><td class="num">@Pct(m.TotalHr, expenseMix)</td></tr>
+                                <tr><td>OPEX (operating)</td><td class="num">@F(m.TotalOpex)</td><td class="num">@Pct(m.TotalOpex, expenseMix)</td></tr>
+                                <tr><td>CAPEX (capital)</td><td class="num">@F(m.TotalCapex)</td><td class="num">@Pct(m.TotalCapex, expenseMix)</td></tr>
+                            </tbody>
+                            <tfoot><tr><td>Total Expense</td><td class="num">@F(m.TotalExpense)</td><td class="num">100%</td></tr></tfoot>
+                        </table>
+                        <p class="note">Answers <em>what</em> we buy — but not <em>why</em>, or which services benefit.</p>
+                    </div>
+                    <div>
+                        <div class="chart-wrap"><canvas id="catChart" data-chart="cat"></canvas></div>
+                    </div>
+                </div>
+                <div class="footer"><span>GovBudget • Traditional (input) lens</span><span>@scopeLabel • FY @m.Year</span></div>
+            </section>
+
+            <!-- 5. PBB VIEW (REAL NUMBERS) -->
+            <section class="pad">
+                <div class="kicker">04 — The Performance-Based View — Real Figures</div>
+                <hr class="rule" />
+                <h2>The same expense, by programme</h2>
+                <div class="cols-2-3">
+                    <div>
+                        <div class="chart-wrap"><canvas id="progChart" data-chart="prog"></canvas></div>
+                    </div>
+                    <div>
+                        <table class="data">
+                            <thead><tr><th>Programme</th><th class="num">Activities</th><th class="num">Full cost</th><th class="num">Share</th></tr></thead>
+                            <tbody>
+                                @foreach (var p in m.Programmes.Take(7))
+                                {
+                                    <tr>
+                                        <td>@(string.IsNullOrWhiteSpace(p.ProgramName) ? p.ProgramCode : p.ProgramName)</td>
+                                        <td class="num">@p.ActivityCount</td>
+                                        <td class="num">@F(p.Expense)</td>
+                                        <td class="num">@Pct(p.Expense, m.TotalExpense)</td>
+                                    </tr>
+                                }
+                                @if (m.Programmes.Count > 7)
+                                {
+                                    <tr><td>Other (@(m.Programmes.Count - 7))</td><td class="num">—</td><td class="num">@F(m.Programmes.Skip(7).Sum(x => x.Expense))</td><td class="num">@Pct(m.Programmes.Skip(7).Sum(x => x.Expense), m.TotalExpense)</td></tr>
+                                }
+                            </tbody>
+                            <tfoot><tr><td>Total</td><td class="num">@m.ActivityCount</td><td class="num">@F(m.TotalExpense)</td><td class="num">100%</td></tr></tfoot>
+                        </table>
+                        <p class="note">Full cost = direct cost + a fair share of support/overhead <em>allocated down</em> onto each programme.</p>
+                    </div>
+                </div>
+                <div class="footer"><span>GovBudget • Performance-Based (output) lens</span><span>@scopeLabel • FY @m.Year</span></div>
+            </section>
+
+            <!-- 6. RECONCILIATION -->
+            <section class="pad">
+                <div class="kicker">05 — One Number, Two Stories</div>
+                <hr class="rule" />
+                <div class="cols">
+                    <div class="panel trad">
+                        <h3>Traditional total <span class="tag">BY INPUT</span></h3>
+                        <table class="data" style="font-size:.6em">
+                            <tbody>
+                                <tr><td>HR</td><td class="num">@F(m.TotalHr)</td></tr>
+                                <tr><td>OPEX</td><td class="num">@F(m.TotalOpex)</td></tr>
+                                <tr><td>CAPEX</td><td class="num">@F(m.TotalCapex)</td></tr>
+                            </tbody>
+                            <tfoot><tr><td>Total Expense</td><td class="num">@F(m.TotalExpense)</td></tr></tfoot>
+                        </table>
+                    </div>
+                    <div class="panel pbb">
+                        <h3>PBB total <span class="tag">BY PROGRAMME</span></h3>
+                        <table class="data" style="font-size:.6em">
+                            <tbody>
+                                @foreach (var p in m.Programmes.Take(3))
+                                {
+                                    <tr><td>@(string.IsNullOrWhiteSpace(p.ProgramName) ? p.ProgramCode : p.ProgramName)</td><td class="num">@F(p.Expense)</td></tr>
+                                }
+                                @if (m.Programmes.Count > 3)
+                                {
+                                    <tr><td>Other programmes</td><td class="num">@F(m.Programmes.Skip(3).Sum(x => x.Expense))</td></tr>
+                                }
+                            </tbody>
+                            <tfoot><tr><td>Total Expense</td><td class="num">@F(m.TotalExpense)</td></tr></tfoot>
+                        </table>
+                    </div>
+                </div>
+                <div class="callout" style="margin-top:1em;text-align:center">
+                    <span class="big">@F(m.TotalExpense)</span>
+                    <small style="display:block">Identical total — PBB simply <strong style="color:#fff">redistributes</strong> the same money to reveal which programmes it serves.</small>
+                </div>
+                <div class="footer"><span>GovBudget • Reconciliation</span><span>@scopeLabel • FY @m.Year</span></div>
+            </section>
+
+            <!-- 7. HOW GOVBUDGET LINKS MONEY TO RESULTS -->
+            <section class="pad">
+                <div class="kicker">06 — How GovBudget Links Money to Results</div>
+                <hr class="rule" />
+                <div class="flow">
+                    <div class="step"><div class="l">Inputs</div><div class="n">@F(m.TotalExpense)</div><small>Revenue • HR • CAPEX • OPEX</small></div>
+                    <div class="arrow">→</div>
+                    <div class="step"><div class="l">Programmes</div><div class="n">@m.ProgrammeCount</div><small>@m.MandateProgrammeCount mandate • @m.SupportProgrammeCount support</small></div>
+                    <div class="arrow">→</div>
+                    <div class="step"><div class="l">Activities</div><div class="n">@m.ActivityCount</div><small>the work that delivers</small></div>
+                    <div class="arrow">→</div>
+                    <div class="step"><div class="l">KPIs</div><div class="n">@m.KpiCount</div><small>@m.KpiWithTargetCount with targets</small></div>
+                </div>
+                <div class="grid3">
+                    <div class="tile"><div class="k">Support cost allocation</div><div class="v" style="font-size:.8em">@m.SupportProgrammeCount support programmes</div><p class="note" style="margin:0">Overhead is stepped-down onto mandate programmes for true full cost.</p></div>
+                    <div class="tile"><div class="k">KPIs linked to cost</div><div class="v">@m.KpiCostLinkedCount</div><p class="note" style="margin:0">Spend connected directly to a measurable result.</p></div>
+                    <div class="tile"><div class="k">Targets set</div><div class="v">@m.KpiWithTargetCount / @m.KpiCount</div><p class="note" style="margin:0">Every dirham can be tied to an expected outcome.</p></div>
+                </div>
+                <p class="note">All figures above are read live from the GovBudget database for @scopeLabel, FY @m.Year.</p>
+                <div class="footer"><span>GovBudget • Inputs → Programmes → Activities → KPIs</span><span>@scopeLabel • FY @m.Year</span></div>
+            </section>
+
+            <!-- 7b. GLOBAL ADOPTION -->
+            <section class="pad">
+                <div class="kicker">07 — A Global Standard, Not an Experiment</div>
+                <hr class="rule" />
+                <h2>Performance budgeting is mainstream across advanced governments</h2>
+                <div class="cols-2-3">
+                    <div>
+                        <div class="grid4" style="margin-bottom:.6em">
+                            <div class="tile"><div class="k">OECD countries using PB</div><div class="v">85%</div></div>
+                            <div class="tile"><div class="k">Use it to set annual funding</div><div class="v">71%</div></div>
+                            <div class="tile"><div class="k">Mandatory for ministries*</div><div class="v">23</div></div>
+                            <div class="tile"><div class="k">"Cut-if-missed" schemes</div><div class="v">0</div></div>
+                        </div>
+                        <ul class="clean" style="font-size:.72em">
+                            <li><strong>1960s → today:</strong> pioneered in the USA, scaled globally in the 1990s by Australia, New Zealand, the UK and the Netherlands.</li>
+                            <li><strong>2010s onward:</strong> rapid adoption by middle- and lower-income governments.</li>
+                            <li><strong>Performance-<em>informed</em></strong> is the dominant model (42%) — results guide decisions; they never trigger automatic cuts.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="chart-wrap"><canvas id="adoptChart" data-chart="adopt"></canvas></div>
+                    </div>
+                </div>
+                <p class="note">*23 of 33 surveyed OECD countries make performance budgeting compulsory for line ministries and agencies. Sources: OECD, <em>Government at a Glance 2025</em>; OECD <em>2023 Survey on Performance Budgeting</em> (33 countries).</p>
+                <div class="footer"><span>GovBudget • Global evidence</span><span>@scopeLabel • FY @m.Year</span></div>
+            </section>
+
+            <!-- 7c. PROVEN BENEFITS & ACCOUNTABILITY -->
+            <section class="pad">
+                <div class="kicker">08 — Proven Benefits &amp; Clear Accountability</div>
+                <hr class="rule" />
+                <div class="cols">
+                    <div>
+                        <h3>What the international evidence shows</h3>
+                        <ul class="clean">
+                            <li><strong>Better prioritisation</strong> — resources flow to the programmes that do the most good.</li>
+                            <li><strong>More value for money</strong> — entities are pushed to deliver outputs efficiently and "do more with less".</li>
+                            <li><strong>Fiscal discipline &amp; space</strong> — savings can target the least-effective programmes, freeing funds for priorities.</li>
+                            <li><strong>Transparency</strong> — leadership and the public can see what results the budget actually buys.</li>
+                        </ul>
+                        <p class="note">Sources: IMF, <em>A Basic Model of Performance-Based Budgeting</em> (TNM/09/01, 2009); World Bank, <em>Toward Next-Generation Performance Budgeting</em>.</p>
+                    </div>
+                    <div>
+                        <div class="panel pbb">
+                            <h3>Entity responsibility for the annual budget <span class="tag">ACCOUNTABILITY</span></h3>
+                            <ul class="clean" style="font-size:.82em">
+                                <li>Each entity <strong>owns its programmes, activities and KPIs</strong>.</li>
+                                <li>Funding is <strong>justified by expected outcomes</strong> — not just last year's spend.</li>
+                                <li>Entities are <strong>answerable for results vs budget</strong> at mid-year and year-end.</li>
+                                <li>Targets make success <strong>measurable and comparable</strong> across entities.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="footer"><span>GovBudget • Benefits &amp; accountability</span><span>@scopeLabel • FY @m.Year</span></div>
+            </section>
+
+            <!-- 8. BENEFITS -->
+            <section class="pad">
+                <div class="kicker">09 — Why It Matters to Management</div>
+                <hr class="rule" />
+                <div class="cols">
+                    <ul class="clean">
+                        <li><strong>Prioritise with evidence</strong> — see the full cost of each programme, not just scattered line items.</li>
+                        <li><strong>Accountability for results</strong> — every activity carries KPIs and targets.</li>
+                        <li><strong>Smarter trade-offs</strong> — compare cost-per-outcome across programmes before cutting or growing.</li>
+                    </ul>
+                    <ul class="clean">
+                        <li><strong>Transparency</strong> — support/overhead is fairly allocated, revealing the true cost of services.</li>
+                        <li><strong>Strategic alignment</strong> — money is traceable from input all the way to outcome.</li>
+                        <li><strong>One source of truth</strong> — both views come from the same data, updated in real time.</li>
+                    </ul>
+                </div>
+                <div class="footer"><span>GovBudget • Management benefits</span><span>@scopeLabel • FY @m.Year</span></div>
+            </section>
+
+            <!-- 9. RECOMMENDATION -->
+            <section data-background-color="#0A4F52">
+                <div class="cover" style="padding:9% 8% !important">
+                    <div class="logo-card"><img src="/images/rak-dof-logo.png" alt="Ras Al Khaimah Government – Department of Finance" /></div>
+                    <div class="kicker" style="color:var(--gold)">10 — Recommendation</div>
+                    <h1 style="font-size:1.6em">Adopt PBB as the lens for decisions</h1>
+                    <ul class="clean" style="color:#EAF1F8;font-size:.8em;max-width:80%">
+                        <li style="color:#EAF1F8">Present the annual budget to leadership in the <strong style="color:#fff">programme view</strong>, with the traditional view as the control backup.</li>
+                        <li style="color:#EAF1F8">Require <strong style="color:#fff">KPIs and targets</strong> on every programme so spend is justified by results.</li>
+                        <li style="color:#EAF1F8">Use GovBudget's allocation engine to report <strong style="color:#fff">full programme cost</strong> each cycle.</li>
+                    </ul>
+                    <div class="chip">From "how much we spend" to "what we achieve"</div>
+                    <div class="meta">GovBudget • Performance-Based Budgeting • @scopeLabel • FY @m.Year</div>
+                </div>
+            </section>
+
+        </div>
+    </div>
+
+    <script>
+        // Inject print/PDF stylesheet when the deck is opened with ?print-pdf.
+        (function () {
+            var isPdf = /print-pdf/gi.test(window.location.search);
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = isPdf
+                ? 'https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/print/pdf.min.css'
+                : 'https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/print/paper.min.css';
+            document.head.appendChild(link);
+        })();
+
+        var HAS_DATA = @(hasData ? "true" : "false");
+        var CHART = {
+            catValues: @Html.Raw(catValuesJson),
+            progLabels: @Html.Raw(progLabelsJson),
+            progValues: @Html.Raw(progValuesJson)
+        };
+        var PALETTE = ['#0D6668', '#1E9E57', '#3E8B8D', '#6FB6B7', '#0A4F52', '#9AC7A9', '#4C8D8E', '#7FB2B3', '#155E60'];
+        var built = {};
+
+        function money(v) { try { return Number(v).toLocaleString(); } catch (e) { return v; } }
+
+        function buildChart(id) {
+            if (built[id] || typeof Chart === 'undefined') return;
+            var el = document.getElementById(id);
+            if (!el) return;
+
+            if (id === 'catChart') {
+                built[id] = new Chart(el, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['HR', 'OPEX', 'CAPEX'],
+                        datasets: [{ data: CHART.catValues, backgroundColor: ['#0D6668', '#6FB6B7', '#1E9E57'], borderWidth: 2, borderColor: '#fff' }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, cutout: '58%',
+                        plugins: {
+                            legend: { position: 'bottom', labels: { font: { size: 14 }, color: '#16324F' } },
+                            title: { display: true, text: 'Expense mix by input category', color: '#0A4F52', font: { size: 16, weight: 'bold' } },
+                            tooltip: { callbacks: { label: function (c) { return c.label + ': ' + money(c.parsed); } } }
+                        }
+                    }
+                });
+            } else if (id === 'adoptChart') {
+                built[id] = new Chart(el, {
+                    type: 'bar',
+                    data: {
+                        labels: [['Use performance', 'budgeting'], ['Inform annual', 'funding'], ['Guide mgmt', 'decisions'], ['Performance-', 'informed model']],
+                        datasets: [{ label: '% of OECD countries', data: [85, 71, 57, 42], backgroundColor: ['#0A4F52', '#0D6668', '#3E8B8D', '#1E9E57'], borderRadius: 4 }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            title: { display: true, text: 'OECD performance-budgeting adoption (2023)', color: '#0A4F52', font: { size: 15, weight: 'bold' } },
+                            tooltip: { callbacks: { label: function (c) { return c.parsed.y + '%'; } } }
+                        },
+                        scales: {
+                            y: { beginAtZero: true, max: 100, ticks: { callback: function (v) { return v + '%'; }, color: '#5B7389' }, grid: { color: '#EAF1F8' } },
+                            x: { ticks: { color: '#16324F', font: { size: 11 } }, grid: { display: false } }
+                        }
+                    }
+                });
+            } else if (id === 'progChart') {
+                built[id] = new Chart(el, {
+                    type: 'bar',
+                    data: {
+                        labels: CHART.progLabels,
+                        datasets: [{ label: 'Full cost', data: CHART.progValues, backgroundColor: CHART.progLabels.map(function (_, i) { return PALETTE[i % PALETTE.length]; }), borderRadius: 4 }]
+                    },
+                    options: {
+                        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            title: { display: true, text: 'Full cost by programme', color: '#0A4F52', font: { size: 16, weight: 'bold' } },
+                            tooltip: { callbacks: { label: function (c) { return money(c.parsed.x); } } }
+                        },
+                        scales: {
+                            x: { ticks: { callback: function (v) { return money(v); }, color: '#5B7389' }, grid: { color: '#EAF1F8' } },
+                            y: { ticks: { color: '#16324F', font: { size: 12 } }, grid: { display: false } }
+                        }
+                    }
+                });
+            }
+        }
+
+        function buildVisibleCharts() {
+            var current = document.querySelector('.reveal .slides section.present') || document;
+            current.querySelectorAll('canvas[data-chart]').forEach(function (c) { buildChart(c.id); });
+        }
+
+        Reveal.initialize({
+            hash: true, slideNumber: 'c/t', controls: true, progress: true,
+            transition: 'slide', width: 1280, height: 720, margin: 0.04,
+            center: false
+        }).then(function () {
+            buildVisibleCharts();
+            Reveal.on('slidechanged', function () { setTimeout(buildVisibleCharts, 60); });
+            // For PDF export every slide is laid out; build them all.
+            if (/print-pdf/gi.test(window.location.search)) {
+                setTimeout(function () { ['catChart', 'progChart', 'adoptChart'].forEach(buildChart); }, 400);
+            }
+        });
+    </script>
+</body>
+</html>

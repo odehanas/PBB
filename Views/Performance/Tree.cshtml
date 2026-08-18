@@ -1,0 +1,285 @@
+@model GovBudget.Controllers.KpiTreeVm
+@{
+    ViewData["Title"] = "KPI Hierarchy";
+    var year = Model.Year;
+    var singleEntity = Model.Entities.Count == 1;
+
+    Func<string, string> StatusClass = s =>
+    {
+        var t = (s ?? "").ToLowerInvariant();
+        if (t.Contains("green")) return "bg-success";
+        if (t.Contains("watch")) return "bg-warning text-dark";
+        if (t.Contains("behind")) return "bg-danger";
+        return "bg-light text-muted border";
+    };
+    Func<string, string> TypeClass = t =>
+    {
+        var v = (t ?? "").ToLowerInvariant();
+        if (v == "output") return "bg-success";
+        if (v == "outcome") return "bg-info text-dark";
+        if (v == "input") return "bg-secondary";
+        return "bg-light text-muted border";
+    };
+}
+
+<style>
+    .kpi-tree { max-width: 1200px; }
+    .kpi-tree .table { font-size: .82rem; }
+    .kpi-tree .table td, .kpi-tree .table th { padding: .35rem .6rem; vertical-align: middle; }
+    .kpi-tree .table thead th { font-size: .7rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; white-space: nowrap; }
+    .kpi-tree .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .kpi-tree .prog-row td { background: #e9f2ee; font-weight: 600; color: #1f3d34; cursor: pointer; }
+    .kpi-tree .act-row td { background: #f6faf8; cursor: pointer; }
+    .kpi-tree .act-row .lbl { padding-left: 1.4rem; }
+    .kpi-tree .kpi-row .lbl { padding-left: 2.8rem; }
+    .kpi-tree .kpi-row td { color: #374151; }
+    .kpi-tree .entity-hdr { background: #1f3d34; color: #fff; font-weight: 600; letter-spacing: .02em; }
+    .kpi-tree .caret { display: inline-block; width: 1rem; transition: transform .15s ease; color: #64748b; }
+    .kpi-tree .collapsed > .caret { transform: rotate(-90deg); }
+    .kpi-tree .badge-sm { font-size: .6rem; font-weight: 600; }
+    .kpi-tree .count-pill { font-size: .62rem; background: #d5e6df; color: #1f3d34; border-radius: 10px; padding: .05rem .5rem; margin-left: .4rem; }
+    .kpi-tree .empty-note { font-size: .72rem; color: #94a3b8; font-style: italic; }
+</style>
+
+<div class="container-fluid py-3 kpi-tree">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+            <h4 class="mb-0">KPI Hierarchy</h4>
+            <div class="text-muted small">Programme &rarr; Activity &rarr; KPI @(singleEntity ? "for " + Model.Entities[0].EntityLabel : "across entities") &middot; FY @year</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" asp-action="Kpis" asp-route-year="@year" asp-route-entityId="@(Model.SelectedEntityId?.ToString() ?? "")">KPI list</a>
+            <a class="btn btn-sm btn-primary" asp-action="KpiEdit" asp-route-year="@year">+ Add KPI</a>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex flex-wrap justify-content-between align-items-end gap-2">
+                <form method="get" class="row g-2 align-items-end">
+                    <div class="col-auto">
+                        <label class="form-label mb-1 small">Year</label>
+                        <select name="year" class="form-select form-select-sm" asp-items="Model.YearOptions"></select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label mb-1 small">Entity</label>
+                        <select name="entityId" class="form-select form-select-sm" asp-items="Model.EntityOptions"></select>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                    </div>
+                </form>
+                <div class="d-flex align-items-end gap-2">
+                    <button type="button" id="btnExpand" class="btn btn-sm btn-outline-secondary">Expand all</button>
+                    <button type="button" id="btnCollapse" class="btn btn-sm btn-outline-secondary">Collapse all</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (Model.NoAccess)
+    {
+        <div class="alert alert-warning">Your account is not scoped to an entity, so there is nothing to show.</div>
+    }
+    else if (Model.Entities.Count == 0)
+    {
+        <div class="alert alert-info">No programmes found for this filter.</div>
+    }
+    else
+    {
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" id="treeTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Programme / Activity / KPI</th>
+                                <th>Type</th>
+                                <th>Unit</th>
+                                <th class="num">Target</th>
+                                <th class="num">Actual</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @{ int pIdx = 0; }
+                        @foreach (var ent in Model.Entities)
+                        {
+                            if (!singleEntity)
+                            {
+                                <tr class="entity-hdr"><td colspan="6">@ent.EntityLabel</td></tr>
+                            }
+                            @foreach (var prog in ent.Programs)
+                            {
+                                pIdx++;
+                                var pKey = $"p{pIdx}";
+                                <tr class="prog-row" data-toggle="@pKey">
+                                    <td>
+                                        <span class="caret">&#9660;</span>
+                                        <strong>@prog.Code</strong> &mdash; @prog.Name
+                                        <span class="count-pill">@prog.KpiCount KPI@(prog.KpiCount == 1 ? "" : "s")</span>
+                                    </td>
+                                    <td colspan="5"></td>
+                                </tr>
+
+                                @foreach (var act in prog.Activities)
+                                {
+                                    pIdx++;
+                                    var aKey = $"a{pIdx}";
+                                    <tr class="act-row child-of-@pKey" data-toggle="@aKey">
+                                        <td class="lbl">
+                                            <span class="caret">&#9660;</span>
+                                            <strong>@act.Code</strong> &mdash; @act.Name
+                                            <span class="count-pill">@act.Kpis.Count</span>
+                                        </td>
+                                        <td colspan="5"></td>
+                                    </tr>
+                                    @if (act.Kpis.Count == 0)
+                                    {
+                                        <tr class="kpi-row child-of-@pKey child-of-@aKey">
+                                            <td class="lbl empty-note" colspan="6">No KPIs on this activity.</td>
+                                        </tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var k in act.Kpis)
+                                        {
+                                            <tr class="kpi-row child-of-@pKey child-of-@aKey">
+                                                <td class="lbl" dir="auto">
+                                                    @if (!string.IsNullOrEmpty(k.Code)) { <span class="text-muted">@k.Code</span> <text>&middot;</text> }
+                                                    @k.Name
+                                                </td>
+                                                <td>@if (!string.IsNullOrEmpty(k.Type)) { <span class="badge badge-sm @TypeClass(k.Type)">@k.Type</span> }</td>
+                                                <td>@k.Unit</td>
+                                                <td class="num">@(k.Target?.ToString("N2") ?? "-")</td>
+                                                <td class="num">@(k.Actual?.ToString("N2") ?? "-")</td>
+                                                <td><span class="badge badge-sm @StatusClass(k.Status)">@(string.IsNullOrWhiteSpace(k.Status) ? "n/a" : k.Status)</span></td>
+                                            </tr>
+                                        }
+                                    }
+                                }
+
+                                @* KPIs linked to the programme directly (no activity) *@
+                                @if (prog.DirectKpis.Count > 0)
+                                {
+                                    pIdx++;
+                                    var dKey = $"d{pIdx}";
+                                    <tr class="act-row child-of-@pKey" data-toggle="@dKey">
+                                        <td class="lbl">
+                                            <span class="caret">&#9660;</span>
+                                            <em>Programme-level KPIs (no activity)</em>
+                                            <span class="count-pill">@prog.DirectKpis.Count</span>
+                                        </td>
+                                        <td colspan="5"></td>
+                                    </tr>
+                                    @foreach (var k in prog.DirectKpis)
+                                    {
+                                        <tr class="kpi-row child-of-@pKey child-of-@dKey">
+                                            <td class="lbl" dir="auto">
+                                                @if (!string.IsNullOrEmpty(k.Code)) { <span class="text-muted">@k.Code</span> <text>&middot;</text> }
+                                                @k.Name
+                                            </td>
+                                            <td>@if (!string.IsNullOrEmpty(k.Type)) { <span class="badge badge-sm @TypeClass(k.Type)">@k.Type</span> }</td>
+                                            <td>@k.Unit</td>
+                                            <td class="num">@(k.Target?.ToString("N2") ?? "-")</td>
+                                            <td class="num">@(k.Actual?.ToString("N2") ?? "-")</td>
+                                            <td><span class="badge badge-sm @StatusClass(k.Status)">@(string.IsNullOrWhiteSpace(k.Status) ? "n/a" : k.Status)</span></td>
+                                        </tr>
+                                    }
+                                }
+                            }
+
+                            @if (ent.UnassignedKpis.Count > 0)
+                            {
+                                pIdx++;
+                                var uKey = $"u{pIdx}";
+                                <tr class="prog-row" data-toggle="@uKey">
+                                    <td>
+                                        <span class="caret">&#9660;</span>
+                                        <em>Unassigned KPIs (no programme / activity)</em>
+                                        <span class="count-pill">@ent.UnassignedKpis.Count</span>
+                                    </td>
+                                    <td colspan="5"></td>
+                                </tr>
+                                @foreach (var k in ent.UnassignedKpis)
+                                {
+                                    <tr class="kpi-row child-of-@uKey">
+                                        <td class="lbl" dir="auto">
+                                            @if (!string.IsNullOrEmpty(k.Code)) { <span class="text-muted">@k.Code</span> <text>&middot;</text> }
+                                            @k.Name
+                                        </td>
+                                        <td>@if (!string.IsNullOrEmpty(k.Type)) { <span class="badge badge-sm @TypeClass(k.Type)">@k.Type</span> }</td>
+                                        <td>@k.Unit</td>
+                                        <td class="num">@(k.Target?.ToString("N2") ?? "-")</td>
+                                        <td class="num">@(k.Actual?.ToString("N2") ?? "-")</td>
+                                        <td><span class="badge badge-sm @StatusClass(k.Status)">@(string.IsNullOrWhiteSpace(k.Status) ? "n/a" : k.Status)</span></td>
+                                    </tr>
+                                }
+                            }
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer py-2 text-muted small">
+                @Model.ProgramCount programme(s) &middot; @Model.ActivityCount activit@(Model.ActivityCount == 1 ? "y" : "ies") &middot; @Model.KpiCount KPI(s)
+            </div>
+        </div>
+    }
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    var table = document.getElementById('treeTable');
+    if (!table) return;
+
+    // Toggle direct + nested children of a row identified by its data-toggle key.
+    function setToggle(row, collapse) {
+        var key = row.getAttribute('data-toggle');
+        if (!key) return;
+        row.classList.toggle('collapsed', collapse);
+        var kids = table.querySelectorAll('.child-of-' + key);
+        kids.forEach(function (kid) {
+            if (collapse) {
+                kid.style.display = 'none';
+            } else {
+                // Only reveal if none of the kid's OTHER parent toggles are collapsed.
+                var parents = Array.prototype.filter.call(kid.classList, function (c) { return c.indexOf('child-of-') === 0; })
+                    .map(function (c) { return c.substring('child-of-'.length); });
+                var anyCollapsed = parents.some(function (pk) {
+                    var pr = table.querySelector('[data-toggle="' + pk + '"]');
+                    return pr && pr.classList.contains('collapsed');
+                });
+                kid.style.display = anyCollapsed ? 'none' : '';
+            }
+            // If this kid is itself a toggle and is collapsed, keep its descendants hidden.
+            if (!collapse && kid.classList.contains('collapsed')) {
+                var subKey = kid.getAttribute('data-toggle');
+                if (subKey) {
+                    table.querySelectorAll('.child-of-' + subKey).forEach(function (g) { g.style.display = 'none'; });
+                }
+            }
+        });
+    }
+
+    table.addEventListener('click', function (e) {
+        var row = e.target.closest('[data-toggle]');
+        if (!row) return;
+        setToggle(row, !row.classList.contains('collapsed'));
+    });
+
+    document.getElementById('btnExpand').addEventListener('click', function () {
+        table.querySelectorAll('[data-toggle]').forEach(function (r) { r.classList.remove('collapsed'); });
+        table.querySelectorAll('.act-row, .kpi-row').forEach(function (r) { r.style.display = ''; });
+    });
+    document.getElementById('btnCollapse').addEventListener('click', function () {
+        // Collapse to programme level: hide everything under each programme toggle.
+        table.querySelectorAll('[data-toggle]').forEach(function (r) { r.classList.add('collapsed'); });
+        table.querySelectorAll('.act-row, .kpi-row').forEach(function (r) { r.style.display = 'none'; });
+        // Re-show top programme rows (they have no child-of- class).
+        table.querySelectorAll('.prog-row').forEach(function (r) { r.style.display = ''; });
+    });
+})();
+</script>
+}

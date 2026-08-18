@@ -1,0 +1,261 @@
+@model List<GovBudget.Models.StructureEntityNode>
+
+@{
+    ViewData["Title"] = "Program Structure";
+
+    int totalDepts = Model.Sum(e => e.Departments.Count);
+    int totalPrograms = Model.Sum(e => e.Departments.Sum(d => d.Programs.Count));
+    int totalActivities = Model.Sum(e => e.Departments.Sum(d => d.Programs.Sum(p => p.Activities.Count)));
+    int totalProjects = Model.Sum(e => e.Departments.Sum(d => d.Programs.Sum(p => p.Activities.Sum(a => a.Projects.Count))));
+}
+
+<style>
+        .tree details { margin: 0; }
+        .tree summary {
+            list-style: none;
+            cursor: pointer;
+            padding: .35rem .5rem;
+            border-radius: .375rem;
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+        .tree summary::-webkit-details-marker { display: none; }
+        .tree summary::before {
+            content: "\25B6";
+            font-size: .7rem;
+            color: #6c757d;
+            transition: transform .15s ease-in-out;
+        }
+        .tree details[open] > summary::before { transform: rotate(90deg); }
+        .tree summary:hover { background-color: rgba(13,110,253,.08); }
+        .tree .leaf {
+            padding: .3rem .5rem .3rem 1.75rem;
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+        .tree .node-children {
+            border-left: 1px dashed #ced4da;
+            margin-left: .85rem;
+            padding-left: .6rem;
+        }
+        .tree .node-label { font-weight: 600; }
+        .tree .node-sub { color: #6c757d; font-weight: 400; }
+        .tree .lvl-entity > summary { background-color: rgba(13,110,253,.06); }
+        .tree code { color: inherit; }
+        .tree .badge-count { font-weight: 500; }
+
+        @@media print {
+            .no-print { display: none !important; }
+            /* Force all tree branches open so nothing is hidden in the PDF. */
+            .tree details > *:not(summary) { display: block !important; }
+            .tree summary::before { display: none; }
+            .tree summary, .tree .leaf { break-inside: avoid; }
+            .tree .node-children { border-left: 1px solid #adb5bd; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            a[href]::after { content: ""; }
+        }
+</style>
+
+<div class="container py-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <div>
+            <h1 class="mb-1">Program Structure</h1>
+            <div class="text-muted small">Entity &rarr; Cost Center &rarr; Program &rarr; Activity &rarr; Projects</div>
+        </div>
+        <div class="d-flex gap-2 no-print">
+            <a asp-controller="Admin" asp-action="StructureExportExcel" class="btn btn-outline-success">Export Excel</a>
+            <button type="button" id="exportPdf" class="btn btn-outline-danger">Export PDF</button>
+            <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">&larr; Back to Admin Room</a>
+        </div>
+    </div>
+
+    <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+        <span class="badge bg-primary badge-count">@Model.Count Entities</span>
+        <span class="badge bg-secondary badge-count">@totalDepts Cost Centers</span>
+        <span class="badge bg-info text-dark badge-count">@totalPrograms Programs</span>
+        <span class="badge bg-success badge-count">@totalActivities Activities</span>
+        <span class="badge bg-warning text-dark badge-count">@totalProjects Project Links</span>
+
+        <div class="ms-auto d-flex gap-2 no-print">
+            <input type="search" id="treeFilter" class="form-control form-control-sm" style="width: 220px;" placeholder="Filter by code or name..." />
+            <button type="button" id="expandAll" class="btn btn-sm btn-outline-primary">Expand all</button>
+            <button type="button" id="collapseAll" class="btn btn-sm btn-outline-secondary">Collapse all</button>
+        </div>
+    </div>
+
+    @if (!Model.Any())
+    {
+        <div class="alert alert-info">No structure to display yet. Create Entities, Cost Centers, Programs and Activities first.</div>
+    }
+    else
+    {
+        <div class="tree" id="structureTree">
+            @foreach (var e in Model)
+            {
+                <details class="lvl-entity" open>
+                    <summary>
+                        <span class="badge bg-primary">Entity</span>
+                        <span class="node-label">@e.EntityCode <span class="node-sub">— @e.EntityName</span></span>
+                        @if (!e.IsActive)
+                        {
+                            <span class="badge bg-light text-muted border">Inactive</span>
+                        }
+                        <span class="badge bg-light text-dark border ms-1">@e.Departments.Count cost centers</span>
+                    </summary>
+                    <div class="node-children">
+                        @if (!e.Departments.Any())
+                        {
+                            <div class="leaf text-muted fst-italic">No cost centers.</div>
+                        }
+                        @foreach (var d in e.Departments)
+                        {
+                            <details class="lvl-dept">
+                                <summary>
+                                    <span class="badge bg-secondary">Cost Center</span>
+                                    <span class="node-label">@d.DeptCode <span class="node-sub">— @d.DeptName</span></span>
+                                    @if (!d.IsActive)
+                                    {
+                                        <span class="badge bg-light text-muted border">Inactive</span>
+                                    }
+                                    <span class="badge bg-light text-dark border ms-1">@d.Programs.Count programs</span>
+                                </summary>
+                                <div class="node-children">
+                                    @if (!d.Programs.Any())
+                                    {
+                                        <div class="leaf text-muted fst-italic">No programs with activities in this cost center.</div>
+                                    }
+                                    @foreach (var p in d.Programs)
+                                    {
+                                        <details class="lvl-program">
+                                            <summary>
+                                                <span class="badge bg-info text-dark">Program</span>
+                                                <span class="node-label">@p.ProgramCode <span class="node-sub">— @p.ProgramName</span></span>
+                                                <span class="badge @(p.ProgramType == "Support" ? "bg-warning text-dark" : "bg-primary")">@p.ProgramType</span>
+                                                @if (!p.IsActive)
+                                                {
+                                                    <span class="badge bg-light text-muted border">Inactive</span>
+                                                }
+                                                <span class="badge bg-light text-dark border ms-1">@p.Activities.Count activities</span>
+                                            </summary>
+                                            <div class="node-children">
+                                                @foreach (var a in p.Activities)
+                                                {
+                                                    if (a.Projects.Any())
+                                                    {
+                                                        <details class="lvl-activity">
+                                                            <summary>
+                                                                <span class="badge bg-success">Activity</span>
+                                                                <span class="node-label">@a.ActivityCode <span class="node-sub">— @a.ActivityName</span></span>
+                                                                @if (!a.IsActive)
+                                                                {
+                                                                    <span class="badge bg-light text-muted border">Inactive</span>
+                                                                }
+                                                                <span class="badge bg-light text-dark border ms-1">@a.Projects.Count projects</span>
+                                                            </summary>
+                                                            <div class="node-children">
+                                                                @foreach (var pr in a.Projects)
+                                                                {
+                                                                    <div class="leaf">
+                                                                        <span class="badge bg-warning text-dark">Project</span>
+                                                                        <span>@pr.ProjectCode <span class="node-sub">— @pr.ProjectName</span></span>
+                                                                        @if (!pr.IsActive)
+                                                                        {
+                                                                            <span class="badge bg-light text-muted border">Inactive</span>
+                                                                        }
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                        </details>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="leaf">
+                                                            <span class="badge bg-success">Activity</span>
+                                                            <span class="node-label">@a.ActivityCode <span class="node-sub">— @a.ActivityName</span></span>
+                                                            @if (!a.IsActive)
+                                                            {
+                                                                <span class="badge bg-light text-muted border">Inactive</span>
+                                                            }
+                                                            <span class="badge bg-light text-muted border ms-1">no projects</span>
+                                                        </div>
+                                                    }
+                                                }
+                                            </div>
+                                        </details>
+                                    }
+                                </div>
+                            </details>
+                        }
+                    </div>
+                </details>
+            }
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var tree = document.getElementById('structureTree');
+            if (!tree) return;
+
+            function setAll(open) {
+                tree.querySelectorAll('details').forEach(function (d) { d.open = open; });
+            }
+
+            var expandBtn = document.getElementById('expandAll');
+            var collapseBtn = document.getElementById('collapseAll');
+            if (expandBtn) expandBtn.addEventListener('click', function () { setAll(true); });
+            if (collapseBtn) collapseBtn.addEventListener('click', function () { setAll(false); });
+
+            var pdfBtn = document.getElementById('exportPdf');
+            if (pdfBtn) pdfBtn.addEventListener('click', function () { setAll(true); window.print(); });
+            // Also expand everything for a manual Ctrl+P so the PDF is complete.
+            window.addEventListener('beforeprint', function () { setAll(true); });
+
+            var filter = document.getElementById('treeFilter');
+            if (filter) {
+                filter.addEventListener('input', function () {
+                    var term = filter.value.trim().toLowerCase();
+
+                    if (term === '') {
+                        tree.querySelectorAll('details, .leaf').forEach(function (el) {
+                            el.style.display = '';
+                        });
+                        return;
+                    }
+
+                    // Show a node if it (or any descendant) matches.
+                    function matchText(el) {
+                        var summary = el.querySelector(':scope > summary');
+                        var text = summary ? summary.textContent : el.textContent;
+                        return text.toLowerCase().indexOf(term) !== -1;
+                    }
+
+                    function processDetails(d) {
+                        var selfMatch = matchText(d);
+                        var childMatch = false;
+
+                        d.querySelectorAll(':scope > .node-children > details').forEach(function (child) {
+                            if (processDetails(child)) childMatch = true;
+                        });
+                        d.querySelectorAll(':scope > .node-children > .leaf').forEach(function (leaf) {
+                            var m = leaf.textContent.toLowerCase().indexOf(term) !== -1 || selfMatch;
+                            leaf.style.display = m ? '' : 'none';
+                            if (m) childMatch = true;
+                        });
+
+                        var visible = selfMatch || childMatch;
+                        d.style.display = visible ? '' : 'none';
+                        if (visible) d.open = true;
+                        return visible;
+                    }
+
+                    tree.querySelectorAll(':scope > details').forEach(processDetails);
+                });
+            }
+        })();
+    </script>
+}

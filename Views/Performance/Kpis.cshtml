@@ -1,0 +1,200 @@
+@model List<GovBudget.Controllers.KpiListRow>
+@{
+    ViewData["Title"] = "KPIs";
+    var year = (int)ViewBag.Year;
+    var yearOptions = ViewBag.YearOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var entityOptions = ViewBag.EntityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var selectedEntityId = ViewBag.SelectedEntityId as int?;
+    var entityRouteVal = selectedEntityId?.ToString() ?? "";
+
+    // Only repeat the entity name when the list actually spans more than one entity.
+    var distinctEntities = Model.Select(r => r.EntityLabel).Distinct().ToList();
+    var singleEntity = distinctEntities.Count == 1;
+    var groupByEntity = distinctEntities.Count > 1;
+    var colSpan = groupByEntity ? 12 : 11;
+
+    Func<string, string> StatusClass = s =>
+    {
+        var t = (s ?? "").ToLowerInvariant();
+        if (t.Contains("green") || t.Contains("on track") || t.Contains("met")) return "bg-success";
+        if (t.Contains("watch") || t.Contains("amber") || t.Contains("risk")) return "bg-warning text-dark";
+        if (t.Contains("behind") || t.Contains("red") || t.Contains("miss")) return "bg-danger";
+        return "bg-light text-muted border";
+    };
+    Func<string, string> StatusLabel = s => string.IsNullOrWhiteSpace(s) ? "n/a" : s;
+}
+
+<style>
+    .kpi-page .table { font-size: .8rem; }
+    .kpi-page .table th, .kpi-page .table td { padding: .3rem .5rem; vertical-align: middle; white-space: nowrap; }
+    .kpi-page .table thead th { font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; }
+    .kpi-page .table td.num, .kpi-page .table th.num { font-variant-numeric: tabular-nums; }
+    .kpi-page .kpi-name { max-width: 460px; overflow: hidden; text-overflow: ellipsis; }
+    .kpi-page .kpi-name .sub { font-size: .68rem; color: #94a3b8; }
+    .kpi-page .entity-group td { background: #f1f5f9; font-weight: 600; color: #334155; letter-spacing: .02em; }
+    .kpi-page .badge-status { font-weight: 600; min-width: 58px; }
+    .kpi-page .act-btns { white-space: nowrap; }
+    .kpi-page .act-btns .btn { --bs-btn-padding-y: .08rem; --bs-btn-padding-x: .45rem; --bs-btn-font-size: .7rem; }
+    .kpi-page .toolbar .btn, .kpi-page .toolbar .form-select, .kpi-page .toolbar .form-control { font-size: .82rem; }
+    .kpi-page .table tbody tr:hover { background: #fafbfc; }
+    .kpi-page .pri-dot { font-size: .58rem; padding: .12rem .3rem; }
+</style>
+
+<div class="container-fluid py-3 kpi-page" style="max-width:1320px;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+            <h4 class="mb-0">KPIs</h4>
+            <div class="text-muted small">Key performance indicators @(singleEntity ? "for " + distinctEntities[0] : "across entities") &middot; FY @year</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" asp-action="Index">Back</a>
+            <a class="btn btn-sm btn-outline-primary" asp-action="Tree" asp-route-year="@year" asp-route-entityId="@entityRouteVal">Hierarchy tree</a>
+            <a class="btn btn-sm btn-primary" asp-action="KpiEdit" asp-route-year="@year">+ Add KPI</a>
+        </div>
+    </div>
+
+    @if (TempData["KpiImportResult"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show py-2 small" role="alert">
+            @TempData["KpiImportResult"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+    @if (TempData["KpiImportError"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show py-2 small" role="alert">
+            @TempData["KpiImportError"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2 toolbar">
+            <div class="row g-2 align-items-end">
+                <form method="get" class="col-12 col-lg-7">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-auto">
+                            <label class="form-label mb-1 small">Year</label>
+                            <select name="year" class="form-select form-select-sm" asp-items="yearOptions"></select>
+                        </div>
+                        <div class="col">
+                            <label class="form-label mb-1 small">Entity</label>
+                            <select name="entityId" class="form-select form-select-sm" asp-items="entityOptions"></select>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                        </div>
+                    </div>
+                </form>
+                <div class="col-12 col-lg-5">
+                    <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
+                        <a class="btn btn-sm btn-outline-success"
+                           asp-action="KpisExport" asp-route-year="@year" asp-route-entityId="@entityRouteVal">
+                            &#8681; Export Excel
+                        </a>
+                        <a class="btn btn-sm btn-outline-primary"
+                           asp-action="KpiTemplate" asp-route-year="@year" asp-route-entityId="@entityRouteVal">
+                            &#8681; Import template
+                        </a>
+                        <form method="post" asp-action="KpiImport" enctype="multipart/form-data" class="d-flex gap-1 align-items-center">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="year" value="@year" />
+                            <input type="hidden" name="entityId" value="@entityRouteVal" />
+                            <input type="file" name="file" accept=".xlsx" class="form-control form-control-sm" style="max-width:190px;" required />
+                            <button type="submit" class="btn btn-sm btn-success">Upload</button>
+                        </form>
+                    </div>
+                    <div class="form-text text-lg-end">Download the template, fill it in, then upload. Existing KPIs (same name) are updated.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            @if (Model.Count == 0)
+            {
+                <div class="alert alert-info m-3 mb-0">No KPIs for this filter. Use <strong>+ Add KPI</strong> or the import template to create some.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                @if (groupByEntity)
+                                {
+                                    <th style="width:1%;"></th>
+                                }
+                                <th>Programme</th>
+                                <th>Code</th>
+                                <th>KPI</th>
+                                <th>Type</th>
+                                <th>Unit</th>
+                                <th class="text-end num">Baseline</th>
+                                <th class="text-end num">Target</th>
+                                <th class="text-end num">Actual</th>
+                                <th class="text-end num">Target 2029</th>
+                                <th>Status</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @{ string? lastEntity = null; }
+                        @foreach (var r in Model)
+                        {
+                            if (groupByEntity && r.EntityLabel != lastEntity)
+                            {
+                                lastEntity = r.EntityLabel;
+                                <tr class="entity-group">
+                                    <td colspan="@colSpan">@r.EntityLabel</td>
+                                </tr>
+                            }
+                            <tr>
+                                @if (groupByEntity)
+                                {
+                                    <td></td>
+                                }
+                                <td class="text-muted">@r.ProgramCode</td>
+                                <td class="text-muted num">@(string.IsNullOrEmpty(r.KpiCode) ? "-" : r.KpiCode)</td>
+                                <td class="kpi-name" dir="auto" title="@r.KpiName">
+                                    @if (!string.IsNullOrEmpty(r.Priority))
+                                    {
+                                        <span class="badge pri-dot @(r.Priority.Equals("High", StringComparison.OrdinalIgnoreCase) ? "bg-danger" : r.Priority.Equals("Medium", StringComparison.OrdinalIgnoreCase) ? "bg-warning text-dark" : "bg-secondary")">@r.Priority</span>
+                                    }
+                                    @r.KpiName
+                                    @if (!string.IsNullOrEmpty(r.Dimension) || !string.IsNullOrEmpty(r.ReadingType))
+                                    {
+                                        <span class="sub">&middot; @r.Dimension@(!string.IsNullOrEmpty(r.Dimension) && !string.IsNullOrEmpty(r.ReadingType) ? " \u00b7 " : "")@r.ReadingType</span>
+                                    }
+                                </td>
+                                <td>@(string.IsNullOrEmpty(r.KpiType) ? "-" : r.KpiType)</td>
+                                <td>@r.Unit</td>
+                                <td class="text-end num">@(r.Baseline?.ToString("N2") ?? "-")</td>
+                                <td class="text-end num">@(r.Target?.ToString("N2") ?? "-")</td>
+                                <td class="text-end num">@(r.Actual?.ToString("N2") ?? "-")</td>
+                                <td class="text-end num">@(r.StrategicTarget2029?.ToString("N2") ?? "-")</td>
+                                <td><span class="badge badge-status @StatusClass(r.Status)">@StatusLabel(r.Status)</span></td>
+                                <td class="text-end act-btns">
+                                    <div class="d-inline-flex gap-1 justify-content-end">
+                                        <a class="btn btn-outline-primary" asp-action="KpiEdit" asp-route-id="@r.KpiId" asp-route-year="@year">Edit</a>
+                                        <form method="post" asp-action="KpiDelete" onsubmit="return confirm('Delete this KPI?');">
+                                            <input type="hidden" name="id" value="@r.KpiId" />
+                                            <input type="hidden" name="year" value="@year" />
+                                            <button type="submit" class="btn btn-outline-danger">Delete</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+        @if (Model.Count > 0)
+        {
+            <div class="card-footer py-2 text-muted small">@Model.Count KPI(s)@(singleEntity ? "" : $" across {distinctEntities.Count} entities")</div>
+        }
+    </div>
+</div>

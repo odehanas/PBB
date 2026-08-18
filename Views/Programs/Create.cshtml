@@ -1,0 +1,70 @@
+@model GovBudget.Models.Programs
+@{
+    ViewData["Title"] = "Create Program";
+}
+<h1>Create Program</h1>
+<hr />
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger">@TempData["Error"]</div>
+}
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success">@TempData["Success"]</div>
+}
+<div class="row">
+    <div class="col-md-6">
+        <form asp-action="Create" method="post">
+            @Html.AntiForgeryToken()
+            <div asp-validation-summary="All" class="text-danger"></div>
+
+            <div class="mb-3">
+                <label class="form-label">Entity</label>
+                <select asp-for="EntityId" class="form-select" asp-items="ViewBag.EntityId"></select>
+                <span asp-validation-for="EntityId" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="ProgramCode" class="form-label"></label>
+                <input asp-for="ProgramCode" class="form-control" />
+                <span asp-validation-for="ProgramCode" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="ProgramName" class="form-label"></label>
+                <input asp-for="ProgramName" class="form-control" />
+                <span asp-validation-for="ProgramName" class="text-danger"></span>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" asp-for="IsActive" />
+                <label class="form-check-label" asp-for="IsActive"></label>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Program Type</label>
+                <select asp-for="ProgramType" class="form-select">
+                    <option value="Mandate">Mandate (core delivery / direct)</option>
+                    <option value="Support">Support (back-office - cost is reallocated)</option>
+                </select>
+                <div class="form-text">Support programs are reallocated onto Mandate programs when you run cost allocation.</div>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="AllocationSequence" class="form-label">Step-down order (Support only)</label>
+                <input asp-for="AllocationSequence" type="number" class="form-control" placeholder="e.g. 10, 20, 30" />
+                <div class="form-text">Lower numbers are allocated first. Leave blank for Mandate programs.</div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a asp-action="Index" class="btn btn-secondary">Back</a>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
+
+}

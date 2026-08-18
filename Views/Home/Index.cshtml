@@ -1,0 +1,342 @@
+@model GovBudget.Controllers.HomeExecutiveSummaryVm
+
+@{
+    ViewData["Title"] = "Executive Summary";
+}
+
+<div class="container-fluid py-2 home-dashboard">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <div>
+            <h3 class="mb-0">Executive Summary</h3>
+            <div class="text-muted small">Totals by entity for @Model.Year.</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a asp-controller="Context" asp-action="Select" class="btn btn-sm btn-primary">Budget Setup</a>
+            <a asp-controller="Reports" asp-action="Index" class="btn btn-sm btn-outline-primary">Reports</a>
+            @if (Model.CanAccessAdminRoom)
+            {
+                <a asp-controller="Admin" asp-action="Index" class="btn btn-sm btn-outline-secondary">Admin Room</a>
+            }
+        </div>
+    </div>
+
+    <form method="get" class="row g-2 align-items-end mb-2">
+        <div class="col-auto">
+            <label class="form-label">Year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="Model.YearOptions"></select>
+        </div>
+
+        @if (Model.IsAdmin)
+        {
+            <div class="col-md-5">
+                <label class="form-label">Entity</label>
+                <select name="entityId" class="form-select form-select-sm" asp-items="Model.EntityOptions"></select>
+            </div>
+        }
+
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+    </form>
+
+    <div class="row g-2 mb-2 home-dashboard-top">
+        <div class="col-12 col-xl-8">
+            <div class="row g-2">
+                <div class="col-12 col-md-6 col-lg-3">
+                    <div class="card shadow-sm h-100 home-kpi">
+                        <div class="card-body py-2">
+                            <div class="text-muted small">Revenue</div>
+                            <div class="fs-6 fw-bold">@Model.Overall.Revenue.ToString("N2")</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <div class="card shadow-sm h-100 home-kpi">
+                        <div class="card-body py-2">
+                            <div class="text-muted small">HR</div>
+                            <div class="fs-6 fw-bold">@Model.Overall.Hr.ToString("N2")</div>
+                            <div class="small" style="color: rgba(108,117,125,0.95);">
+                                @Model.Overall.Headcount.ToString("N0") employees
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <div class="card shadow-sm h-100 home-kpi">
+                        <div class="card-body py-2">
+                            <div class="text-muted small">OPEX</div>
+                            <div class="fs-6 fw-bold">@Model.Overall.Opex.ToString("N2")</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <div class="card shadow-sm h-100 home-kpi">
+                        <div class="card-body py-2">
+                            <div class="text-muted small">CAPEX</div>
+                            <div class="fs-6 fw-bold">@Model.Overall.Capex.ToString("N2")</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="card shadow-sm">
+                        <div class="card-body py-2">
+                            <div class="row g-2">
+                                <div class="col-md-4">
+                                    <div class="text-muted small">Total Expense</div>
+                                    <div class="fw-bold">@Model.Overall.TotalExpense.ToString("N2")</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="text-muted small">Net (Revenue - Expense)</div>
+                                    <div class="fw-bold">@Model.Overall.Net.ToString("N2")</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="text-muted small">Entities</div>
+                                    <div class="fw-bold">@Model.Entities.Count.ToString("N0")</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-white fw-bold">Revenue → Net Position (Waterfall)</div>
+                        <div class="card-body py-2">
+                            <div class="mb-2">
+                                <div class="text-muted small">@Model.Donut.EntityLabel</div>
+                            </div>
+                            <div class="home-waterfall">
+                                <canvas id="pnlWaterfall"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white fw-bold">Expense Mix (HR / OPEX / CAPEX)</div>
+                <div class="card-body py-2">
+                    <div class="mb-2">
+                        <div class="text-muted small">@Model.Donut.EntityLabel</div>
+                        <div class="small" style="color: rgba(108,117,125,0.95);">
+                            @Model.Donut.Headcount.ToString("N0") employees
+                        </div>
+                    </div>
+                    <div class="ratio ratio-1x1 home-donut">
+                        <canvas id="expenseDonut"></canvas>
+                    </div>
+                    <div class="row g-2 mt-3">
+                        <div class="col-4">
+                            <div class="text-muted small">HR</div>
+                            <div class="fw-bold">@Model.Donut.Hr.ToString("N2")</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-muted small">OPEX</div>
+                            <div class="fw-bold">@Model.Donut.Opex.ToString("N2")</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-muted small">CAPEX</div>
+                            <div class="fw-bold">@Model.Donut.Capex.ToString("N2")</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm home-dashboard-table">
+        <div class="card-header bg-white fw-bold">Entity Summary</div>
+        <div class="card-body p-0">
+            <div class="table-responsive home-entity-table">
+                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Entity</th>
+                            <th class="text-end">Revenue</th>
+                            <th class="text-end">HR</th>
+                            <th class="text-end">OPEX</th>
+                            <th class="text-end">CAPEX</th>
+                            <th class="text-end">Total Expense</th>
+                            <th class="text-end">Net</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @if (Model.Entities.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">No data found for the selected year.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        foreach (var r in Model.Entities)
+                        {
+                            <tr>
+                                <td>@(string.IsNullOrWhiteSpace(r.EntityCode) ? r.EntityName : (r.EntityCode + " - " + r.EntityName))</td>
+                                <td class="text-end">@r.Revenue.ToString("N2")</td>
+                                <td class="text-end">
+                                    <div>@r.Hr.ToString("N2")</div>
+                                    <div class="small text-secondary">@r.Headcount.ToString("N0") employees</div>
+                                </td>
+                                <td class="text-end">@r.Opex.ToString("N2")</td>
+                                <td class="text-end">@r.Capex.ToString("N2")</td>
+                                <td class="text-end">@r.TotalExpense.ToString("N2")</td>
+                                <td class="text-end">@r.Net.ToString("N2")</td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>
+        (function () {
+            // Defer to the next frame so the layout (and any page transition) has
+            // settled; otherwise charts can measure a 0-size canvas on htmx swaps
+            // and render blank. Re-runs safely by destroying any existing chart.
+            function build() {
+            if (!window.Chart) return;
+
+            var ctx = document.getElementById('expenseDonut');
+            if (!ctx) return;
+            var existingDonut = Chart.getChart(ctx);
+            if (existingDonut) existingDonut.destroy();
+
+            var data = [
+                @Model.Donut.Hr.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                @Model.Donut.Opex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                @Model.Donut.Capex.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            ];
+
+            var labels = ['HR', 'OPEX', 'CAPEX'];
+
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: ['#0f7b5b', '#12797C', '#c9a227'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, padding: 10, font: { size: 10 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    var v = context.raw || 0;
+                                    return context.label + ': ' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                }
+                            }
+                        }
+                    },
+                    cutout: '62%'
+                }
+            });
+
+            var wctx = document.getElementById('pnlWaterfall');
+            if (!wctx) return;
+            var existingWf = Chart.getChart(wctx);
+            if (existingWf) existingWf.destroy();
+
+            var revenue = @Model.Overall.Revenue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var hr = @Model.Overall.Hr.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var opex = @Model.Overall.Opex.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var capex = @Model.Overall.Capex.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var net = @Model.Overall.Net.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            var wfLabels = ['Revenue', 'HR', 'OPEX', 'CAPEX', 'Net'];
+            var values = [revenue, -hr, -opex, -capex, net];
+            var bases = [0, revenue, revenue - hr, revenue - hr - opex, 0];
+
+            new Chart(wctx, {
+                type: 'bar',
+                data: {
+                    labels: wfLabels,
+                    datasets: [
+                        {
+                            label: 'Base',
+                            data: bases,
+                            backgroundColor: 'rgba(0,0,0,0)',
+                            borderWidth: 0,
+                            stack: 'wf'
+                        },
+                        {
+                            label: 'Amount',
+                            data: values,
+                            backgroundColor: [
+                                'rgba(15, 123, 91, 0.35)',
+                                'rgba(220, 53, 69, 0.25)',
+                                'rgba(220, 53, 69, 0.25)',
+                                'rgba(220, 53, 69, 0.25)',
+                                'rgba(108, 117, 125, 0.30)'
+                            ],
+                            borderColor: [
+                                'rgba(15, 123, 91, 0.7)',
+                                'rgba(220, 53, 69, 0.55)',
+                                'rgba(220, 53, 69, 0.55)',
+                                'rgba(220, 53, 69, 0.55)',
+                                'rgba(108, 117, 125, 0.60)'
+                            ],
+                            borderWidth: 1,
+                            stack: 'wf'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    var v = context.raw || 0;
+                                    if (context.datasetIndex === 0) return '';
+                                    return context.label + ': ' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                }
+                            },
+                            filter: function (context) { return context.datasetIndex !== 0; }
+                        }
+                    },
+                    scales: {
+                        x: { stacked: true, ticks: { font: { size: 10 } } },
+                        y: {
+                            stacked: true,
+                            ticks: {
+                                font: { size: 10 },
+                                callback: function (value) {
+                                    return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            }
+
+            // Wait until Chart.js is available (it loads synchronously on a full
+            // page load, but guard anyway), then build on the next frame.
+            function schedule(attempt) {
+                if (window.Chart) {
+                    requestAnimationFrame(build);
+                } else if ((attempt || 0) < 50) {
+                    setTimeout(function () { schedule((attempt || 0) + 1); }, 50);
+                }
+            }
+            schedule(0);
+        })();
+    </script>
+}

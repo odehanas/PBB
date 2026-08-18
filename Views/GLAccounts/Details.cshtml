@@ -1,0 +1,36 @@
+﻿@model GovBudget.Models.GLAccounts
+
+@{
+    ViewData["Title"] = "Details";
+}
+
+<h1>Details</h1>
+
+<div>
+    <h4>GLAccounts</h4>
+    <hr />
+    <dl class="row">
+        <dt class = "col-sm-2">
+            @Html.DisplayNameFor(model => model.GLCode)
+        </dt>
+        <dd class = "col-sm-10">
+            @Html.DisplayFor(model => model.GLCode)
+        </dd>
+        <dt class = "col-sm-2">
+            @Html.DisplayNameFor(model => model.GLName)
+        </dt>
+        <dd class = "col-sm-10">
+            @Html.DisplayFor(model => model.GLName)
+        </dd>
+        <dt class = "col-sm-2">
+            @Html.DisplayNameFor(model => model.GLType)
+        </dt>
+        <dd class = "col-sm-10">
+            @Html.DisplayFor(model => model.GLType)
+        </dd>
+    </dl>
+</div>
+<div>
+    <a asp-action="Edit" asp-route-id="@Model?.GLAccountId">Edit</a> |
+    <a asp-action="Index">Back to List</a>
+</div>

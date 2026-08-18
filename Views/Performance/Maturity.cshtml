@@ -1,0 +1,69 @@
+@model List<GovBudget.Controllers.MaturityEditRow>
+@{
+    ViewData["Title"] = "Maturity";
+    var year = (int)ViewBag.Year;
+    var yearOptions = ViewBag.YearOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">PBB Maturity Assessment</h3>
+        <a class="btn btn-sm btn-outline-secondary" asp-action="Index">Back</a>
+    </div>
+
+    <form method="get" class="row g-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label class="form-label">Year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="yearOptions"></select>
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+    </form>
+
+    @{
+        var forms = new[] { "", "Presentational", "Performance-Informed", "Managerial", "Direct" };
+        var statuses = new[] { "", "AHEAD", "MIXED", "BEHIND" };
+    }
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <div class="row fw-bold text-muted small border-bottom pb-2 mb-2 d-none d-md-flex">
+                <div class="col-md-4">Entity</div>
+                <div class="col-md-2">Stage (1.0-4.0)</div>
+                <div class="col-md-3">Form</div>
+                <div class="col-md-2">Status</div>
+                <div class="col-md-1"></div>
+            </div>
+            @foreach (var r in Model)
+            {
+                <form method="post" asp-action="MaturitySave" class="row g-2 align-items-center mb-2">
+                    <input type="hidden" name="entityId" value="@r.EntityId" />
+                    <input type="hidden" name="year" value="@year" />
+                    <div class="col-md-4">@r.EntityLabel</div>
+                    <div class="col-md-2">
+                        <input name="stage" value="@r.Stage.ToString("0.0")" type="number" step="0.1" min="1" max="4" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-3">
+                        <select name="form" class="form-select form-select-sm">
+                            @foreach (var f in forms)
+                            {
+                                <option value="@f" selected="@(f == r.Form)">@(string.IsNullOrEmpty(f) ? "--" : f)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="statusLabel" class="form-select form-select-sm">
+                            @foreach (var s in statuses)
+                            {
+                                <option value="@s" selected="@(s == r.StatusLabel)">@(string.IsNullOrEmpty(s) ? "--" : s)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
+                    </div>
+                </form>
+            }
+        </div>
+    </div>
+</div>

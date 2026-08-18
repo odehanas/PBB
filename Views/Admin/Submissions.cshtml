@@ -1,0 +1,86 @@
+@model IEnumerable<GovBudget.Models.BudgetSubmissions>
+@{
+    ViewData["Title"] = "Budget Submissions";
+    var selectedYear = (int)(ViewBag.SelectedYear ?? DateTime.Now.Year);
+    var filterStatus = ViewBag.FilterStatus as string ?? "";
+    var entityClaim = User.Claims.FirstOrDefault(c => c.Type == "EntityId")?.Value;
+    var hasEntityScope = int.TryParse(entityClaim, out var scopedEntityId) && scopedEntityId > 0;
+    var isGlobalAdmin = User.IsInRole("SYSADMIN") || (User.IsInRole("ADMIN") && !hasEntityScope);
+    var isEntityAdmin = User.IsInRole("ADMIN") && hasEntityScope && !User.IsInRole("SYSADMIN");
+}
+
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Budget Submissions</h3>
+        <div class="text-muted small">Year: <strong>@selectedYear</strong></div>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+    else if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+
+    <div class="mb-3">
+        <a asp-action="Submissions" asp-route-year="@selectedYear" asp-route-status="" class="btn btn-sm @(string.IsNullOrWhiteSpace(filterStatus) ? "btn-primary" : "btn-outline-primary")">All</a>
+        <a asp-action="Submissions" asp-route-year="@selectedYear" asp-route-status="Draft" class="btn btn-sm @(filterStatus == "Draft" ? "btn-primary" : "btn-outline-primary")">Draft</a>
+        <a asp-action="Submissions" asp-route-year="@selectedYear" asp-route-status="Submitted" class="btn btn-sm @(filterStatus == "Submitted" ? "btn-primary" : "btn-outline-primary")">Submitted</a>
+        <a asp-action="Submissions" asp-route-year="@selectedYear" asp-route-status="Returned" class="btn btn-sm @(filterStatus == "Returned" ? "btn-primary" : "btn-outline-primary")">Returned</a>
+        <a asp-action="Submissions" asp-route-year="@selectedYear" asp-route-status="EntityApproved" class="btn btn-sm @(filterStatus == "EntityApproved" ? "btn-primary" : "btn-outline-primary")">EntityApproved</a>
+        <a asp-action="Submissions" asp-route-year="@selectedYear" asp-route-status="Approved" class="btn btn-sm @(filterStatus == "Approved" ? "btn-primary" : "btn-outline-primary")">Approved (legacy)</a>
+        <a asp-action="Submissions" asp-route-year="@selectedYear" asp-route-status="SentToCentral" class="btn btn-sm @(filterStatus == "SentToCentral" ? "btn-primary" : "btn-outline-primary")">SentToCentral</a>
+        <a asp-action="Submissions" asp-route-year="@selectedYear" asp-route-status="SysApproved" class="btn btn-sm @(filterStatus == "SysApproved" ? "btn-primary" : "btn-outline-primary")">SysApproved</a>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-striped table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Submitted</th>
+                    <th>Entity</th>
+                    <th>Department</th>
+                    <th>Category</th>
+                    <th>Ver</th>
+                    <th>Status</th>
+                    <th>Approved</th>
+                    <th>Sent</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in Model)
+                {
+                    <tr>
+                        <td class="text-nowrap">@(s.SubmittedAt == null ? "-" : s.SubmittedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
+                        <td class="text-nowrap">@s.Entity.EntityCode</td>
+                        <td class="text-nowrap">@s.Department.DeptCode</td>
+                        <td class="text-nowrap">@s.Category.CategoryCode</td>
+                        <td class="text-nowrap">@s.VersionNo</td>
+                        <td class="text-nowrap">@s.Status</td>
+                        <td class="text-nowrap">@(s.ApprovedAt == null ? "-" : s.ApprovedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
+                        <td class="text-nowrap">@(s.SentToCentralAt == null ? "-" : s.SentToCentralAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
+                        <td class="text-end">
+                            <a asp-action="ReviewSubmission" asp-route-id="@s.SubmissionId" class="btn btn-sm btn-outline-primary">Open</a>
+                            @if ((isGlobalAdmin
+                                  && (string.Equals(s.Status, "Submitted", StringComparison.OrdinalIgnoreCase)
+                                      || string.Equals(s.Status, "EntityApproved", StringComparison.OrdinalIgnoreCase)
+                                      || string.Equals(s.Status, "Approved", StringComparison.OrdinalIgnoreCase)
+                                      || string.Equals(s.Status, "SentToCentral", StringComparison.OrdinalIgnoreCase)))
+                                 || (isEntityAdmin && string.Equals(s.Status, "Submitted", StringComparison.OrdinalIgnoreCase)))
+                            {
+                                <form asp-action="ReturnSubmission" method="post" class="d-inline ms-1">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@s.SubmissionId" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Unlock</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

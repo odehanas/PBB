@@ -1,0 +1,54 @@
+@model GovBudget.Models.Projects
+
+@{
+    ViewData["Title"] = "Edit Project";
+}
+
+<h1>Edit Project</h1>
+
+<h4>Projects</h4>
+<hr />
+<div class="row">
+    <div class="col-md-6">
+        <form asp-action="Edit" method="post">
+            @Html.AntiForgeryToken()
+            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+            <input type="hidden" asp-for="ProjectId" />
+            
+            <div class="mb-3">
+                <label asp-for="ProjectCode" class="form-label"></label>
+                <input asp-for="ProjectCode" class="form-control" />
+                <span asp-validation-for="ProjectCode" class="text-danger"></span>
+            </div>
+            
+            <div class="mb-3">
+                <label asp-for="ProjectName" class="form-label"></label>
+                <input asp-for="ProjectName" class="form-control" />
+                <span asp-validation-for="ProjectName" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Owning Department</label>
+                <select asp-for="OwningDepartmentId" class="form-select" asp-items="ViewBag.OwningDepartmentId">
+                    <option value="">-- General / All Departments --</option>
+                </select>
+                <div class="form-text">Select a department if this project is specific to one department. Leave empty for shared/general projects.</div>
+                <span asp-validation-for="OwningDepartmentId" class="text-danger"></span>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" asp-for="IsActive" />
+                <label class="form-check-label" asp-for="IsActive"></label>
+            </div>
+
+            <div class="mb-3">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a asp-action="Index" class="btn btn-secondary">Back</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+}

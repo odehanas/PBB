@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GovBudget — What-If Guide (EN / AR) — دليل التحليل الافتراضي</title>
+<style>
+  :root{--ink:#1f2937;--muted:#6b7280;--brand:#0f4c81;--brand-light:#e8f0f7;--accent:#c8911e;--line:#d8dee6;--green:#1b7a45;--red:#b3261e;--bg-soft:#f6f8fa;}
+  *{box-sizing:border-box;}
+  html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{font-family:"Segoe UI","Dubai","Tahoma",Arial,sans-serif;color:var(--ink);line-height:1.7;margin:0;background:#fff;font-size:14.5px;}
+  .page{max-width:1100px;margin:0 auto;padding:40px 44px;}
+  .titlebar{text-align:center;border-bottom:3px solid var(--brand-light);padding-bottom:14px;margin-bottom:8px;}
+  .titlebar h1{font-size:25px;color:var(--brand);margin:0;}
+  .titlebar .sub{color:var(--muted);font-size:14px;margin-top:4px;}
+  .legend{display:flex;gap:18px;justify-content:center;margin:10px 0 18px;font-size:12.5px;color:var(--muted);}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .swatch{width:34px;height:14px;border-radius:3px;border:1px solid var(--line);display:inline-block;}
+  .sw-en{background:#eef4fb;}.sw-ar{background:#fff8ec;}
+
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:8px;margin:14px 0;overflow:hidden;}
+  .en,.ar{padding:16px 20px;}
+  .en{background:#fbfdff;border-right:1px solid var(--line);}
+  .ar{background:#fffdf7;direction:rtl;text-align:right;font-family:"Dubai","Tahoma","Segoe UI",Arial,sans-serif;}
+  .en h2,.ar h2{font-size:18px;color:var(--brand);margin:0 0 8px;}
+  .en h3,.ar h3{font-size:15px;color:var(--brand);margin:14px 0 4px;}
+  .en p,.ar p{margin:7px 0;}
+  .en ul,.en ol{margin:7px 0 7px 20px;padding:0;}
+  .ar ul,.ar ol{margin:7px 20px 7px 0;padding:0;}
+  li{margin:5px 0;}
+  code{background:var(--bg-soft);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12.5px;direction:ltr;display:inline-block;}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12.5px;}
+  th,td{border:1px solid var(--line);padding:6px 8px;vertical-align:top;}
+  .en th,.en td{text-align:left;}
+  .ar th,.ar td{text-align:right;}
+  th{background:var(--brand);color:#fff;font-weight:600;}
+  .callout{border-left:4px solid var(--accent);background:#fff8ec;padding:8px 12px;margin:10px 0;border-radius:0 6px 6px 0;font-size:13px;}
+  .ar .callout{border-left:0;border-right:4px solid var(--accent);border-radius:6px 0 0 6px;}
+  .callout.key{border-color:var(--red);background:#fdecea;}
+  .ar .callout.key{border-right-color:var(--red);}
+  .formula{font-family:Consolas,monospace;font-size:12.5px;background:var(--bg-soft);border:1px solid var(--line);border-radius:8px;padding:10px 12px;direction:ltr;text-align:left;overflow-x:auto;}
+  .no{color:var(--red);font-weight:700;}.yes{color:var(--green);font-weight:700;}
+  footer{margin-top:30px;border-top:1px solid var(--line);padding-top:10px;color:var(--muted);font-size:12px;text-align:center;}
+  @media print{ .row{break-inside:avoid;} }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="titlebar">
+    <h1>What-If Analysis — دليل التحليل الافتراضي</h1>
+    <div class="sub">How the What-If simulator works and its effect on submission versions · كيف يعمل محرّك «ماذا لو» وأثره على إصدارات الاعتماد</div>
+  </div>
+  <div class="legend">
+    <span><span class="swatch sw-en"></span> English (left column)</span>
+    <span><span class="swatch sw-ar"></span> العربية (العمود الأيمن)</span>
+  </div>
+
+  <!-- 1. What it is -->
+  <div class="row">
+    <div class="en">
+      <h2>1. What What-If is</h2>
+      <p><strong>What-If is a read-only simulator.</strong> It lets you preview how your budget would look under different assumptions — without changing any real budget data.</p>
+      <ul>
+        <li>You create named <strong>scenarios</strong> for a specific Year + Entity + Department.</li>
+        <li>Each scenario applies rate assumptions to your existing budget lines and shows the projected new amounts and the difference (delta).</li>
+        <li>It is purely analytical: nothing you do here edits, submits, approves, or locks a budget.</li>
+      </ul>
+    </div>
+    <div class="ar">
+      <h2>١. ما هو «ماذا لو»</h2>
+      <p><strong>«ماذا لو» أداة محاكاة للقراءة فقط.</strong> تتيح لك معاينة شكل الموازنة وفق افتراضات مختلفة — دون تغيير أي بيانات فعلية للموازنة.</p>
+      <ul>
+        <li>تنشئ <strong>سيناريوهات</strong> مُسمّاة لسنة + جهة + إدارة محددة.</li>
+        <li>يطبّق كل سيناريو نسب افتراضات على بنود موازنتك الحالية ويعرض المبالغ الجديدة المتوقعة والفرق (الانحراف).</li>
+        <li>الأداة تحليلية بحتة: لا شيء هنا يعدّل أو يُرسل أو يعتمد أو يقفل الموازنة.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 2. What you can set -->
+  <div class="row">
+    <div class="en">
+      <h2>2. What you can set</h2>
+      <p>Each scenario has two rate assumptions:</p>
+      <ul>
+        <li><strong>Cost Inflation Rate (%)</strong> — applied to cost lines (everything that is not revenue).</li>
+        <li><strong>Revenue Growth Rate (%)</strong> — applied to revenue lines.</li>
+      </ul>
+      <h3>Per-project overrides</h3>
+      <p>Optionally, you can override either rate <strong>per project</strong>. If a budget line belongs to a project that has an override, that project's rate is used instead of the scenario default.</p>
+    </div>
+    <div class="ar">
+      <h2>٢. ما الذي يمكنك ضبطه</h2>
+      <p>لكل سيناريو افتراضان للنسبة:</p>
+      <ul>
+        <li><strong>نسبة تضخّم التكلفة (%)</strong> — تُطبّق على بنود التكلفة (كل ما ليس إيراداً).</li>
+        <li><strong>نسبة نمو الإيراد (%)</strong> — تُطبّق على بنود الإيرادات.</li>
+      </ul>
+      <h3>تجاوزات على مستوى المشروع</h3>
+      <p>اختيارياً، يمكنك تجاوز أي من النسبتين <strong>لكل مشروع</strong>. فإذا كان البند تابعاً لمشروع له قيمة تجاوز، تُستخدم نسبة ذلك المشروع بدلاً من القيمة الافتراضية للسيناريو.</p>
+    </div>
+  </div>
+
+  <!-- 3. The math -->
+  <div class="row">
+    <div class="en">
+      <h2>3. How the math works</h2>
+      <p>For every budget line the system picks the right rate (project override if any, otherwise the scenario default; revenue rate for revenue lines, cost rate otherwise) and computes:</p>
+      <div class="formula">multiplier      = 1 + rate / 100
+new unit price  = round(unit price × multiplier, 2)
+new amount      = round(quantity × new unit price, 2)
+delta           = new amount − base amount</div>
+      <p>Totals are summed across all lines: base total, scenario total, and total delta.</p>
+    </div>
+    <div class="ar">
+      <h2>٣. كيف تُحتسب الأرقام</h2>
+      <p>لكل بند يختار النظام النسبة المناسبة (تجاوز المشروع إن وُجد، وإلا القيمة الافتراضية للسيناريو؛ نسبة الإيراد لبنود الإيراد، ونسبة التكلفة لغيرها) ثم يحسب:</p>
+      <div class="formula">multiplier      = 1 + rate / 100
+new unit price  = round(unit price × multiplier, 2)
+new amount      = round(quantity × new unit price, 2)
+delta           = new amount − base amount</div>
+      <p>تُجمَع الإجماليات عبر كل البنود: الإجمالي الأساسي، إجمالي السيناريو، وإجمالي الفرق.</p>
+    </div>
+  </div>
+
+  <!-- 4. Worked example -->
+  <div class="row">
+    <div class="en">
+      <h2>4. Worked example</h2>
+      <p>Scenario default: <strong>Cost +5%</strong>, <strong>Revenue +3%</strong>.</p>
+      <table>
+        <thead><tr><th>Line</th><th>Qty</th><th>Unit</th><th>Base</th><th>Rate</th><th>New unit</th><th>New amount</th><th>Delta</th></tr></thead>
+        <tbody>
+          <tr><td>Supplies (cost)</td><td>10</td><td>1,000</td><td>10,000</td><td>+5%</td><td>1,050</td><td>10,500</td><td>+500</td></tr>
+          <tr><td>Service fees (revenue)</td><td>1</td><td>200,000</td><td>200,000</td><td>+3%</td><td>206,000</td><td>206,000</td><td>+6,000</td></tr>
+          <tr><td>Project X item (cost, override +10%)</td><td>4</td><td>2,000</td><td>8,000</td><td>+10%</td><td>2,200</td><td>8,800</td><td>+800</td></tr>
+        </tbody>
+      </table>
+      <p class="small">Project X overrides the default 5% with its own 10%.</p>
+    </div>
+    <div class="ar">
+      <h2>٤. مثال تطبيقي</h2>
+      <p>افتراض السيناريو: <strong>التكلفة +٥٪</strong>، <strong>الإيراد +٣٪</strong>.</p>
+      <table>
+        <thead><tr><th>البند</th><th>كمية</th><th>سعر</th><th>الأساس</th><th>النسبة</th><th>سعر جديد</th><th>مبلغ جديد</th><th>الفرق</th></tr></thead>
+        <tbody>
+          <tr><td>لوازم (تكلفة)</td><td>10</td><td>1,000</td><td>10,000</td><td>+5%</td><td>1,050</td><td>10,500</td><td>+500</td></tr>
+          <tr><td>رسوم خدمات (إيراد)</td><td>1</td><td>200,000</td><td>200,000</td><td>+3%</td><td>206,000</td><td>206,000</td><td>+6,000</td></tr>
+          <tr><td>بند مشروع X (تكلفة، تجاوز +10%)</td><td>4</td><td>2,000</td><td>8,000</td><td>+10%</td><td>2,200</td><td>8,800</td><td>+800</td></tr>
+        </tbody>
+      </table>
+      <p class="small">المشروع X يتجاوز نسبة ٥٪ الافتراضية بنسبته الخاصة ١٠٪.</p>
+    </div>
+  </div>
+
+  <!-- 5. Scope & active scenario -->
+  <div class="row">
+    <div class="en">
+      <h2>5. Scope &amp; the active scenario</h2>
+      <ul>
+        <li>Scenarios are tied to your selected <strong>context</strong> (Year / Entity / Department). You must pick a context first.</li>
+        <li>You can <strong>Activate</strong> one scenario at a time; the active scenario is remembered for your session.</li>
+        <li><strong>Clear</strong> removes the active scenario so you see base figures again.</li>
+        <li>While a scenario is active, scenario-adjusted figures can be viewed in the analysis; the base budget remains untouched.</li>
+      </ul>
+    </div>
+    <div class="ar">
+      <h2>٥. النطاق والسيناريو النشِط</h2>
+      <ul>
+        <li>ترتبط السيناريوهات بـ<strong>السياق</strong> المختار (السنة / الجهة / الإدارة). يجب اختيار السياق أولاً.</li>
+        <li>يمكنك <strong>تفعيل</strong> سيناريو واحد في كل مرة؛ ويُحفظ السيناريو النشِط طوال جلستك.</li>
+        <li><strong>المسح (Clear)</strong> يزيل السيناريو النشِط لتعود لرؤية الأرقام الأساسية.</li>
+        <li>أثناء تفعيل سيناريو، يمكن عرض الأرقام المعدّلة في التحليل؛ وتبقى الموازنة الأساسية دون مساس.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 6. Impact on versions -->
+  <div class="row">
+    <div class="en">
+      <h2>6. Impact on submission versions</h2>
+      <p class="no">None — by design.</p>
+      <p>What-If <strong>reads</strong> your budget lines but <strong>never writes</strong> to them. It only stores the scenario's rates. Therefore it:</p>
+      <ul>
+        <li><span class="no">does not</span> create or change submission versions;</li>
+        <li><span class="no">does not</span> change any status (Draft / Submitted / Approved …);</li>
+        <li><span class="no">does not</span> lock or unlock anything.</li>
+      </ul>
+      <div class="callout key"><strong>Key point</strong>
+      You can run What-If even on a budget that is already <em>Submitted</em> or <em>Approved</em> — because it only simulates and never edits. The numbers you see are a preview, not a saved change.</div>
+    </div>
+    <div class="ar">
+      <h2>٦. الأثر على إصدارات الاعتماد</h2>
+      <p class="no">لا يوجد — بحكم التصميم.</p>
+      <p>«ماذا لو» <strong>يقرأ</strong> بنود الموازنة لكنه <strong>لا يكتب</strong> فيها أبداً. وهو يخزّن نسب السيناريو فقط. ولذلك فهو:</p>
+      <ul>
+        <li><span class="no">لا</span> ينشئ أو يغيّر إصدارات الاعتماد؛</li>
+        <li><span class="no">لا</span> يغيّر أي حالة (مسودة / مُرسَل / معتمد …)؛</li>
+        <li><span class="no">لا</span> يقفل أو يلغي قفل أي شيء.</li>
+      </ul>
+      <div class="callout key"><strong>نقطة جوهرية</strong>
+      يمكنك تشغيل «ماذا لو» حتى على موازنة <em>مُرسَلة</em> أو <em>معتمدة</em> — لأنه يحاكي فقط ولا يعدّل. فالأرقام التي تراها معاينة وليست تغييراً محفوظاً.</div>
+    </div>
+  </div>
+
+  <!-- 7. Applying for real -->
+  <div class="row">
+    <div class="en">
+      <h2>7. Turning a scenario into a real change</h2>
+      <p>If you decide a scenario's outcome is what you want, you apply it <strong>manually</strong> through the normal budget process:</p>
+      <ol>
+        <li>Open <strong>Budget Entry</strong> while the category is in <strong>Draft</strong> (or have an admin Return it for revision first).</li>
+        <li>Edit the actual budget lines to the desired figures.</li>
+        <li><strong>Submit</strong> — this is what creates / advances a real submission version.</li>
+      </ol>
+      <p class="small">What-If informs the decision; the submission workflow records it.</p>
+    </div>
+    <div class="ar">
+      <h2>٧. تحويل السيناريو إلى تغيير فعلي</h2>
+      <p>إذا قررت أن نتيجة السيناريو هي ما تريده، فإنك تطبّقه <strong>يدوياً</strong> عبر مسار الموازنة المعتاد:</p>
+      <ol>
+        <li>افتح <strong>إدخال الموازنة</strong> والفئة بحالة <strong>مسودة</strong> (أو اطلب من المسؤول إرجاعها للتعديل أولاً).</li>
+        <li>عدّل بنود الموازنة الفعلية إلى الأرقام المطلوبة.</li>
+        <li><strong>أرسِل</strong> — وهذا ما ينشئ/يقدّم إصدار اعتماد حقيقياً.</li>
+      </ol>
+      <p class="small">«ماذا لو» يدعم القرار، ومسار الاعتماد هو من يسجّله.</p>
+    </div>
+  </div>
+
+  <!-- 8. FAQ -->
+  <div class="row">
+    <div class="en">
+      <h2>8. Quick FAQ</h2>
+      <table>
+        <thead><tr><th>Question</th><th>Answer</th></tr></thead>
+        <tbody>
+          <tr><td>Does What-If change my budget?</td><td><span class="no">No.</span> It only simulates.</td></tr>
+          <tr><td>Does it create a new version?</td><td><span class="no">No.</span> Versions come only from Submit / Return.</td></tr>
+          <tr><td>Can I use it after submitting?</td><td><span class="yes">Yes.</span> It is read-only, so the lock doesn't matter.</td></tr>
+          <tr><td>How do project overrides work?</td><td>They replace the scenario default rate for lines on that project.</td></tr>
+          <tr><td>Many scenarios at once?</td><td>You keep many, but only one is <em>active</em> per session.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="ar">
+      <h2>٨. أسئلة شائعة</h2>
+      <table>
+        <thead><tr><th>السؤال</th><th>الإجابة</th></tr></thead>
+        <tbody>
+          <tr><td>هل يغيّر «ماذا لو» موازنتي؟</td><td><span class="no">لا.</span> يحاكي فقط.</td></tr>
+          <tr><td>هل ينشئ إصداراً جديداً؟</td><td><span class="no">لا.</span> الإصدارات تأتي فقط من الإرسال/الإرجاع.</td></tr>
+          <tr><td>هل أستخدمه بعد الإرسال؟</td><td><span class="yes">نعم.</span> فهو للقراءة فقط، فلا يهم القفل.</td></tr>
+          <tr><td>كيف تعمل تجاوزات المشروع؟</td><td>تحلّ محل النسبة الافتراضية للسيناريو لبنود ذلك المشروع.</td></tr>
+          <tr><td>عدة سيناريوهات معاً؟</td><td>تحتفظ بعدّة، لكن واحداً فقط يكون <em>نشِطاً</em> لكل جلسة.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    GovBudget — What-If Analysis Guide · دليل التحليل الافتراضي. Reflects the current What-If engine (read-only simulation; no effect on submission versions).
+  </footer>
+
+</div>
+</body>
+</html>

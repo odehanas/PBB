@@ -1,0 +1,78 @@
+@model GovBudget.Controllers.MidYearController.MidYearIndexVm
+
+@{
+    ViewData["Title"] = "Mid-Year Forecast";
+    var rows = Model?.Rows ?? new List<GovBudget.Controllers.MidYearController.MidYearRowVm>();
+}
+
+<div class="container py-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <div>
+            <h1 class="mb-0">Mid-Year Forecast</h1>
+            <div class="text-muted small">@Model.Year — @Model.EntityLabel</div>
+        </div>
+        <a asp-controller="Context" asp-action="Select" asp-route-returnUrl="@Url.Action("Index","MidYear", new { year = Model.Year })" class="btn btn-outline-secondary btn-sm">Change Context</a>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+
+    @if (!rows.Any())
+    {
+        <div class="alert alert-info mb-0">
+            No mid-year actuals have been uploaded for this entity/year yet.
+        </div>
+    }
+    else
+    {
+        <form asp-action="Save" method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="Year" value="@Model.Year" />
+
+            <div class="card shadow-sm">
+                <div class="card-header bg-white fw-bold">H1 Actuals + H2 Forecast</div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>GL Type</th>
+                                    <th>GL</th>
+                                    <th class="text-end">Actual (H1)</th>
+                                    <th class="text-end">Forecast (H2)</th>
+                                    <th class="text-end">Estimated Full Year</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @for (var i = 0; i < rows.Count; i++)
+                            {
+                                var r = rows[i];
+                                var forecast = r.ForecastH2Amount ?? 0m;
+                                <tr>
+                                    <td class="text-nowrap">@r.GLType</td>
+                                    <td class="text-nowrap">@r.GLCode</td>
+                                    <td class="text-end">@r.ActualH1Amount.ToString("#,##0.00")</td>
+                                    <td class="text-end" style="min-width: 180px;">
+                                        <input type="hidden" name="Rows[@i].MidYearId" value="@r.MidYearId" />
+                                        <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end" name="Rows[@i].ForecastH2Amount" value="@(r.ForecastH2Amount?.ToString() ?? "")" placeholder="Enter H2 forecast" />
+                                    </td>
+                                    <td class="text-end">@((r.ActualH1Amount + forecast).ToString("#,##0.00"))</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer bg-white d-flex justify-content-end">
+                    <button type="submit" class="btn btn-primary">Save Forecast</button>
+                </div>
+            </div>
+        </form>
+    }
+</div>

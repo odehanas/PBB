@@ -1,0 +1,129 @@
+@using Microsoft.AspNetCore.Mvc.Rendering
+@model IEnumerable<GovBudget.Models.MidYearGlActualForecasts>
+
+@{
+    ViewData["Title"] = "Mid-Year Actuals";
+    var selectedYear = (int)(ViewBag.SelectedYear ?? DateTime.Now.Year);
+    var yearOptions = ViewBag.YearOptions as List<SelectListItem> ?? new List<SelectListItem>();
+    var entityOptions = ViewBag.EntityOptions as List<SelectListItem> ?? new List<SelectListItem>();
+    var glCode = (string)(ViewBag.GlCode ?? "");
+    var effectiveEntityId = ViewBag.EffectiveEntityId as int?;
+    var isSysAdmin = User.IsInRole("SYSADMIN");
+}
+
+<div class="container py-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <h1 class="mb-0">Mid-Year Actuals (H1) + Entity Forecast (H2)</h1>
+        <div class="d-flex gap-2 flex-wrap">
+            <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">&larr; Back to Admin Room</a>
+            <a asp-controller="Admin" asp-action="MidYearActualsTemplate" class="btn btn-outline-secondary">Download Template</a>
+        </div>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold">Filter + Upload</div>
+        <div class="card-body">
+            <form method="get" class="row g-2 align-items-end mb-3">
+                <div class="col-auto">
+                    <label class="form-label">Year</label>
+                    <select name="year" class="form-select form-select-sm" asp-items="yearOptions"></select>
+                </div>
+
+                @if (isSysAdmin)
+                {
+                    <div class="col-md-5">
+                        <label class="form-label">Entity</label>
+                        <select name="entityId" class="form-select form-select-sm" asp-items="entityOptions"></select>
+                    </div>
+                }
+                else
+                {
+                    <input type="hidden" name="entityId" value="@(effectiveEntityId?.ToString() ?? "")" />
+                }
+
+                <div class="col-md-3">
+                    <label class="form-label">GL Search</label>
+                    <input type="text" name="glCode" value="@glCode" class="form-control form-control-sm" placeholder="e.g. 5001" />
+                </div>
+
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                </div>
+            </form>
+
+            <form asp-action="UploadMidYearActuals" method="post" enctype="multipart/form-data" class="d-flex align-items-center gap-2 flex-wrap">
+                @Html.AntiForgeryToken()
+                <input type="file" name="file" accept=".xlsx" class="form-control form-control-sm" style="max-width: 420px;" required />
+                <button type="submit" class="btn btn-sm btn-success">Upload Mid-Year Actuals</button>
+                <div class="text-muted small">Columns: BudgetYear, EntityCode, GLCode, GLType (Revenue/HR/Opex/Capex), ActualH1Amount</div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-white fw-bold">Rows (top 500)</div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Entity</th>
+                            <th>GL</th>
+                            <th>GL Type</th>
+                            <th class="text-end">Actual H1</th>
+                            <th class="text-end">Forecast H2</th>
+                            <th class="text-end">Estimated Full Year</th>
+                            <th>Source</th>
+                            <th class="text-nowrap">Created</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @if (Model == null || !Model.Any())
+                    {
+                        <tr>
+                            <td colspan="9" class="text-center text-muted p-3">No data found.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        foreach (var r in Model)
+                        {
+                            var forecast = r.ForecastH2Amount ?? 0m;
+                            <tr>
+                                <td class="text-nowrap">@r.Entity.EntityCode</td>
+                                <td class="text-nowrap">@r.GLCode</td>
+                                <td class="text-nowrap">@r.GLType</td>
+                                <td class="text-end">@r.ActualH1Amount.ToString("#,##0.00")</td>
+                                <td class="text-end">@forecast.ToString("#,##0.00")</td>
+                                <td class="text-end">@((r.ActualH1Amount + forecast).ToString("#,##0.00"))</td>
+                                <td class="text-truncate" style="max-width: 220px;">@r.SourceFile</td>
+                                <td class="text-nowrap">@r.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                <td class="text-end">
+                                    <form asp-action="DeleteMidYearActual" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.MidYearId" />
+                                        <input type="hidden" name="year" value="@selectedYear" />
+                                        <input type="hidden" name="entityId" value="@(effectiveEntityId?.ToString() ?? "")" />
+                                        <input type="hidden" name="glCode" value="@glCode" />
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this row?')">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

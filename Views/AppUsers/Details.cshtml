@@ -1,0 +1,45 @@
+@model GovBudget.Models.AppUsers
+
+@{
+    ViewData["Title"] = "User Details";
+}
+
+<h1>User Details</h1>
+<hr />
+
+<dl class="row">
+    <dt class="col-sm-3">Username</dt>
+    <dd class="col-sm-9">@Model.UserName</dd>
+
+    <dt class="col-sm-3">Role</dt>
+    <dd class="col-sm-9">@Model.Role</dd>
+
+    <dt class="col-sm-3">Entity</dt>
+    <dd class="col-sm-9">
+        @if (Model.Entity != null)
+        {
+            @Model.Entity.EntityCode @:— @Model.Entity.EntityName
+        }
+        else if (Model.Department?.Entity != null)
+        {
+            @Model.Department.Entity.EntityCode @:— @Model.Department.Entity.EntityName
+        }
+    </dd>
+
+    <dt class="col-sm-3">Department</dt>
+    <dd class="col-sm-9">
+        @if (Model.Department != null)
+        {
+            @Model.Department.DeptCode @:— @Model.Department.DeptName
+        }
+    </dd>
+
+    <dt class="col-sm-3">Status</dt>
+    <dd class="col-sm-9">@((Model.IsActive) ? "Active" : "Inactive")</dd>
+</dl>
+
+<div class="mt-3">
+    <a asp-action="Edit" asp-route-id="@Model.UserId" class="btn btn-primary">Edit</a>
+    <a asp-action="Index" class="btn btn-secondary">Back</a>
+</div>
+

@@ -1,0 +1,193 @@
+@* Views/Shared/_Layout.cshtml *@
+@using GovBudget.Utils
+@inject GovBudget.Services.IPermissionService Permissions
+@{
+    // Resolved once per request (cached in memory) and used to hide any navigation entry
+    // the current role cannot open, so users are never shown links that would be refused.
+    var navRights = await Permissions.GetAllRightsAsync(User);
+    bool CanOpen(string formKey) => navRights.TryGetValue(formKey, out var r) && r.CanView;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - GovBudget</title>
+
+    <link rel="icon" href="~/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="~/images/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="~/images/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="~/images/apple-touch-icon.png" />
+
+    <script>
+        (function () {
+            try {
+                var stored = localStorage.getItem('app_theme') || 'system';
+                var resolved = stored;
+                if (stored === 'system') {
+                    resolved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                }
+                document.documentElement.setAttribute('data-bs-theme', resolved);
+                document.documentElement.setAttribute('data-app-theme', stored);
+            } catch (e) { }
+        })();
+    </script>
+
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/GovBudget.styles.css" asp-append-version="true" />
+
+    @* Core client libraries loaded up-front so page-level @@section Scripts always have
+       jQuery / Bootstrap available. Navigation is standard full-page loads. *@
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    @await Html.PartialAsync("_ValidationScriptsPartial")
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+</head>
+<body>
+    <div class="d-flex" style="min-height: 100vh;">
+        <!-- Sidebar -->
+        <div class="d-flex flex-column flex-shrink-0 p-3 text-body app-sidebar"
+             style="width: 280px;">
+            <a asp-controller="Home" asp-action="Index" class="app-brand text-decoration-none">
+                <img src="~/images/rak-dof-logo.png" class="app-brand-logo" alt="Ras Al Khaimah Government Department of Finance" />
+            </a>
+            <hr>
+            <ul class="nav nav-pills flex-column mb-auto">
+                <li class="nav-item">
+                    <a asp-controller="Home" asp-action="Index" class="nav-link app-nav-link">
+                        <i class="bi bi-house-door app-nav-icon"></i>Home
+                    </a>
+                </li>
+                @if (CanOpen(AppForms.BudgetSetup))
+                {
+                    <li>
+                        <a asp-controller="Context" asp-action="Select" class="nav-link app-nav-link">
+                            <i class="bi bi-sliders2 app-nav-icon"></i>Budget Setup
+                        </a>
+                    </li>
+                }
+                @if (CanOpen(AppForms.MidYear))
+                {
+                    <li>
+                        <a asp-controller="MidYear" asp-action="Index" class="nav-link app-nav-link">
+                            <i class="bi bi-graph-up-arrow app-nav-icon"></i>Mid-Year Forecast
+                        </a>
+                    </li>
+                }
+                @if (CanOpen(AppForms.Reports))
+                {
+                    <li>
+                        <a asp-controller="Reports" asp-action="Index" class="nav-link app-nav-link">
+                            <i class="bi bi-bar-chart-line app-nav-icon"></i>Reports
+                        </a>
+                    </li>
+                }
+                @if (CanOpen(AppForms.Requests))
+                {
+                    <li>
+                        <a asp-controller="InternalMessages" asp-action="Index" class="nav-link app-nav-link">
+                            <i class="bi bi-inbox app-nav-icon"></i>Requests
+                        </a>
+                    </li>
+                }
+                @if (CanOpen(AppForms.WhatIf))
+                {
+                    <li>
+                        <a asp-controller="WhatIf" asp-action="Index" class="nav-link app-nav-link">
+                            <i class="bi bi-magic app-nav-icon"></i>What-If
+                        </a>
+                    </li>
+                }
+                @if (CanOpen(AppForms.Guides))
+                {
+                    <li>
+                        <a asp-controller="Guides" asp-action="Index" class="nav-link app-nav-link">
+                            <i class="bi bi-book app-nav-icon"></i>User Guides
+                        </a>
+                    </li>
+                }
+                @if (CanOpen(AppForms.ManagementReview))
+                {
+                    <li>
+                        <a asp-controller="ManagementReview" asp-action="Index" class="nav-link app-nav-link">
+                            <i class="bi bi-clipboard-check app-nav-icon"></i>Management Review
+                        </a>
+                    </li>
+                }
+                @if (CanOpen(AppForms.Performance))
+                {
+                    <li>
+                        <a asp-controller="Performance" asp-action="Index" class="nav-link app-nav-link">
+                            <i class="bi bi-speedometer2 app-nav-icon"></i>Performance Data
+                        </a>
+                    </li>
+                }
+                @if (CanOpen(AppForms.BudgetVsActual))
+                {
+                    <li>
+                        <a asp-controller="Actuals" asp-action="BudgetVsActual" class="nav-link app-nav-link">
+                            <i class="bi bi-clipboard-data app-nav-icon"></i>Budget vs Actual
+                        </a>
+                    </li>
+                }
+                @if (CanOpen(AppForms.AdminRoom))
+                {
+                    <li>
+                        <a asp-controller="Admin" asp-action="Index" class="nav-link app-nav-link">
+                            <i class="bi bi-shield-lock app-nav-icon"></i>Admin Room
+                        </a>
+                    </li>
+                }
+                @if (User.IsInRole("SYSADMIN"))
+                {
+                    <li>
+                        <a asp-controller="RolePermissions" asp-action="Index" class="nav-link app-nav-link">
+                            <i class="bi bi-person-badge app-nav-icon"></i>Roles &amp; Rights
+                        </a>
+                    </li>
+                }
+            </ul>
+            <hr>
+            <div class="mt-auto">
+                @if (User.Identity?.IsAuthenticated ?? false)
+                {
+                    <div class="mb-2 text-center text-muted small">
+                        Logged in as: <strong>@User.Identity.Name</strong>
+                    </div>
+                }
+                <form asp-controller="Account" asp-action="Logout" method="post" hx-boost="false">
+                    <button type="submit" class="btn btn-danger w-100"><i class="bi bi-box-arrow-right"></i>Exit / Logout</button>
+                </form>
+                <div class="mt-2 text-center text-muted small">
+                    &copy; 2026 - GovBudget
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-grow-1 app-page">
+            <div class="app-topbar d-print-none">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="appSidebarToggle" aria-pressed="false" title="Toggle menu">
+                    <i class="bi bi-list"></i>
+                </button>
+                <div class="ms-auto">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="appThemeToggle" title="Switch theme">
+                        <i class="bi bi-circle-half"></i>Theme
+                    </button>
+                </div>
+            </div>
+            <div id="appProgress" class="app-progress" aria-hidden="true"></div>
+            <div id="appContent">
+                <div class="container-fluid p-4">
+                    <main role="main">
+                        @RenderBody()
+                    </main>
+                </div>
+                @await RenderSectionAsync("Scripts", required: false)
+            </div>
+        </div>
+    </div>
+</body>
+</html>

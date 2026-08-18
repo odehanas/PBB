@@ -1,0 +1,87 @@
+@model IEnumerable<GovBudget.Models.Programs>
+
+@{
+    ViewData["Title"] = "Index";
+}
+
+<h1>Index</h1>
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success">@TempData["Success"]</div>
+}
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger" style="white-space: pre-line;">@TempData["Error"]</div>
+}
+
+<div class="mb-3">
+    <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">&larr; Back to Admin Room</a>
+    <a asp-action="Create" class="btn btn-primary">Create New</a>
+    <a asp-action="Template" class="btn btn-outline-primary">Download Template</a>
+</div>
+
+<form asp-action="Upload" method="post" enctype="multipart/form-data" class="mb-3">
+    @Html.AntiForgeryToken()
+    <div class="row g-2 align-items-center">
+        <div class="col-auto">
+            <input type="file" name="file" class="form-control" accept=".xlsx" />
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-success">Upload Excel</button>
+        </div>
+    </div>
+</form>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>
+                @Html.DisplayNameFor(model => model.ProgramCode)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.ProgramName)
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.IsActive)
+            </th>
+            <th>
+                Type
+            </th>
+            <th>
+                @Html.DisplayNameFor(model => model.Entity)
+            </th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+@foreach (var item in Model) {
+        <tr>
+            <td>
+                @Html.DisplayFor(modelItem => item.ProgramCode)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.ProgramName)
+            </td>
+            <td>
+                @Html.DisplayFor(modelItem => item.IsActive)
+            </td>
+            <td>
+                <span class="badge bg-@(item.ProgramType == "Support" ? "warning text-dark" : "primary")">@(string.IsNullOrEmpty(item.ProgramType) ? "Mandate" : item.ProgramType)</span>
+                @if (item.ProgramType == "Support" && item.AllocationSequence.HasValue)
+                {
+                    <span class="text-muted small">seq @item.AllocationSequence</span>
+                }
+            </td>
+            <td>
+                @(item.Entity.EntityCode + " - " + item.Entity.EntityName)
+            </td>
+            <td>
+                <a asp-action="Edit" asp-route-id="@item.ProgramId">Edit</a> |
+                <a asp-action="Details" asp-route-id="@item.ProgramId">Details</a> |
+                <a asp-action="Delete" asp-route-id="@item.ProgramId">Delete</a>
+            </td>
+        </tr>
+}
+    </tbody>
+</table>

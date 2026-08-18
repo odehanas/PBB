@@ -1,0 +1,66 @@
+@model List<GovBudget.Controllers.OutputEditRow>
+@{
+    ViewData["Title"] = "Activity Outputs";
+    var year = (int)ViewBag.Year;
+    var yearOptions = ViewBag.YearOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var entityOptions = ViewBag.EntityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Activity Outputs</h3>
+        <a class="btn btn-sm btn-outline-secondary" asp-action="Index">Back</a>
+    </div>
+
+    <form method="get" class="row g-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label class="form-label">Year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="yearOptions"></select>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label">Entity</label>
+            <select name="entityId" class="form-select form-select-sm" asp-items="entityOptions"></select>
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+    </form>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            @if (Model.Count == 0)
+            {
+                <div class="alert alert-info">No activities for this filter.</div>
+            }
+            else
+            {
+                <div class="row fw-bold text-muted small border-bottom pb-2 mb-2 d-none d-md-flex">
+                    <div class="col-md-2">Programme</div>
+                    <div class="col-md-4">Activity</div>
+                    <div class="col-md-3">Output Measure</div>
+                    <div class="col-md-2">Output Volume</div>
+                    <div class="col-md-1"></div>
+                </div>
+                @foreach (var r in Model)
+                {
+                    <form method="post" asp-action="OutputSave" class="row g-2 align-items-center mb-2">
+                        <input type="hidden" name="activityId" value="@r.ActivityId" />
+                        <input type="hidden" name="year" value="@year" />
+                        <div class="col-md-2">@r.ProgramCode</div>
+                        <div class="col-md-4">@r.ActivityLabel</div>
+                        <div class="col-md-3">
+                            <input name="outputMeasure" value="@r.OutputMeasure" class="form-control form-control-sm" placeholder="e.g. households served" />
+                        </div>
+                        <div class="col-md-2">
+                            <input name="outputVolume" value="@r.OutputVolume.ToString("0.####")" type="number" step="any" min="0" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-1">
+                            <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
+                        </div>
+                    </form>
+                }
+                <div class="text-muted small mt-2">Tip: clear the Output Measure and save to remove an output.</div>
+            }
+        </div>
+    </div>
+</div>

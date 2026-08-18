@@ -1,0 +1,61 @@
+@{
+    ViewData["Title"] = "Performance Data Entry";
+    var isGlobalAdmin = (bool)(ViewBag.IsGlobalAdmin ?? true);
+}
+
+<div class="container-fluid py-3">
+    <h3 class="mb-1">Performance Data Entry</h3>
+    <div class="text-muted small mb-3">Manage the PBB performance layer that feeds the Management Review reports.</div>
+
+    <div class="row g-3">
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <h5 class="card-title">KPIs</h5>
+                    <p class="card-text text-muted small">Baseline, target and actual values. Status is auto-computed (Green / Watch / Behind) unless overridden.</p>
+                    <a class="btn btn-sm btn-primary" asp-action="Kpis">Manage KPIs</a>
+                    <a class="btn btn-sm btn-outline-secondary" asp-action="Tree">Hierarchy tree</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Maturity</h5>
+                    <p class="card-text text-muted small">PBB maturity stage (1.0-4.0), OECD form and status per entity.</p>
+                    <a class="btn btn-sm btn-primary" asp-action="Maturity">Manage Maturity</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Activity Outputs</h5>
+                    <p class="card-text text-muted small">Output measure and volume per activity (drives cost-per-output).</p>
+                    <a class="btn btn-sm btn-primary" asp-action="Outputs">Manage Outputs</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Entity Profiles</h5>
+                    <p class="card-text text-muted small">Performance assessment narrative, key outcomes and issues per entity (Entity Profile slides).</p>
+                    <a class="btn btn-sm btn-primary" asp-action="ReviewNotes">Manage Profiles</a>
+                </div>
+            </div>
+        </div>
+        @if (isGlobalAdmin)
+        {
+            <div class="col-md-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">Findings &amp; Plan</h5>
+                        <p class="card-text text-muted small">Headline findings, executive recommendations and the 90-day plan (cross-entity editorial sections).</p>
+                        <a class="btn btn-sm btn-primary" asp-action="Narratives">Manage Narrative</a>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>

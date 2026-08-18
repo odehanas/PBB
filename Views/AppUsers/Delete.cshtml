@@ -1,0 +1,25 @@
+@model GovBudget.Models.AppUsers
+
+@{
+    ViewData["Title"] = "Deactivate User";
+}
+
+<h1>Deactivate User</h1>
+<hr />
+
+<div class="alert alert-warning">
+    This will set the user to Inactive (soft deactivation). The user will not be able to log in.
+</div>
+
+<dl class="row">
+    <dt class="col-sm-3">Username</dt>
+    <dd class="col-sm-9">@Model.UserName</dd>
+
+    <dt class="col-sm-3">Role</dt>
+    <dd class="col-sm-9">@Model.Role</dd>
+</dl>
+
+<form asp-action="Delete" asp-route-id="@Model.UserId" method="post">
+    <button type="submit" class="btn btn-danger">Deactivate</button>
+    <a asp-action="Index" class="btn btn-secondary">Back</a>
+</form>

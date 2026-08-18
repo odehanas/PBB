@@ -1,0 +1,862 @@
+@model GovBudget.Controllers.ManagementReviewVm
+
+@{
+    ViewData["Title"] = "PBB Management Review";
+
+    // ----- Executive-summary aggregates (derived from the section data) -----
+    var totalBudget = Model.CostStructure.Sum(x => x.Total);
+    var entityCount = Model.CostStructure.Count;
+    var headCount = Model.Manpower.Sum(x => x.HeadCount);
+    var manpowerCost = Model.Manpower.Sum(x => x.ManpowerCost);
+    var costPerFte = headCount > 0 ? manpowerCost / headCount : 0m;
+    var kpiTotal = Model.KpiScorecard.Sum(x => x.Total);
+    var kpiGreen = Model.KpiScorecard.Sum(x => x.Green);
+    var pctGreen = kpiTotal > 0 ? (decimal)kpiGreen / kpiTotal * 100m : 0m;
+    var maturityStages = Model.MaturityLadder.Where(x => x.Stage.HasValue).Select(x => x.Stage!.Value).ToList();
+    var avgMaturity = maturityStages.Count > 0 ? (decimal?)maturityStages.Average() : null;
+
+    var scopeLabel = "All Entities";
+    if (Model.EntityId.HasValue)
+    {
+        scopeLabel = Model.EntityOptions?.FirstOrDefault(o => o.Value == Model.EntityId.Value.ToString())?.Text
+                     ?? (Model.CostStructure.FirstOrDefault() is { } cs ? $"{cs.EntityCode} - {cs.EntityName}" : "Selected Entity");
+    }
+    else if (!Model.IsAdmin)
+    {
+        scopeLabel = Model.CostStructure.FirstOrDefault() is { } cs0 ? $"{cs0.EntityCode} - {cs0.EntityName}" : "My Entity";
+    }
+}
+
+<style>
+    .pbb-report{--navy:#0a5b43;--navy-2:#0f7b5b;--navy-soft:#e3f0ea;--gray:#f4f7f5;--line:#d5e3dc;--ink:#1f2d28;--muted:#6b7c74;color:var(--ink);}
+    .pbb-report{counter-reset:pbbsec;}
+
+    /* ---- Cover / report banner ---- */
+    .pbb-cover{background:linear-gradient(130deg,var(--navy) 0%,var(--navy-2) 100%);color:#fff;border-radius:14px;padding:30px 34px;margin-bottom:22px;box-shadow:0 10px 30px rgba(15,42,74,.18);}
+    .pbb-cover .kicker{letter-spacing:3px;text-transform:uppercase;font-size:11.5px;color:#bfe3d3;font-weight:700;}
+    .pbb-cover h1{font-size:30px;font-weight:800;margin:6px 0 4px;letter-spacing:.2px;}
+    .pbb-cover .sub{color:#d5ece1;font-size:14px;max-width:760px;}
+    .pbb-cover .rule{width:78px;height:4px;background:#c9a227;border-radius:2px;margin:16px 0 14px;}
+    .pbb-meta{display:flex;gap:34px;flex-wrap:wrap;}
+    .pbb-meta .label{font-size:10.5px;text-transform:uppercase;color:#bfe3d3;letter-spacing:1px;font-weight:700;}
+    .pbb-meta .val{font-size:16px;font-weight:700;color:#fff;}
+
+    /* ---- Executive-summary tiles ---- */
+    .pbb-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:26px;}
+    .pbb-kpi{background:#fff;border:1px solid var(--line);border-top:4px solid var(--navy);border-radius:10px;padding:14px 16px;box-shadow:0 2px 8px rgba(15,42,74,.05);}
+    .pbb-kpi .k-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;}
+    .pbb-kpi .k-value{font-size:25px;font-weight:800;color:var(--navy);line-height:1.15;}
+    .pbb-kpi .k-sub{font-size:11.5px;color:var(--muted);}
+
+    /* ---- Group section titles ---- */
+    .pbb-h2{color:var(--navy);font-weight:800;margin:30px 0 12px;font-size:18px;padding-left:12px;border-left:5px solid #c9a227;}
+    .pbb-h2::before{counter-increment:pbbsec;content:counter(pbbsec) "  ";color:var(--muted);font-weight:700;}
+
+    /* ---- Cards restyled as report sections ---- */
+    .pbb-report .card{border:1px solid var(--line);border-radius:10px;box-shadow:0 2px 10px rgba(15,42,74,.06);overflow:hidden;}
+    .pbb-report .card-header{background:var(--navy) !important;color:#fff !important;border-bottom:0;font-weight:700;letter-spacing:.2px;padding:11px 16px;}
+    .pbb-report .card-header a{color:#ffd98a;}
+    .pbb-report .card-header .text-muted{color:#cfe7db !important;}
+
+    /* ---- Tables ---- */
+    .pbb-report table{font-size:13px;}
+    .pbb-report thead th{background:var(--navy-soft) !important;color:var(--navy) !important;border-bottom:2px solid var(--navy) !important;text-transform:uppercase;font-size:10.5px;letter-spacing:.4px;padding:8px 10px;}
+    .pbb-report tbody td{padding:7px 10px;vertical-align:middle;}
+    .pbb-report .table-striped>tbody>tr:nth-of-type(odd)>*{background:var(--gray);}
+    .pbb-report .table>:not(caption)>*>*{border-bottom-color:var(--line);}
+
+    /* ---- KPI-Cost linkage (per-KPI blocks, room for long Arabic text) ---- */
+    .pbb-report .kl-entity{background:var(--navy-soft);color:var(--navy);font-weight:800;font-size:13px;letter-spacing:.3px;padding:8px 14px;border-top:1px solid var(--line);}
+    .pbb-report .kpilink{padding:12px 14px 14px;border-top:1px solid var(--line);}
+    .pbb-report .kpilink .kl-top{display:flex;align-items:flex-start;gap:12px;}
+    .pbb-report .kpilink .kl-name{flex:1;font-weight:700;color:var(--ink);font-size:13.5px;line-height:1.45;}
+    .pbb-report .kpilink .kl-driver{margin:7px 0 10px;color:var(--muted);font-size:12.5px;line-height:1.45;}
+    .pbb-report .kpilink .kl-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
+    .pbb-report .kpilink .kl-metrics .m{background:var(--gray);border:1px solid var(--line);border-radius:7px;padding:6px 10px;}
+    .pbb-report .kpilink .kl-metrics .m-l{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;}
+    .pbb-report .kpilink .kl-metrics .m-v{font-size:14px;font-weight:700;color:var(--ink);}
+    .pbb-report .kpilink .kl-metrics .m.accent{background:var(--navy-soft);border-color:#b9cbe0;}
+    .pbb-report .kpilink .kl-metrics .m.accent .m-v{color:var(--navy);}
+
+    /* ---- Dark theme ----
+       The report defines its own ink / surface tokens, which are light-mode values.
+       Re-point them at the navy dark palette so the body text stops disappearing. */
+    [data-bs-theme="dark"] .pbb-report{
+        --navy-soft:#173a52;--gray:#17304b;--line:rgba(255,255,255,.16);
+        --ink:rgba(255,255,255,.92);--muted:rgba(255,255,255,.66);
+    }
+    [data-bs-theme="dark"] .pbb-kpi{background:var(--app-card);border-color:var(--line);border-top-color:var(--navy-2);box-shadow:none;}
+    [data-bs-theme="dark"] .pbb-kpi .k-value{color:#7fd8b4;}
+    [data-bs-theme="dark"] .pbb-h2{color:#7fd8b4;}
+    [data-bs-theme="dark"] .pbb-report .card{background:var(--app-card);box-shadow:none;}
+    [data-bs-theme="dark"] .pbb-report thead th{background:var(--navy-soft) !important;color:#cfe7db !important;border-bottom-color:var(--navy-2) !important;}
+    [data-bs-theme="dark"] .pbb-report tbody td{color:var(--ink);}
+    [data-bs-theme="dark"] .pbb-report .table-striped>tbody>tr:nth-of-type(odd)>*{background:rgba(255,255,255,.04);color:var(--ink);}
+    [data-bs-theme="dark"] .pbb-report .kl-entity{background:var(--navy-soft);color:#cfe7db;}
+    [data-bs-theme="dark"] .pbb-report .kpilink .kl-metrics .m{background:rgba(255,255,255,.05);}
+    [data-bs-theme="dark"] .pbb-report .kpilink .kl-metrics .m.accent{background:var(--navy-soft);border-color:rgba(255,255,255,.18);}
+    [data-bs-theme="dark"] .pbb-report .kpilink .kl-metrics .m.accent .m-v{color:#7fd8b4;}
+
+    /* ---- Print / PDF ---- */
+    @@media print{
+        @@page{size:A4;margin:14mm;}
+        body{background:#fff !important;}
+        .app-sidebar,.d-print-none{display:none !important;}
+        .pbb-report,.pbb-report *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;}
+        .pbb-report .card,.pbb-kpi,.pbb-cover{box-shadow:none !important;}
+        .pbb-report .card,.pbb-kpi,.pbb-cover{break-inside:avoid;page-break-inside:avoid;}
+        .pbb-report .card.pbb-long{break-inside:auto;page-break-inside:auto;}
+        .pbb-report .kpilink{break-inside:avoid;page-break-inside:avoid;}
+        .pbb-report .kl-entity{break-after:avoid;page-break-after:avoid;}
+        .pbb-h2{break-after:avoid;page-break-after:avoid;}
+        .pbb-kpis{gap:8px;}
+        .container-fluid{padding:0 !important;}
+    }
+</style>
+
+<div class="container-fluid py-3 pbb-report">
+
+    @* ---------- Report cover ---------- *@
+    <div class="pbb-cover">
+        <div class="kicker">Performance-Based Budgeting &middot; Mid-Year Review</div>
+        <h1>PBB Management Review</h1>
+        <div class="sub">Cross-entity review of cost structure, capital discipline, manpower efficiency, programme costing and KPI performance against the PBB maturity framework.</div>
+        <div class="rule"></div>
+        <div class="pbb-meta">
+            <div><div class="label">Fiscal Year</div><div class="val">@Model.Year</div></div>
+            <div><div class="label">Scope</div><div class="val">@scopeLabel</div></div>
+            <div><div class="label">Entities Covered</div><div class="val">@entityCount</div></div>
+            <div><div class="label">Prepared</div><div class="val">@DateTime.Now.ToString("dd MMM yyyy")</div></div>
+        </div>
+    </div>
+
+    @* ---------- Toolbar (screen only) ---------- *@
+    <form method="get" class="row g-2 align-items-end mb-4 d-print-none">
+        <div class="col-auto">
+            <label class="form-label">Year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="Model.YearOptions"></select>
+        </div>
+        @if (Model.IsAdmin)
+        {
+            <div class="col-md-5">
+                <label class="form-label">Entity</label>
+                <select name="entityId" class="form-select form-select-sm" asp-items="Model.EntityOptions"></select>
+            </div>
+        }
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+        <div class="col-auto">
+            <a class="btn btn-sm btn-outline-success"
+               asp-controller="ManagementReview" asp-action="Export"
+               asp-route-year="@Model.Year"
+               asp-route-entityId="@(Model.EntityId?.ToString() ?? "")">
+                Download Excel
+            </a>
+        </div>
+        <div class="col-auto">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">Print / PDF</button>
+        </div>
+    </form>
+
+    @* ---------- Executive summary tiles ---------- *@
+    <div class="pbb-kpis">
+        <div class="pbb-kpi">
+            <div class="k-label">Total Budget</div>
+            <div class="k-value">@totalBudget.ToString("N0")</div>
+            <div class="k-sub">AED &middot; all cost types</div>
+        </div>
+        <div class="pbb-kpi">
+            <div class="k-label">Head Count</div>
+            <div class="k-value">@headCount.ToString("N0")</div>
+            <div class="k-sub">FTE across scope</div>
+        </div>
+        <div class="pbb-kpi">
+            <div class="k-label">Cost / FTE</div>
+            <div class="k-value">@costPerFte.ToString("N0")</div>
+            <div class="k-sub">AED per employee</div>
+        </div>
+        <div class="pbb-kpi">
+            <div class="k-label">KPIs On Track</div>
+            <div class="k-value">@pctGreen.ToString("N0")%</div>
+            <div class="k-sub">@kpiGreen of @kpiTotal green</div>
+        </div>
+        <div class="pbb-kpi">
+            <div class="k-label">Avg Maturity</div>
+            <div class="k-value">@(avgMaturity?.ToString("0.0") ?? "-")<span style="font-size:14px;color:var(--muted);"> / 4.0</span></div>
+            <div class="k-sub">PBB maturity stage</div>
+        </div>
+    </div>
+
+    <h2 class="pbb-h2">Financial Overview</h2>
+
+    @* ---------- Cost Structure ---------- *@
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold">Cost Structure (Cost Shape)</div>
+        <div class="card-body p-0">
+            @if (Model.CostStructure.Count == 0)
+            {
+                <div class="alert alert-info m-3">No data for the selected filters.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Entity</th>
+                                <th class="text-end">Manpower</th>
+                                <th class="text-end">Consultancy</th>
+                                <th class="text-end">Maintenance</th>
+                                <th class="text-end">Other Operating</th>
+                                <th class="text-end">Capital</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var x in Model.CostStructure)
+                        {
+                            <tr>
+                                <td>@x.EntityCode - @x.EntityName</td>
+                                <td class="text-end">@x.Manpower.ToString("N2") <span class="text-muted small">(@x.Pct(x.Manpower)%)</span></td>
+                                <td class="text-end">@x.Consultancy.ToString("N2") <span class="text-muted small">(@x.Pct(x.Consultancy)%)</span></td>
+                                <td class="text-end">@x.Maintenance.ToString("N2") <span class="text-muted small">(@x.Pct(x.Maintenance)%)</span></td>
+                                <td class="text-end">@x.OtherOperating.ToString("N2") <span class="text-muted small">(@x.Pct(x.OtherOperating)%)</span></td>
+                                <td class="text-end">@x.Capital.ToString("N2") <span class="text-muted small">(@x.Pct(x.Capital)%)</span></td>
+                                <td class="text-end fw-bold">@x.Total.ToString("N2")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    @* ---------- Capex Discipline ---------- *@
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold">Capex Discipline (Budget vs Mid-Year Actual, H1)</div>
+        <div class="card-body p-0">
+            @if (Model.CapexVariance.Count == 0)
+            {
+                <div class="alert alert-info m-3">No data for the selected filters.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Entity</th>
+                                <th class="text-end">Budget (Annual)</th>
+                                <th class="text-end">Budget H1</th>
+                                <th class="text-end">Actual H1</th>
+                                <th class="text-end">Variance H1</th>
+                                <th class="text-end">Variance %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var x in Model.CapexVariance)
+                        {
+                            <tr>
+                                <td>@x.EntityCode - @x.EntityName</td>
+                                <td class="text-end">@x.BudgetAnnual.ToString("N2")</td>
+                                <td class="text-end">@x.BudgetH1.ToString("N2")</td>
+                                <td class="text-end">@x.ActualH1.ToString("N2")</td>
+                                <td class="text-end">@x.VarianceH1.ToString("N2")</td>
+                                <td class="text-end fw-bold @(x.VariancePct < 0 ? "text-danger" : "text-success")">@x.VariancePct.ToString("N1")%</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <h2 class="pbb-h2">Workforce &amp; Manpower</h2>
+
+    @* ---------- Manpower ---------- *@
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold">Manpower &amp; Cost-per-FTE <span class="text-muted small">(OECD band 250,000 - 450,000 AED)</span></div>
+        <div class="card-body p-0">
+            @if (Model.Manpower.Count == 0)
+            {
+                <div class="alert alert-info m-3">No data for the selected filters.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Entity</th>
+                                <th class="text-end">Manpower Cost</th>
+                                <th class="text-end">Head Count</th>
+                                <th class="text-end">Cost / FTE</th>
+                                <th>Band Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var x in Model.Manpower)
+                        {
+                            <tr>
+                                <td>@x.EntityCode - @x.EntityName</td>
+                                <td class="text-end">@x.ManpowerCost.ToString("N2")</td>
+                                <td class="text-end">@x.HeadCount</td>
+                                <td class="text-end">@x.CostPerFte.ToString("N2")</td>
+                                <td>
+                                    <span class="badge @(x.BandStatus == "Within band" ? "bg-success" : x.BandStatus == "" ? "bg-secondary" : "bg-warning text-dark")">
+                                        @(string.IsNullOrEmpty(x.BandStatus) ? "n/a" : x.BandStatus)
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <h2 class="pbb-h2">Programme Costing</h2>
+
+    @* ---------- Programme Cost ---------- *@
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold">Programme Cost (Direct + Allocated)</div>
+        <div class="card-body p-0">
+            @if (Model.ProgrammeCosts.Count == 0)
+            {
+                <div class="alert alert-info m-3">No data for the selected filters.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Entity</th>
+                                <th>Programme</th>
+                                <th class="text-end">Direct</th>
+                                <th class="text-end">Allocated</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var x in Model.ProgrammeCosts)
+                        {
+                            <tr>
+                                <td>@x.EntityCode</td>
+                                <td>@x.ProgramCode - @x.ProgramName</td>
+                                <td class="text-end">@x.Direct.ToString("N2")</td>
+                                <td class="text-end">@x.Allocated.ToString("N2")</td>
+                                <td class="text-end fw-bold">@x.Total.ToString("N2")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <h2 class="pbb-h2">Performance Scorecard</h2>
+
+    @* ---------- KPI Scorecard ---------- *@
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold">KPI Performance Scorecard</div>
+        <div class="card-body p-0">
+            @if (Model.KpiScorecard.Count == 0)
+            {
+                <div class="alert alert-info m-3">No KPI data for the selected filters. Add KPIs under <a asp-controller="Performance" asp-action="Kpis">Performance data entry</a>.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Entity</th>
+                                <th class="text-end">Total KPIs</th>
+                                <th class="text-end">Green</th>
+                                <th class="text-end">Watch</th>
+                                <th class="text-end">Behind</th>
+                                <th class="text-end">% Green</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var x in Model.KpiScorecard)
+                        {
+                            <tr>
+                                <td>@x.EntityCode - @x.EntityName</td>
+                                <td class="text-end">@x.Total</td>
+                                <td class="text-end text-success">@x.Green</td>
+                                <td class="text-end text-warning">@x.Watch</td>
+                                <td class="text-end text-danger">@x.Behind</td>
+                                <td class="text-end fw-bold">@x.PctGreen.ToString("N0")%</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    @* ---------- KPI Detail ---------- *@
+    @if (Model.KpiDetails.Count > 0)
+    {
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold">KPI Detail (Baseline / Target / Actual)</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Entity</th>
+                                <th>Programme</th>
+                                <th>KPI</th>
+                                <th>Unit</th>
+                                <th class="text-end">Baseline</th>
+                                <th class="text-end">Target</th>
+                                <th class="text-end">Actual</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var x in Model.KpiDetails)
+                        {
+                            <tr>
+                                <td>@x.EntityCode</td>
+                                <td>@x.ProgramCode</td>
+                                <td>@x.KpiName</td>
+                                <td>@x.Unit</td>
+                                <td class="text-end">@(x.Baseline?.ToString("N2") ?? "")</td>
+                                <td class="text-end">@(x.Target?.ToString("N2") ?? "")</td>
+                                <td class="text-end">@(x.Actual?.ToString("N2") ?? "")</td>
+                                <td>
+                                    <span class="badge @(x.Status == "Green" ? "bg-success" : x.Status == "Watch" ? "bg-warning text-dark" : x.Status == "Behind" ? "bg-danger" : "bg-secondary")">
+                                        @(string.IsNullOrEmpty(x.Status) ? "n/a" : x.Status)
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+
+    <h2 class="pbb-h2">Maturity Assessment</h2>
+
+    @* ---------- Maturity Ladder ---------- *@
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold">PBB Maturity Ladder</div>
+        <div class="card-body p-0">
+            @if (Model.MaturityLadder.Count == 0)
+            {
+                <div class="alert alert-info m-3">No data for the selected filters.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Entity</th>
+                                <th class="text-end">Stage</th>
+                                <th>Form</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var x in Model.MaturityLadder)
+                        {
+                            <tr>
+                                <td>@x.EntityCode - @x.EntityName</td>
+                                <td class="text-end fw-bold">@(x.Stage?.ToString("0.0") ?? "-")</td>
+                                <td>@x.Form</td>
+                                <td>@x.StatusLabel</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <h2 class="pbb-h2">Unit Economics &amp; Value</h2>
+
+    @* ---------- Activity Unit Cost & Actuals ---------- *@
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+            <span>Activity Cost, Actuals &amp; Variance</span>
+            <span class="d-flex gap-2">
+                @if (Model.AllocationPosted)
+                {
+                    <span class="badge bg-success">After allocation</span>
+                }
+                else
+                {
+                    <span class="badge bg-secondary">Direct cost only</span>
+                }
+                @if (!Model.ActualsUploaded)
+                {
+                    <span class="badge bg-warning text-dark">Actuals not uploaded</span>
+                }
+            </span>
+        </div>
+        <div class="card-body p-0">
+            @if (Model.ActivityUnitCosts.Count == 0)
+            {
+                <div class="alert alert-info m-3">No activity cost data for the selected filters.</div>
+            }
+            else
+            {
+                @if (Model.AllocationPosted)
+                {
+                    <div class="alert alert-success m-3 mb-0 py-2 small">
+                        <strong>Costs shown are after step-down allocation.</strong> <em>Total</em> = <em>Direct</em> + <em>Allocated</em>,
+                        where <em>Allocated</em> is the activity's share of its programme's net allocation (positive for Mandate programmes,
+                        negative for Support programmes whose cost is swept out). Cost / Output uses the <strong>Total</strong>.
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-secondary m-3 mb-0 py-2 small">
+                        <strong>These are direct activity costs only &mdash; no allocated cost is attached.</strong>
+                        No step-down allocation has been posted for this year/scope, so <em>Allocated</em> is zero and <em>Total</em> equals <em>Direct</em>.
+                        Run it from <a asp-controller="Allocation" asp-action="Index" asp-route-year="@Model.Year" asp-route-entityId="@Model.EntityId">Cost Allocation</a> to distribute support-programme costs.
+                    </div>
+                }
+                @if (!Model.ActualsUploaded)
+                {
+                    <div class="alert alert-warning m-3 mb-0 py-2 small">
+                        <strong>Actuals have not been uploaded</strong> for this year and scope, so Actual and Variance are blank.
+                        Import current-year actuals from <a asp-controller="Actuals" asp-action="Index" asp-route-year="@Model.Year" asp-route-entityId="@Model.EntityId">Import Actuals</a> to populate them.
+                    </div>
+                }
+                else
+                {
+                    <div class="px-3 pt-2 text-muted small">Actuals are derived from posted GL actuals, split across activities by budget share. Variance = Actual &minus; Direct budget.</div>
+                }
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Entity</th>
+                                <th>Programme</th>
+                                <th>Activity</th>
+                                <th class="text-end">Direct</th>
+                                <th class="text-end">Allocated</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Actual</th>
+                                <th class="text-end">Variance</th>
+                                <th>Output Measure</th>
+                                <th class="text-end">Output Volume</th>
+                                <th class="text-end">Cost / Output</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var x in Model.ActivityUnitCosts)
+                        {
+                            <tr>
+                                <td>@x.EntityCode</td>
+                                <td>@x.ProgramCode</td>
+                                <td>@x.ActivityCode - @x.ActivityName</td>
+                                <td class="text-end">@x.AnnualCost.ToString("N2")</td>
+                                <td class="text-end @(x.AllocatedCost < 0 ? "text-danger" : (x.AllocatedCost > 0 ? "text-success" : "text-muted"))">
+                                    @(x.AllocatedCost != 0 ? x.AllocatedCost.ToString("N2") : "—")
+                                </td>
+                                <td class="text-end fw-bold">@x.TotalCost.ToString("N2")</td>
+                                <td class="text-end">@(x.ActualCost.HasValue ? x.ActualCost.Value.ToString("N2") : "—")</td>
+                                <td class="text-end fw-bold @(x.Variance.HasValue ? (x.Variance.Value > 0 ? "text-danger" : "text-success") : "")">
+                                    @(x.Variance.HasValue ? x.Variance.Value.ToString("N2") : "—")
+                                </td>
+                                <td>@x.OutputMeasure</td>
+                                <td class="text-end">@(x.OutputVolume > 0 ? x.OutputVolume.ToString("N2") : "")</td>
+                                <td class="text-end fw-bold">@(x.CostPerOutput > 0 ? x.CostPerOutput.ToString("N2") : "")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    @* ---------- Cost per KPI (activity cost -> all linked KPIs, weighted) ---------- *@
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+            <span>Cost per KPI (all activity-linked KPIs)</span>
+            @if (!Model.ActualsUploaded)
+            {
+                <span class="badge bg-warning text-dark">Actuals not uploaded</span>
+            }
+        </div>
+        <div class="card-body p-0">
+            @if (Model.CostPerOutput.Count == 0)
+            {
+                <div class="alert alert-info m-3 mb-0">
+                    No KPIs linked to activities for this scope. Link a KPI to an <em>activity</em> (any Type) to
+                    distribute that activity's cost across its KPIs by <strong>Cost Weight</strong>.
+                </div>
+            }
+            else
+            {
+                <div class="px-3 pt-2 text-muted small">
+                    Each activity's <strong>after-allocation</strong> cost (Direct + step-down Allocated@(Model.AllocationPosted ? "" : "; no allocation posted yet, so this equals Direct"))
+                    is distributed across <strong>all</strong> its KPIs (Input / Output / Outcome),
+                    weighted by each KPI's <strong>Cost Weight</strong> (equal split when no weights are set). Non-output KPIs
+                    now carry cost so management can see and decide on cost not tied to outputs.
+                    Cost / Planned = allocated budget &divide; target; Cost / Actual = allocated actual &divide; achieved.
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Entity</th>
+                                <th>Programme</th>
+                                <th>Activity</th>
+                                <th>KPI</th>
+                                <th>Type</th>
+                                <th class="text-end">Weight</th>
+                                <th class="text-end">Alloc. Budget</th>
+                                <th class="text-end">Alloc. Actual</th>
+                                <th class="text-end">Target</th>
+                                <th class="text-end">Actual</th>
+                                <th class="text-end">Cost / Planned</th>
+                                <th class="text-end">Cost / Actual</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var x in Model.CostPerOutput)
+                        {
+                            <tr>
+                                <td>@x.EntityCode</td>
+                                <td>@x.ProgramCode</td>
+                                <td>@x.ActivityLabel</td>
+                                <td dir="auto">
+                                    @x.KpiName
+                                    @if (x.OutputKpiCount > 1)
+                                    {
+                                        <span class="text-muted" style="font-size:.7rem;"> (1 of @x.OutputKpiCount)</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(x.KpiType))
+                                    {
+                                        <span class="badge @(x.KpiType.Equals("Output", StringComparison.OrdinalIgnoreCase) ? "bg-success" : x.KpiType.Equals("Outcome", StringComparison.OrdinalIgnoreCase) ? "bg-info text-dark" : "bg-secondary")" style="font-size:.62rem;">@x.KpiType</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">—</span>
+                                    }
+                                </td>
+                                <td class="text-end">@(x.CostWeight > 0 ? x.CostWeight.ToString("0.##") : "—")</td>
+                                <td class="text-end">@x.AllocatedBudget.ToString("N2")</td>
+                                <td class="text-end">@(x.AllocatedActual.HasValue ? x.AllocatedActual.Value.ToString("N2") : "—")</td>
+                                <td class="text-end">@(x.OutputTarget.HasValue ? x.OutputTarget.Value.ToString("N2") : "—")</td>
+                                <td class="text-end">@(x.OutputActual.HasValue ? x.OutputActual.Value.ToString("N2") : "—")</td>
+                                <td class="text-end fw-bold">@(x.CostPerPlannedOutput.HasValue ? x.CostPerPlannedOutput.Value.ToString("N2") : "—")</td>
+                                <td class="text-end fw-bold">@(x.CostPerActualOutput.HasValue ? x.CostPerActualOutput.Value.ToString("N2") : "—")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    @* ---------- KPI <-> Cost Linkage ---------- *@
+    @if (Model.KpiCostLinks.Count > 0)
+    {
+        <div class="card shadow-sm mb-3 pbb-long">
+            <div class="card-header bg-white fw-bold">KPI &#8596; Cost Linkage (Cost per Unit of Improvement)</div>
+            <div class="card-body p-0">
+                @foreach (var g in Model.KpiCostLinks.GroupBy(x => new { x.EntityCode, x.EntityName }))
+                {
+                    <div class="kl-entity">@g.Key.EntityCode@(string.IsNullOrWhiteSpace(g.Key.EntityName) ? "" : " — " + g.Key.EntityName)</div>
+                    @foreach (var x in g)
+                    {
+                        <div class="kpilink">
+                            <div class="kl-top">
+                                <div class="kl-name" dir="auto">
+                                    @x.KpiName@(string.IsNullOrEmpty(x.Unit) ? "" : $" ({x.Unit})")
+                                </div>
+                                <span class="badge @(x.Status == "Green" ? "bg-success" : x.Status == "Watch" ? "bg-warning text-dark" : x.Status == "Behind" ? "bg-danger" : "bg-secondary")">
+                                    @(string.IsNullOrEmpty(x.Status) ? "n/a" : x.Status)
+                                </span>
+                            </div>
+                            <div class="kl-driver" dir="auto">
+                                <span class="badge @(x.LinkLevel == "Activity" ? "bg-info text-dark" : x.LinkLevel == "Programme" ? "bg-primary" : "bg-secondary")">@x.LinkLevel</span>
+                                @(string.IsNullOrWhiteSpace(x.LinkLabel) ? "No linked cost driver" : x.LinkLabel)
+                            </div>
+                            <div class="kl-metrics">
+                                <div class="m"><span class="m-l">Linked Cost</span><span class="m-v">@(x.LinkedCost.HasValue ? x.LinkedCost.Value.ToString("N0") : "—")</span></div>
+                                <div class="m"><span class="m-l">Baseline</span><span class="m-v">@(x.Baseline?.ToString("N2") ?? "—")</span></div>
+                                <div class="m"><span class="m-l">Actual</span><span class="m-v">@(x.Actual?.ToString("N2") ?? "—")</span></div>
+                                <div class="m"><span class="m-l">Improvement</span><span class="m-v">@(x.Improvement?.ToString("N2") ?? "—")</span></div>
+                                <div class="m accent"><span class="m-l">Cost / Improvement</span><span class="m-v">@(x.CostPerImprovement.HasValue ? x.CostPerImprovement.Value.ToString("N0") : "—")</span></div>
+                            </div>
+                        </div>
+                    }
+                }
+                <div class="text-muted small p-2">Cost is taken from the KPI's tagged activity (preferred) or programme. Improvement is direction-aware; cost-per-improvement is shown only when improvement is positive.</div>
+            </div>
+        </div>
+    }
+
+    @* ---------- Entity Profiles ---------- *@
+    @if (Model.EntityProfiles.Count > 0)
+    {
+        <h2 class="pbb-h2">Entity Profiles</h2>
+        @foreach (var p in Model.EntityProfiles)
+        {
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <span class="fw-bold">@p.EntityCode - @p.EntityName</span>
+                    @if (!string.IsNullOrEmpty(p.StatusLabel))
+                    {
+                        <span class="badge @(p.StatusLabel.ToUpper() == "AHEAD" ? "bg-success" : p.StatusLabel.ToUpper() == "BEHIND" ? "bg-danger" : "bg-warning text-dark")">@p.StatusLabel</span>
+                    }
+                </div>
+                <div class="card-body">
+                    <div class="row text-center mb-3">
+                        <div class="col"><div class="text-muted small">Maturity</div><div class="fs-4 fw-bold">@(p.Stage?.ToString("0.0") ?? "-")<span class="fs-6 text-muted"> / 4.0</span></div><div class="small">@p.Form</div></div>
+                        <div class="col"><div class="text-muted small">Budget</div><div class="fs-4 fw-bold">@p.Budget.ToString("N0")</div><div class="small">AED</div></div>
+                        <div class="col"><div class="text-muted small">FTE</div><div class="fs-4 fw-bold">@p.HeadCount</div><div class="small">headcount</div></div>
+                        <div class="col"><div class="text-muted small">KPIs Green</div><div class="fs-4 fw-bold">@p.PctGreen.ToString("N0")%</div><div class="small">@p.KpiGreen of @p.KpiTotal</div></div>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(p.Assessment))
+                    {
+                        <div class="mb-2">
+                            <div class="fw-bold small text-uppercase text-muted">Performance Assessment</div>
+                            <div style="white-space: pre-line;">@p.Assessment</div>
+                        </div>
+                    }
+                    <div class="row">
+                        @if (p.Outcomes.Count > 0)
+                        {
+                            <div class="col-md-6">
+                                <div class="fw-bold small text-uppercase text-muted">Key Outcomes — Mid-Year</div>
+                                <ul class="mb-0">@foreach (var o in p.Outcomes){<li>@o</li>}</ul>
+                            </div>
+                        }
+                        @if (p.Issues.Count > 0)
+                        {
+                            <div class="col-md-6">
+                                <div class="fw-bold small text-uppercase text-danger">Performance Issues — Mid-Year</div>
+                                <ul class="mb-0">@foreach (var iss in p.Issues){<li>@iss</li>}</ul>
+                            </div>
+                        }
+                    </div>
+                    @if (string.IsNullOrWhiteSpace(p.Assessment) && p.Outcomes.Count == 0 && p.Issues.Count == 0)
+                    {
+                        <div class="text-muted small">No narrative yet. Add it under <a asp-controller="Performance" asp-action="ReviewNotes" asp-route-entityId="">Performance &gt; Entity Profiles</a>.</div>
+                    }
+                </div>
+            </div>
+        }
+    }
+
+    <h2 class="pbb-h2">Executive Decisions</h2>
+
+    @* ---------- Headline Findings ---------- *@
+    @if (Model.Narratives.Findings.Count > 0)
+    {
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold">Headline Findings</div>
+            <div class="card-body">
+                <ol class="mb-0">
+                @foreach (var f in Model.Narratives.Findings)
+                {
+                    <li class="mb-2"><span class="fw-bold">@f.Title</span>@if (!string.IsNullOrWhiteSpace(f.Body)){<div>@f.Body</div>}</li>
+                }
+                </ol>
+            </div>
+        </div>
+    }
+
+    @* ---------- Recommendations ---------- *@
+    @if (Model.Narratives.Recommendations.Count > 0)
+    {
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold">Recommendations — Executive Decisions</div>
+            <div class="card-body">
+                <ol class="mb-0">
+                @foreach (var rec in Model.Narratives.Recommendations)
+                {
+                    <li class="mb-2"><span class="fw-bold">@rec.Title</span>@if (!string.IsNullOrWhiteSpace(rec.Body)){<div>@rec.Body</div>}</li>
+                }
+                </ol>
+            </div>
+        </div>
+    }
+
+    @* ---------- 90-Day Plan ---------- *@
+    @if (Model.Narratives.Actions.Count > 0)
+    {
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold">90-Day Plan</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped align-middle mb-0">
+                        <thead class="table-light">
+                            <tr><th>Action</th><th>Owner</th><th>Due</th><th>Success Measure</th></tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var a in Model.Narratives.Actions)
+                        {
+                            <tr>
+                                <td>@a.Title</td>
+                                <td>@a.Owner</td>
+                                <td>@a.DueText</td>
+                                <td>@a.SuccessMeasure</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+
+    <h2 class="pbb-h2">Governance</h2>
+
+    @* ---------- Governance (static framework) ---------- *@
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold">Governance Framework</div>
+        <div class="card-body">
+            <p class="text-muted small mb-2">Six actors with clear, separated decision rights across the PBB cycle. Aligned with OECD GOV/SBO(2023)1 and PEFA 2016 separation principles.</p>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-2">
+                    <thead class="table-light">
+                        <tr><th>Actor</th><th>Goal Setting (Annual)</th><th>Monitoring (Monthly/Quarterly)</th><th>Updating (Mid-year + Annual)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Oversight Body</td><td>A — Approves priorities, envelopes, outcome targets</td><td>A — Receives quarterly reports; approves &gt;threshold reallocations</td><td>A — Approves rebaselining + major reallocations</td></tr>
+                        <tr><td>Department of Finance</td><td>R — Issues circular, sets caps, validates KPI quality</td><td>R — Consolidated performance reports</td><td>R — Technical analysis; updates cost benchmarks</td></tr>
+                        <tr><td>Audit Committee</td><td>I — Advises on KPI methodology</td><td>R — Independent performance audits; quarterly findings</td><td>C — Validates updates; flags governance concerns</td></tr>
+                        <tr><td>Line Departments</td><td>R — Design programmes; set KPIs</td><td>R — Monthly dashboards; variance explanations</td><td>R — Propose adjustments; lessons learned</td></tr>
+                        <tr><td>Human Resources</td><td>C — FTE planning + compensation inputs</td><td>R — Manpower utilisation tracking</td><td>C — Revises FTE plans + compensation forecasts</td></tr>
+                        <tr><td>Information Technology</td><td>C — IT capex + integration roadmap inputs</td><td>R — FMIS data quality + availability</td><td>C — Revises capex schedules + integration roadmap</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small text-muted">R = Responsible · A = Accountable · C = Consulted · I = Informed</div>
+            <hr />
+            <div class="fw-bold small text-uppercase text-muted mb-1">Cadence</div>
+            <ul class="mb-0 small">
+                <li><span class="fw-bold">Real-time</span> — FMIS performance + data quality monitoring (IT)</li>
+                <li><span class="fw-bold">Monthly</span> — Variance review; programme dashboards; commitment + payment reconciliation (DoF + Line Departments)</li>
+                <li><span class="fw-bold">Quarterly</span> — Oversight Body review; in-year reallocations; Audit Committee; risk register (Oversight + DoF + Audit)</li>
+                <li><span class="fw-bold">Annual</span> — Budget cycle; year-end performance + financial audit; cost benchmarks updated (all actors)</li>
+                <li><span class="fw-bold">18-month</span> — Comprehensive PBB maturity reassessment across 12 dimensions; Wave expansion planning (DoF + Oversight)</li>
+            </ul>
+        </div>
+    </div>
+</div>

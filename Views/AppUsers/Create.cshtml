@@ -1,0 +1,113 @@
+@model GovBudget.Controllers.AppUsersController.UserFormVm
+
+@{
+    ViewData["Title"] = "Add User";
+}
+
+<h1>Add User</h1>
+<hr />
+
+<div class="row">
+    <div class="col-md-6">
+        <form asp-action="Create" method="post">
+            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+            <div class="mb-3">
+                <label asp-for="UserName" class="form-label">Username</label>
+                <input asp-for="UserName" class="form-control" autocomplete="off" />
+                <span asp-validation-for="UserName" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Password" class="form-label">Password</label>
+                <input asp-for="Password" type="password" class="form-control" autocomplete="new-password" />
+                <span asp-validation-for="Password" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Role" class="form-label">Role</label>
+                <select asp-for="Role" class="form-select" asp-items="ViewBag.RoleList">
+                    <option value="">-- Select role --</option>
+                </select>
+                <div class="form-text">Roles and their rights are managed in Roles &amp; Rights.</div>
+                <span asp-validation-for="Role" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="EntityId" class="form-label">Entity</label>
+                <select asp-for="EntityId" class="form-select" asp-items="ViewBag.EntityId">
+                    <option value="">-- None --</option>
+                </select>
+                <span asp-validation-for="EntityId" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="DepartmentId" class="form-label">Department</label>
+                <select asp-for="DepartmentId" class="form-select" asp-items="ViewBag.DepartmentId">
+                    <option value="">-- None --</option>
+                </select>
+                <span asp-validation-for="DepartmentId" class="text-danger"></span>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" asp-for="IsActive" />
+                <label class="form-check-label" asp-for="IsActive">Active</label>
+            </div>
+
+            <div class="mb-3">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a asp-action="Index" class="btn btn-secondary">Back</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+    <script>
+        (function () {
+            const entitySelect = document.getElementById('EntityId');
+            const deptSelect = document.getElementById('DepartmentId');
+            const endpoint = '@Url.Action("DepartmentsForEntity", "AppUsers")';
+            const initialDeptId = '@(Model.DepartmentId?.ToString() ?? "")';
+
+            async function loadDepartments(entityId, selectedDeptId) {
+                deptSelect.innerHTML = '';
+                const noneOpt = document.createElement('option');
+                noneOpt.value = '';
+                noneOpt.textContent = '-- None --';
+                deptSelect.appendChild(noneOpt);
+
+                if (!entityId) {
+                    deptSelect.disabled = true;
+                    return;
+                }
+
+                deptSelect.disabled = false;
+
+                const res = await fetch(endpoint + '?entityId=' + encodeURIComponent(entityId), { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) {
+                    return;
+                }
+
+                const items = await res.json();
+                for (const item of items) {
+                    const opt = document.createElement('option');
+                    opt.value = String(item.id);
+                    opt.textContent = item.text;
+                    deptSelect.appendChild(opt);
+                }
+
+                if (selectedDeptId) {
+                    deptSelect.value = selectedDeptId;
+                }
+            }
+
+            entitySelect.addEventListener('change', function () {
+                loadDepartments(entitySelect.value, '');
+            });
+
+            loadDepartments(entitySelect.value, initialDeptId);
+        })();
+    </script>
+}

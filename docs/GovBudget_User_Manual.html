@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GovBudget — User Manual</title>
+<style>
+  :root {
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --brand: #0f4c81;
+    --brand-light: #e8f0f7;
+    --accent: #c8911e;
+    --line: #d8dee6;
+    --green: #1b7a45;
+    --red: #b3261e;
+    --bg-soft: #f6f8fa;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    color: var(--ink);
+    line-height: 1.55;
+    margin: 0;
+    background: #fff;
+    font-size: 14px;
+  }
+  .page {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 48px 56px;
+  }
+  h1, h2, h3, h4 { color: var(--brand); line-height: 1.25; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  h2 { font-size: 21px; border-bottom: 2px solid var(--brand-light); padding-bottom: 6px; margin-top: 34px; }
+  h3 { font-size: 16px; margin-top: 22px; }
+  h4 { font-size: 14px; margin: 16px 0 4px; color: var(--ink); }
+  p { margin: 8px 0; }
+  ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+  li { margin: 4px 0; }
+  code, .mono { font-family: "Cascadia Code", Consolas, monospace; background: var(--bg-soft); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 12.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--brand); color: #fff; font-weight: 600; }
+  tbody tr:nth-child(even) { background: var(--bg-soft); }
+  .yes { color: var(--green); font-weight: 600; }
+  .no  { color: var(--red);  font-weight: 600; }
+  .scoped { color: var(--accent); font-weight: 600; }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #fff8ec;
+    padding: 10px 14px;
+    margin: 14px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout.note { border-left-color: var(--brand); background: var(--brand-light); }
+  .callout strong { display: block; margin-bottom: 2px; }
+
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: #fff; }
+  .b-sys { background: #5b21b6; }
+  .b-adm { background: var(--brand); }
+  .b-usr { background: var(--green); }
+
+  /* Cover */
+  .cover { display: flex; flex-direction: column; justify-content: center; min-height: 88vh; }
+  .cover .kicker { letter-spacing: 3px; text-transform: uppercase; color: var(--accent); font-weight: 700; font-size: 12px; }
+  .cover h1 { font-size: 44px; margin: 10px 0; }
+  .cover .sub { font-size: 18px; color: var(--muted); }
+  .cover .rule { width: 90px; height: 4px; background: var(--accent); margin: 22px 0; }
+  .cover .meta { margin-top: auto; color: var(--muted); font-size: 12.5px; }
+
+  .toc ol { list-style: none; margin-left: 0; }
+  .toc li { padding: 4px 0; border-bottom: 1px dotted var(--line); }
+  .toc .part { font-weight: 700; color: var(--brand); margin-top: 12px; }
+
+  .step { counter-reset: none; }
+  ol.steps { margin-left: 18px; }
+  ol.steps > li { margin: 6px 0; }
+
+  .pagebreak { page-break-before: always; }
+  footer.printfoot { display: none; }
+
+  @media print {
+    .page { padding: 0; max-width: 100%; }
+    .no-print { display: none !important; }
+    body { font-size: 11.5pt; }
+    h2 { page-break-after: avoid; }
+    table, .callout { page-break-inside: avoid; }
+    @page { margin: 18mm 16mm; }
+  }
+  .print-bar {
+    position: sticky; top: 0; background: var(--brand); color: #fff;
+    padding: 10px 18px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px;
+  }
+  .print-bar button {
+    background: var(--accent); color: #fff; border: 0; padding: 8px 16px;
+    border-radius: 6px; font-weight: 600; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  <span>GovBudget User Manual — use your browser's <strong>Print → Save as PDF</strong> to export.</span>
+  <button onclick="window.print()">Save as PDF</button>
+</div>
+
+<!-- ============ COVER ============ -->
+<div class="page cover">
+  <div class="kicker">Government Budget Preparation System</div>
+  <h1>GovBudget</h1>
+  <div class="sub">Administrator &amp; User Manual</div>
+  <div class="rule"></div>
+  <p style="max-width:560px;color:var(--muted)">
+    A complete guide to roles and program authority, budget preparation,
+    Mandate/Support program classification, and cost allocation.
+  </p>
+  <div class="meta">
+    Version 1.0 &nbsp;•&nbsp; Prepared for system administrators and budget users<br/>
+    Applies to the GovBudget ASP.NET Core MVC application.
+  </div>
+</div>
+
+<!-- ============ TOC ============ -->
+<div class="page pagebreak toc">
+  <h1>Contents</h1>
+  <ol>
+    <li class="part">Part A — Administrator Guide</li>
+    <li>A1. Roles &amp; program authority</li>
+    <li>A2. Getting started &amp; context</li>
+    <li>A3. Reference data setup</li>
+    <li>A4. Managing programs (Mandate vs Support)</li>
+    <li>A5. Activities &amp; projects</li>
+    <li>A6. User administration</li>
+    <li>A7. Cost allocation engine</li>
+    <li>A8. Management review pack</li>
+    <li>A9. Submissions &amp; approvals</li>
+    <li>A10. Audit logs &amp; messages</li>
+
+    <li class="part">Part B — Regular User Guide</li>
+    <li>B1. Logging in &amp; choosing your context</li>
+    <li>B2. Understanding programs &amp; activities</li>
+    <li>B3. Entering a budget</li>
+    <li>B4. Submitting for approval</li>
+    <li>B5. Reports available to you</li>
+    <li>B6. FAQ &amp; troubleshooting</li>
+
+    <li class="part">Appendix</li>
+    <li>Glossary &amp; permission quick reference</li>
+  </ol>
+</div>
+
+<!-- ============ PART A ============ -->
+<div class="page pagebreak">
+  <h1>Part A — Administrator Guide</h1>
+
+  <h2>A1. Roles &amp; Program Authority</h2>
+  <p>GovBudget uses three roles, stored on each user account and applied as security claims when the user signs in.</p>
+
+  <p>
+    <span class="badge b-sys">SYSADMIN</span>
+    <span class="badge b-adm">ADMIN</span>
+    <span class="badge b-usr">USER</span>
+  </p>
+
+  <ul>
+    <li><strong>SYSADMIN</strong> — global super-user. Not tied to any entity; sees and manages every entity's data, the cost allocation engine, and the management review pack.</li>
+    <li><strong>ADMIN</strong> — exists in two practical forms:
+      <ul>
+        <li><strong>Global ADMIN</strong> (no entity assigned) — behaves as a system-level administrator.</li>
+        <li><strong>Entity ADMIN</strong> (assigned to one entity) — restricted to that entity's programs, users and data.</li>
+      </ul>
+    </li>
+    <li><strong>USER</strong> — a budget preparer linked to an entity or department. Cannot open the administration screens; uses programs only while entering a budget.</li>
+  </ul>
+
+  <h3>Who can see and use programs</h3>
+  <table>
+    <thead>
+      <tr><th>Capability</th><th>SYSADMIN</th><th>Global ADMIN</th><th>Entity ADMIN</th><th>USER</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>View the Programs admin list</td><td class="yes">All</td><td class="yes">All</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+      <tr><td>Create / edit / delete a program</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+      <tr><td>Set program type (Mandate / Support) &amp; sequence</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+      <tr><td>See programs during budget entry</td><td>—</td><td>—</td><td>—</td><td class="yes">Yes (own entity, active)</td></tr>
+      <tr><td>Cost Allocation engine</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">Blocked</td><td class="no">No</td></tr>
+      <tr><td>Management Review pack</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">Blocked</td><td class="no">No</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout note">
+    <strong>Key rule</strong>
+    An <em>Entity ADMIN</em> can fully manage programs inside their own entity but is blocked from the cross-entity tools (Cost Allocation and Management Review). Those are reserved for system-level administrators (SYSADMIN, or a Global ADMIN with no entity).
+  </div>
+
+  <h2>A2. Getting Started &amp; Context</h2>
+  <ol class="steps">
+    <li>Sign in with your username and password.</li>
+    <li>Choose the working <strong>Context</strong>: Budget Year, Entity, and Department. The system holds this selection for your session.</li>
+    <li>SYSADMIN / Global ADMIN can switch to any entity; an Entity ADMIN or USER is limited to their assigned scope.</li>
+  </ol>
+
+  <h2>A3. Reference Data Setup</h2>
+  <p>Set up reference data before programs and budgets are entered:</p>
+  <ul>
+    <li><strong>Entities</strong> — the organisations/authorities.</li>
+    <li><strong>Departments</strong> — units under each entity.</li>
+    <li><strong>GL Accounts &amp; Items</strong> — the chart of accounts and budget line items.</li>
+    <li><strong>Categories</strong> — Revenue, CAPEX, OPEX, HR.</li>
+  </ul>
+
+  <h2>A4. Managing Programs (Mandate vs Support)</h2>
+  <p>Programs group the work of an entity. Each program now carries a <strong>type</strong> that drives cost allocation.</p>
+
+  <h3>Program type</h3>
+  <ul>
+    <li><strong>Mandate</strong> — core mission programs. These ultimately <em>receive</em> allocated overhead. (Default type.)</li>
+    <li><strong>Support</strong> — overhead/enabling programs whose cost can be pushed down onto mandate activities. A Support program may be given an <strong>Allocation Sequence</strong> that controls the step-down order.</li>
+  </ul>
+
+  <h3>To create or edit a program</h3>
+  <ol class="steps">
+    <li>Open <strong>Programs</strong> from the admin menu.</li>
+    <li>Click <strong>Create</strong> (or edit an existing program).</li>
+    <li>Enter the Program Code and Name. Codes must be unique within the entity.</li>
+    <li>Choose the <strong>Program Type</strong>: Mandate or Support.</li>
+    <li>For Support programs, optionally set the <strong>Allocation Sequence</strong> (lower numbers allocate first). For Mandate programs the sequence is not used.</li>
+    <li>Set <strong>Active</strong> so the program appears in budget entry, then save.</li>
+  </ol>
+
+  <div class="callout">
+    <strong>Scope reminder</strong>
+    An Entity ADMIN only sees and can edit programs for their own entity; the entity field is locked to their entity. Attempting to reach another entity's program is denied.
+  </div>
+
+  <h2>A5. Activities &amp; Projects</h2>
+  <p>Activities belong to a program and to a department. When a budget line is entered, the user picks a program and then an activity <em>linked to that program</em>. This linkage is what makes costs roll up to the right program.</p>
+  <ul>
+    <li>Keep activities mapped to the correct program so direct costs land where expected.</li>
+    <li>Projects are used for CAPEX/initiative-style budgeting and are selected per department.</li>
+  </ul>
+
+  <h2>A6. User Administration</h2>
+  <ol class="steps">
+    <li>Open <strong>Users</strong> from the admin menu.</li>
+    <li>Click <strong>Create</strong>, enter a unique username and password.</li>
+    <li>Choose the role: <span class="badge b-sys">SYSADMIN</span> <span class="badge b-adm">ADMIN</span> <span class="badge b-usr">USER</span>.</li>
+    <li>Assign the entity (and department for a USER). Rules:
+      <ul>
+        <li>A <strong>SYSADMIN</strong> has no entity/department.</li>
+        <li>An <strong>ADMIN</strong> must be linked to an entity.</li>
+        <li>A <strong>USER</strong> must be linked to an entity or department.</li>
+      </ul>
+    </li>
+    <li>Only a SYSADMIN can create or edit other SYSADMIN accounts. An Entity ADMIN can only manage users within their own entity.</li>
+  </ol>
+  <div class="callout note"><strong>Deactivation</strong>Deleting a user actually deactivates the account (sets it inactive) so history is preserved.</div>
+
+  <h2>A7. Cost Allocation Engine</h2>
+  <p><span class="badge b-sys">SYSADMIN</span> / Global <span class="badge b-adm">ADMIN</span> only.</p>
+  <p>The allocation engine reallocates Support program costs onto Mandate program activities. It is additive and auditable — it never edits the original budget lines.</p>
+
+  <h4>Default behaviour</h4>
+  <p>By default, every cost stays on the activity of the program where it was entered (the <strong>Direct</strong> cost basis). No allocation is applied until you run one.</p>
+
+  <h4>Running an allocation</h4>
+  <ol class="steps">
+    <li>Open <strong>Cost Allocation</strong> and select the Budget Year (and entity if scoping).</li>
+    <li>Confirm program classification — which programs are Support and their sequence.</li>
+    <li>Define <strong>allocation drivers</strong> (e.g. headcount, floor area) and enter driver values.</li>
+    <li>Create <strong>allocation rules</strong> that map each Support program to its target mandate activities using a driver.</li>
+    <li>Run the step-down allocation. Review the generated transactions.</li>
+    <li><strong>Post</strong> the run when satisfied. Reports using the <strong>Total</strong> cost basis will then overlay the latest posted run.</li>
+  </ol>
+  <div class="callout"><strong>Net-zero guarantee</strong>Each posting credits the target activity (allocated-in) and debits the source program (allocated-out) by the same amount, so total cost is preserved.</div>
+
+  <h2>A8. Management Review Pack</h2>
+  <p><span class="badge b-sys">SYSADMIN</span> / Global <span class="badge b-adm">ADMIN</span> only. A read-only reporting pack:</p>
+  <ul>
+    <li>Cost structure &amp; capex discipline.</li>
+    <li>Manpower cost-per-FTE.</li>
+    <li>Programme cost (Direct + Allocated).</li>
+    <li>KPI scorecard &amp; detail, maturity ladder, activity unit cost.</li>
+    <li>Excel export of all sheets.</li>
+  </ul>
+
+  <h2>A9. Submissions &amp; Approvals</h2>
+  <ul>
+    <li>Users submit a budget per Year / Entity / Department / Category.</li>
+    <li>Once submitted, the budget is <strong>locked</strong> and editing is disabled until it is returned.</li>
+    <li>Admins review submissions and approve or return them with comments.</li>
+  </ul>
+
+  <h2>A10. Audit Logs &amp; Internal Messages</h2>
+  <ul>
+    <li><strong>Audit logs</strong> record key actions (admin-only, scoped by entity).</li>
+    <li><strong>Internal messages</strong> let users raise requests and admins respond/review.</li>
+  </ul>
+</div>
+
+<!-- ============ PART B ============ -->
+<div class="page pagebreak">
+  <h1>Part B — Regular User Guide</h1>
+
+  <h2>B1. Logging In &amp; Choosing Your Context</h2>
+  <ol class="steps">
+    <li>Sign in with the username and password provided by your administrator.</li>
+    <li>Select your <strong>Context</strong>: Budget Year, Entity and Department. You can only see the entity/department assigned to you.</li>
+    <li>This selection stays active for your session and drives every screen.</li>
+  </ol>
+
+  <h2>B2. Understanding Programs &amp; Activities</h2>
+  <p>A <strong>program</strong> is a block of work in your entity; an <strong>activity</strong> is a specific piece of work inside a program. When you budget, you always choose a program first, then an activity that belongs to it.</p>
+  <ul>
+    <li><strong>Mandate</strong> programs are your core mission work.</li>
+    <li><strong>Support</strong> programs are shared/overhead work. You budget them the same way; administrators may later spread their cost onto mandate activities.</li>
+  </ul>
+  <div class="callout note"><strong>What you see</strong>The program list shows only the <em>active</em> programs of your own entity. If a program is missing, ask your administrator to add or activate it.</div>
+
+  <h2>B3. Entering a Budget</h2>
+  <ol class="steps">
+    <li>Open <strong>Budget Entry</strong> and pick the category: Revenue, CAPEX, OPEX or HR.</li>
+    <li>Select the <strong>Program</strong>, then the <strong>Activity</strong> (the list filters to that program).</li>
+    <li>Choose the line <strong>Item</strong> (account) and enter amounts.</li>
+    <li>Spread the amount across months — equally or by entering values per month.</li>
+    <li>For CAPEX you can attach a supporting document (up to 5&nbsp;MB) and set depreciation details.</li>
+    <li>Save the line. It appears in the recent-lines list for the current context.</li>
+  </ol>
+
+  <h2>B4. Submitting for Approval</h2>
+  <ol class="steps">
+    <li>When your lines are complete, submit the budget for your context.</li>
+    <li>After submission the budget is <strong>locked</strong> and cannot be edited.</li>
+    <li>If changes are needed, ask your administrator to return it; once returned you can edit and resubmit.</li>
+  </ol>
+
+  <h2>B5. Reports Available to You</h2>
+  <p>You can view reports for your own scope (such as income statement and budget summaries). Cross-entity tools — Cost Allocation and the Management Review pack — are reserved for administrators.</p>
+
+  <h2>B6. FAQ &amp; Troubleshooting</h2>
+  <h4>I can't find a program in the dropdown.</h4>
+  <p>It may be inactive or belong to a different entity. Contact your administrator.</p>
+  <h4>The Save button is disabled / I get a "locked" message.</h4>
+  <p>The budget has been submitted. Ask your administrator to return it for editing.</p>
+  <h4>I don't see the admin menus.</h4>
+  <p>Those screens are limited to administrators. Your role is USER.</p>
+</div>
+
+<!-- ============ APPENDIX ============ -->
+<div class="page pagebreak">
+  <h1>Appendix — Glossary &amp; Permission Quick Reference</h1>
+
+  <h2>Glossary</h2>
+  <table>
+    <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Entity</td><td>A government organisation/authority.</td></tr>
+      <tr><td>Department</td><td>A unit within an entity.</td></tr>
+      <tr><td>Program</td><td>A block of work; typed as Mandate or Support.</td></tr>
+      <tr><td>Activity</td><td>Specific work inside a program; costs are entered here.</td></tr>
+      <tr><td>Mandate program</td><td>Core mission work; receives allocated overhead.</td></tr>
+      <tr><td>Support program</td><td>Overhead work; its cost can be allocated to mandate activities.</td></tr>
+      <tr><td>Allocation sequence</td><td>Order in which Support programs are stepped down.</td></tr>
+      <tr><td>Direct cost basis</td><td>Costs stay where entered (the default).</td></tr>
+      <tr><td>Total cost basis</td><td>Costs include the latest posted allocation overlay.</td></tr>
+      <tr><td>Driver</td><td>The basis used to spread cost (e.g. headcount).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Permission Quick Reference</h2>
+  <table>
+    <thead><tr><th>Area</th><th>SYSADMIN</th><th>Global ADMIN</th><th>Entity ADMIN</th><th>USER</th></tr></thead>
+    <tbody>
+      <tr><td>Reference data (entities, depts, GL, items)</td><td class="yes">Full</td><td class="yes">Full</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+      <tr><td>Programs &amp; classification</td><td class="yes">Full</td><td class="yes">Full</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+      <tr><td>Users</td><td class="yes">All (incl. SYSADMIN)</td><td class="yes">All non-SYSADMIN</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+      <tr><td>Budget entry</td><td>—</td><td>—</td><td>—</td><td class="yes">Own scope</td></tr>
+      <tr><td>Submissions / approvals</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="scoped">Own entity</td><td class="scoped">Submit only</td></tr>
+      <tr><td>Cost allocation engine</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td><td class="no">No</td></tr>
+      <tr><td>Management review pack</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td><td class="no">No</td></tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top:28px;color:var(--muted);font-size:12px">
+    GovBudget User Manual v1.0 — generated documentation. To export: open this file in a browser and choose <strong>Print → Save as PDF</strong> (A4, default margins).
+  </p>
+</div>
+
+</body>
+</html>

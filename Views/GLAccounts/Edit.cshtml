@@ -1,0 +1,44 @@
+﻿@model GovBudget.Models.GLAccounts
+
+@{
+    ViewData["Title"] = "Edit";
+}
+
+<h1>Edit</h1>
+
+<h4>GLAccounts</h4>
+<hr />
+<div class="row">
+    <div class="col-md-4">
+        <form asp-action="Edit">
+            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+            <input type="hidden" asp-for="GLAccountId" />
+            <div class="form-group">
+                <label asp-for="GLCode" class="control-label"></label>
+                <input asp-for="GLCode" class="form-control" />
+                <span asp-validation-for="GLCode" class="text-danger"></span>
+            </div>
+            <div class="form-group">
+                <label asp-for="GLName" class="control-label"></label>
+                <input asp-for="GLName" class="form-control" />
+                <span asp-validation-for="GLName" class="text-danger"></span>
+            </div>
+            <div class="form-group">
+                <label asp-for="GLType" class="control-label"></label>
+                <input asp-for="GLType" class="form-control" />
+                <span asp-validation-for="GLType" class="text-danger"></span>
+            </div>
+            <div class="form-group">
+                <input type="submit" value="Save" class="btn btn-primary" />
+            </div>
+        </form>
+    </div>
+</div>
+
+<div>
+    <a asp-action="Index">Back to List</a>
+</div>
+
+@section Scripts {
+    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+}

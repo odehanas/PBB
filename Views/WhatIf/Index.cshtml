@@ -1,0 +1,280 @@
+@model GovBudget.Models.WhatIfScenarios
+@{
+    ViewData["Title"] = "What-If";
+    var scenarios = ViewBag.Scenarios as List<GovBudget.Models.WhatIfScenarios> ?? new List<GovBudget.Models.WhatIfScenarios>();
+    var active = ViewBag.ActiveScenario as GovBudget.Models.WhatIfScenarios;
+    var requiresContext = ViewBag.RequiresContext as bool? ?? false;
+    var contextEntities = ViewBag.ContextEntities as IEnumerable<GovBudget.Models.Entities> ?? new List<GovBudget.Models.Entities>();
+    var impacts = ViewBag.ScenarioImpacts as List<GovBudget.Controllers.WhatIfController.BudgetLineImpactVm> ?? new List<GovBudget.Controllers.WhatIfController.BudgetLineImpactVm>();
+    var baseTotal = ViewBag.ScenarioBaseTotal != null ? (decimal)ViewBag.ScenarioBaseTotal : 0m;
+    var scenarioTotal = ViewBag.ScenarioAmountTotal != null ? (decimal)ViewBag.ScenarioAmountTotal : 0m;
+    var deltaTotal = ViewBag.ScenarioDeltaTotal != null ? (decimal)ViewBag.ScenarioDeltaTotal : 0m;
+}
+
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="mb-0">What-If Scenarios</h3>
+            <div class="text-muted small">Create alternative assumptions without changing original budget lines.</div>
+        </div>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+    else if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+
+    @if (requiresContext)
+    {
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h5 class="mb-1">Select Budget Context</h5>
+                <div class="text-muted small mb-3">Choose Budget Year, then select a Cost Center to manage What-If scenarios.</div>
+
+                <form id="selectContextForm" asp-controller="Context" asp-action="Select" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="EntityId" id="hEntityId" />
+                    <input type="hidden" name="DepartmentId" id="hDepartmentId" />
+                    <input type="hidden" name="returnUrl" value="@(ViewBag.ReturnUrl ?? "")" />
+
+                    <div class="row align-items-center g-2 mb-3">
+                        <label class="col-auto col-form-label fw-bold">Budget Year:</label>
+                        <div class="col-auto">
+                            <select name="BudgetYear" class="form-select" asp-items="ViewBag.BudgetYear" style="min-width: 120px;"></select>
+                        </div>
+                        <div class="col">
+                            <span class="text-muted small">Select the fiscal year.</span>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="accordion" id="entityAccordion">
+                    @foreach (var entity in contextEntities)
+                    {
+                        <div class="accordion-item mb-2 border rounded">
+                            <h2 class="accordion-header" id="heading-@entity.EntityId">
+                                <button class="accordion-button collapsed fw-bold text-primary" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-@entity.EntityId" aria-expanded="false" aria-controls="collapse-@entity.EntityId">
+                                    <span class="badge bg-primary me-2">@entity.EntityCode</span> @entity.EntityName
+                                </button>
+                            </h2>
+                            <div id="collapse-@entity.EntityId" class="accordion-collapse collapse show" aria-labelledby="heading-@entity.EntityId">
+                                <div class="accordion-body p-0">
+                                    @if (entity.Departments != null && entity.Departments.Any())
+                                    {
+                                        <div class="list-group list-group-flush">
+                                            @foreach (var dept in entity.Departments)
+                                            {
+                                                <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3 ps-4"
+                                                        onclick="selectDepartment(@entity.EntityId, @dept.DepartmentId)">
+                                                    <div>
+                                                        <span class="badge bg-secondary me-2">@dept.DeptCode</span>
+                                                        <span class="fw-medium">@dept.DeptName</span>
+                                                        <small class="text-muted ms-2">(Cost Center)</small>
+                                                    </div>
+                                                    <span class="btn btn-sm btn-outline-primary rounded-pill px-3">
+                                                        Continue &rarr;
+                                                    </span>
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="p-3 text-muted fst-italic ps-4">No active departments found.</div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    @if (!contextEntities.Any())
+                    {
+                        <div class="alert alert-warning mb-0">No entities found available for your account.</div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+    <div class="card mb-4">
+        <div class="card-header fw-bold d-flex justify-content-between align-items-center">
+            <span>Active Scenario</span>
+            <form asp-action="Clear" method="post" class="d-inline">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Clear</button>
+            </form>
+        </div>
+        <div class="card-body">
+            @if (active == null)
+            {
+                <div class="text-muted">No scenario is active. Reports will use original values.</div>
+            }
+            else
+            {
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-bold">@active.ScenarioName</div>
+                        <div class="text-muted small">Year: @active.BudgetYear</div>
+                    </div>
+                    <div>
+                        <a asp-action="Edit" asp-route-id="@active.ScenarioId" class="btn btn-sm btn-primary">Edit</a>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <a asp-controller="Reports" asp-action="Index" asp-route-report="income" asp-route-year="@active.BudgetYear" class="small">View results in Reports</a>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (active != null && impacts.Any())
+    {
+        <div class="card shadow-sm mb-4">
+            <div class="card-header fw-bold d-flex justify-content-between align-items-center">
+                <span>Item-Level Impact (Preview)</span>
+                <span class="small text-muted">Showing @(Math.Min(200, impacts.Count)) of @impacts.Count</span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="text-muted small">Base Total</div>
+                        <div class="fw-bold">@baseTotal.ToString("#,##0.00")</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Scenario Total</div>
+                        <div class="fw-bold">@scenarioTotal.ToString("#,##0.00")</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Delta</div>
+                        <div class="fw-bold">@deltaTotal.ToString("#,##0.00")</div>
+                    </div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Category</th>
+                            <th>Item</th>
+                            <th>GL</th>
+                            <th class="text-nowrap">GL Type</th>
+                            <th class="text-end text-nowrap">Qty</th>
+                            <th class="text-end text-nowrap">Base Price</th>
+                            <th class="text-end text-nowrap">Scenario Price</th>
+                            <th class="text-end text-nowrap">Base Amount</th>
+                            <th class="text-end text-nowrap">Scenario Amount</th>
+                            <th class="text-end text-nowrap">Delta</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in impacts.Take(200))
+                        {
+                            <tr>
+                                <td class="text-nowrap">@r.CategoryCode</td>
+                                <td>
+                                    <div class="fw-bold">@r.ItemCode</div>
+                                    <div class="text-muted small">@r.ItemName</div>
+                                </td>
+                                <td class="text-nowrap">@r.GLCode</td>
+                                <td class="text-nowrap">@r.GLType</td>
+                                <td class="text-end">@r.Quantity.ToString("#,##0.####")</td>
+                                <td class="text-end">@r.UnitPrice.ToString("#,##0.00")</td>
+                                <td class="text-end">@r.ScenarioUnitPrice.ToString("#,##0.00")</td>
+                                <td class="text-end">@r.BaseAmount.ToString("#,##0.00")</td>
+                                <td class="text-end">@r.ScenarioAmount.ToString("#,##0.00")</td>
+                                <td class="text-end">@r.DeltaAmount.ToString("#,##0.00")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <div class="row g-3">
+        <div class="col-lg-5">
+            <div class="card">
+                <div class="card-header fw-bold">Create New Scenario</div>
+                <div class="card-body">
+                    <form asp-action="Create" method="post">
+                        @Html.AntiForgeryToken()
+                        <div class="mb-3">
+                            <label class="form-label">Scenario Name</label>
+                            <input name="scenarioName" class="form-control" maxlength="200" />
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label class="form-label">Cost Inflation %</label>
+                                <input name="costInflationRate" class="form-control" type="number" step="0.0001" value="0" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Revenue Growth %</label>
+                                <input name="revenueGrowthRate" class="form-control" type="number" step="0.0001" value="0" />
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <button type="submit" class="btn btn-success">Create & Activate</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header fw-bold">Scenarios (this context)</div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Name</th>
+                                    <th class="text-nowrap">Created</th>
+                                    <th class="text-nowrap"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in scenarios)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="fw-bold">@s.ScenarioName</div>
+                                            <div class="text-muted small">Year: @s.BudgetYear</div>
+                                        </td>
+                                        <td class="text-nowrap">@s.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                        <td class="text-end text-nowrap">
+                                            <a asp-action="Edit" asp-route-id="@s.ScenarioId" class="btn btn-sm btn-outline-primary">Edit</a>
+                                            <form asp-action="Activate" method="post" class="d-inline">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="id" value="@s.ScenarioId" />
+                                                <button type="submit" class="btn btn-sm btn-outline-success">Activate</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    }
+</div>
+
+@section Scripts {
+    @if (requiresContext)
+    {
+        <script>
+            function selectDepartment(entityId, deptId) {
+                document.getElementById('hEntityId').value = entityId;
+                document.getElementById('hDepartmentId').value = deptId;
+                document.getElementById('selectContextForm').submit();
+            }
+        </script>
+    }
+}

@@ -1,0 +1,167 @@
+@model GovBudget.Models.BudgetSubmissions
+@{
+    ViewData["Title"] = "Review Submission";
+    var lineCount = (int)(ViewBag.LineCount ?? 0);
+    var totalAmount = (decimal)(ViewBag.TotalAmount ?? 0m);
+    var snapshotLines = ViewBag.Lines as List<GovBudget.Models.BudgetSubmissionLines>;
+    var liveLines = ViewBag.Lines as List<GovBudget.Models.BudgetLines>;
+}
+
+<div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Review Submission</h3>
+        <div>
+            <a asp-action="Submissions" asp-route-year="@Model.BudgetYear" class="btn btn-sm btn-outline-secondary">Back</a>
+        </div>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+    else if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+
+    <div class="card mb-4">
+        <div class="card-header fw-bold">
+            @Model.BudgetYear — @Model.Entity.EntityCode / @Model.Department.DeptCode — @Model.Category.CategoryCode v@Model.VersionNo
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="text-muted small">Status</div>
+                    <div>@Model.Status</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">Submitted</div>
+                    <div>@(Model.SubmittedAt == null ? "-" : Model.SubmittedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</div>
+                    <div class="text-muted small">@Model.SubmittedBy</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">Approved</div>
+                    <div>@(Model.ApprovedAt == null ? "-" : Model.ApprovedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</div>
+                    <div class="text-muted small">@Model.ApprovedBy</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">Sent to Central</div>
+                    <div>@(Model.SentToCentralAt == null ? "-" : Model.SentToCentralAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</div>
+                    <div class="text-muted small">@Model.SentToCentralBy</div>
+                </div>
+            </div>
+
+            <hr />
+
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="text-muted small">Lines</div>
+                    <div>@lineCount</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">Total Amount</div>
+                    <div>@totalAmount.ToString("N2")</div>
+                </div>
+                <div class="col-md-6 text-end">
+                    @if (string.Equals(Model.Status, "Submitted", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <form asp-action="ApproveSubmission" method="post" class="d-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@Model.SubmissionId" />
+                            <input type="text" name="approvalNote" class="form-control form-control-sm d-inline-block" style="max-width: 360px;" placeholder="Approval note (optional)" />
+                            <button type="submit" class="btn btn-sm btn-success ms-2">Entity Approve</button>
+                        </form>
+                    }
+                    else if (string.Equals(Model.Status, "EntityApproved", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(Model.Status, "Approved", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <form asp-action="SendToCentral" method="post" class="d-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@Model.SubmissionId" />
+                            <button type="submit" class="btn btn-sm btn-primary">Send to Central</button>
+                        </form>
+                    }
+                    else if (string.Equals(Model.Status, "SentToCentral", StringComparison.OrdinalIgnoreCase) && User.IsInRole("SYSADMIN"))
+                    {
+                        <form asp-action="SysApproveSubmission" method="post" class="d-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@Model.SubmissionId" />
+                            <input type="text" name="sysApprovalNote" class="form-control form-control-sm d-inline-block" style="max-width: 360px;" placeholder="System approval note (optional)" />
+                            <button type="submit" class="btn btn-sm btn-success ms-2">System Approve</button>
+                        </form>
+                    }
+                    @{
+                        var entityClaim = User.Claims.FirstOrDefault(c => c.Type == "EntityId")?.Value;
+                        var hasEntityScope = int.TryParse(entityClaim, out var scopedEntityId) && scopedEntityId > 0;
+                        var isGlobalAdmin = User.IsInRole("SYSADMIN") || (User.IsInRole("ADMIN") && !hasEntityScope);
+                        var isEntityAdmin = User.IsInRole("ADMIN") && hasEntityScope && !User.IsInRole("SYSADMIN");
+                    }
+                    @if ((isGlobalAdmin
+                          && (string.Equals(Model.Status, "Submitted", StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(Model.Status, "EntityApproved", StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(Model.Status, "Approved", StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(Model.Status, "SentToCentral", StringComparison.OrdinalIgnoreCase)))
+                         || (isEntityAdmin && string.Equals(Model.Status, "Submitted", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        <form asp-action="ReturnSubmission" method="post" class="d-inline ms-2">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@Model.SubmissionId" />
+                            <input type="text" name="returnNote" class="form-control form-control-sm d-inline-block" style="max-width: 360px;" placeholder="Return note (optional)" />
+                            <button type="submit" class="btn btn-sm btn-outline-danger ms-2">Return &amp; Unlock</button>
+                        </form>
+                    }
+                    @if (Model.ParentSubmissionId.HasValue || Model.VersionNo > 1)
+                    {
+                        <a asp-action="Variance" asp-route-id="@Model.SubmissionId" class="btn btn-sm btn-outline-secondary ms-2">Variance</a>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h5 class="text-secondary">Lines (latest 200)</h5>
+    <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>ItemId</th>
+                    <th>Description</th>
+                    <th class="text-end">Qty</th>
+                    <th class="text-end">Price</th>
+                    <th class="text-end">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (snapshotLines != null)
+                {
+                    foreach (var b in snapshotLines)
+                    {
+                        <tr>
+                            <td class="text-nowrap">@b.SourceBudgetLineId</td>
+                            <td class="text-nowrap">@b.ItemId</td>
+                            <td>@b.Description</td>
+                            <td class="text-end">@b.Quantity.ToString("N4")</td>
+                            <td class="text-end">@b.UnitPrice.ToString("N4")</td>
+                            <td class="text-end">@b.Amount.ToString("N2")</td>
+                        </tr>
+                    }
+                }
+                else if (liveLines != null)
+                {
+                    foreach (var b in liveLines)
+                    {
+                        <tr>
+                            <td class="text-nowrap">@b.BudgetLineId</td>
+                            <td class="text-nowrap">@b.ItemId</td>
+                            <td>@b.Description</td>
+                            <td class="text-end">@b.Quantity.ToString("N4")</td>
+                            <td class="text-end">@b.UnitPrice.ToString("N4")</td>
+                            <td class="text-end">@b.Amount.ToString("N2")</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

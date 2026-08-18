@@ -1,0 +1,75 @@
+@model GovBudget.Controllers.AllocationDriversVm
+@{
+    ViewData["Title"] = "Allocation Driver Values";
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="mb-0">Driver values</h3>
+            <div class="text-muted small">Enter the basis (e.g. headcount, floor area) used to split Support costs across Mandate programs.</div>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary" asp-action="Index" asp-route-year="@Model.Year" asp-route-entityId="@Model.EntityId">Back to allocation</a>
+    </div>
+
+    <form method="get" class="row g-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label class="form-label">Year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="Model.YearOptions"></select>
+        </div>
+        <div class="col-auto">
+            <label class="form-label">Entity</label>
+            <select name="entityId" class="form-select form-select-sm" asp-items="Model.EntityOptions"></select>
+        </div>
+        <div class="col-auto">
+            <label class="form-label">Driver</label>
+            <select name="driverId" class="form-select form-select-sm">
+                @foreach (var d in Model.Drivers)
+                {
+                    <option value="@d.DriverId" selected="@(Model.DriverId == d.DriverId)">@d.DriverName @(string.IsNullOrEmpty(d.Unit) ? "" : "(" + d.Unit + ")")</option>
+                }
+            </select>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-sm btn-primary">Show</button>
+        </div>
+    </form>
+
+    @if (Model.DriverId == null)
+    {
+        <div class="alert alert-warning">No drivers defined.</div>
+    }
+    else
+    {
+        <form method="post" asp-action="DriverValueSave" class="card shadow-sm">
+            <input type="hidden" name="year" value="@Model.Year" />
+            <input type="hidden" name="driverId" value="@Model.DriverId" />
+            <input type="hidden" name="entityId" value="@(Model.EntityId?.ToString() ?? "")" />
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light"><tr><th>Program</th><th style="width:160px" class="text-end">Value</th></tr></thead>
+                        <tbody>
+                        @foreach (var p in Model.Programs)
+                        {
+                            var val = Model.Values.TryGetValue(p.ProgramId, out var v) ? v : 0m;
+                            <tr>
+                                <td>
+                                    <input type="hidden" name="programIds" value="@p.ProgramId" />
+                                    @p.ProgramCode - @p.ProgramName
+                                    <span class="badge bg-@(p.ProgramType == "Support" ? "warning" : "primary") ms-1">@p.ProgramType</span>
+                                </td>
+                                <td class="text-end">
+                                    <input name="programValues" type="number" step="0.01" class="form-control form-control-sm text-end" value="@val" />
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+                <button class="btn btn-sm btn-primary">Save values</button>
+                <span class="text-muted small ms-2">Values are used by Headcount/Driver allocation methods. Mandate programs are the usual targets.</span>
+            </div>
+        </form>
+    }
+</div>

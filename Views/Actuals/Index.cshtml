@@ -1,0 +1,168 @@
+@model List<GovBudget.Models.ActualImportBatches>
+@{
+    ViewData["Title"] = "Import Actuals";
+    var year = (int)ViewBag.Year;
+    var yearOptions = ViewBag.YearOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var entityOptions = ViewBag.EntityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var selectedEntityId = ViewBag.SelectedEntityId as int?;
+    var entityRouteVal = selectedEntityId?.ToString() ?? "";
+    var entityMap = ViewBag.EntityMap as Dictionary<int, string> ?? new();
+
+    string SourceLabel(string s) => s == "SAP_MM" ? "MM / Item" : s == "HR_EMP" ? "HR (employee)" : "GL view";
+}
+
+<style>
+    .act-page .table { font-size: .82rem; }
+    .act-page .table th, .act-page .table td { padding: .35rem .55rem; vertical-align: middle; }
+    .act-page .table thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; white-space: nowrap; }
+    .act-page .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+</style>
+
+<div class="container-fluid py-3 act-page" style="max-width:1200px;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+            <h4 class="mb-0">Import Actuals</h4>
+            <div class="text-muted small">Upload current-year actuals exported from SAP &middot; FY @year</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-primary" asp-action="Forecast" asp-route-year="@year" asp-route-entityId="@entityRouteVal">Forecast to complete</a>
+            <a class="btn btn-sm btn-primary" asp-action="BudgetVsActual" asp-route-year="@year" asp-route-entityId="@entityRouteVal">Budget vs Actual report</a>
+        </div>
+    </div>
+
+    @if (TempData["ActualResult"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show py-2 small" role="alert">
+            @TempData["ActualResult"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+    @if (TempData["ActualError"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show py-2 small" role="alert">
+            @TempData["ActualError"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label mb-1 small">Year</label>
+                    <select name="year" class="form-select form-select-sm" asp-items="yearOptions"></select>
+                </div>
+                <div class="col">
+                    <label class="form-label mb-1 small">Entity</label>
+                    <select name="entityId" class="form-select form-select-sm" asp-items="entityOptions"></select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-lg-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header py-2"><strong>1. GL Actuals</strong> <span class="text-muted small">(all categories, plain SAP GL export)</span></div>
+                <div class="card-body py-2">
+                    <p class="small text-muted mb-2">Columns: <code>EntityCode, GLCode, Month (1-12), Amount</code>. One row per GL per month. Category is derived from the GL account type. Re-uploading replaces existing GL actuals for the same year and entity.</p>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <a class="btn btn-sm btn-outline-primary" asp-action="TemplateGl" asp-route-year="@year" asp-route-entityId="@entityRouteVal">&#8681; Download template</a>
+                        <form method="post" asp-action="Upload" enctype="multipart/form-data" class="d-flex gap-1 align-items-center">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="source" value="SAP_GL" />
+                            <input type="hidden" name="year" value="@year" />
+                            <input type="hidden" name="entityId" value="@entityRouteVal" />
+                            <input type="file" name="file" accept=".xlsx" class="form-control form-control-sm" style="max-width:180px;" required />
+                            <button type="submit" class="btn btn-sm btn-success">Upload</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-lg-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header py-2"><strong>2. MM / Item Actuals</strong> <span class="text-muted small">(item-linked OPEX/CAPEX)</span></div>
+                <div class="card-body py-2">
+                    <p class="small text-muted mb-2">Columns: <code>EntityCode, ItemCode, GLCode (optional), Month (1-12), Amount</code>. Item code is matched to the material master; GL is taken from the item when left blank. Enables item-level comparison.</p>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <a class="btn btn-sm btn-outline-primary" asp-action="TemplateMm" asp-route-year="@year" asp-route-entityId="@entityRouteVal">&#8681; Download template</a>
+                        <form method="post" asp-action="Upload" enctype="multipart/form-data" class="d-flex gap-1 align-items-center">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="source" value="SAP_MM" />
+                            <input type="hidden" name="year" value="@year" />
+                            <input type="hidden" name="entityId" value="@entityRouteVal" />
+                            <input type="file" name="file" accept=".xlsx" class="form-control form-control-sm" style="max-width:180px;" required />
+                            <button type="submit" class="btn btn-sm btn-success">Upload</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-lg-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header py-2"><strong>3. HR Employee Actuals</strong> <span class="text-muted small">(exact activity split)</span></div>
+                <div class="card-body py-2">
+                    <p class="small text-muted mb-2">Columns: <code>EntityCode, EmployeeCode, Month (1-12), Amount</code>. Matched to budgeted employees and split to activities/projects by each employee's budgeted allocation rate. Re-uploading replaces existing HR actuals for the same year and entity.</p>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <a class="btn btn-sm btn-outline-primary" asp-action="TemplateHrEmp" asp-route-year="@year" asp-route-entityId="@entityRouteVal">&#8681; Download template</a>
+                        <form method="post" asp-action="UploadHrEmp" enctype="multipart/form-data" class="d-flex gap-1 align-items-center">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="year" value="@year" />
+                            <input type="hidden" name="entityId" value="@entityRouteVal" />
+                            <input type="file" name="file" accept=".xlsx" class="form-control form-control-sm" style="max-width:180px;" required />
+                            <button type="submit" class="btn btn-sm btn-success">Upload</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header py-2"><strong>Recent imports</strong></div>
+        <div class="card-body p-0">
+            @if (Model.Count == 0)
+            {
+                <div class="alert alert-info m-3 mb-0">No actuals imported yet for this filter. Download a template above, fill it from your SAP export, then upload.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Imported</th>
+                                <th>Entity</th>
+                                <th>Source</th>
+                                <th>Months</th>
+                                <th class="text-end num">Rows</th>
+                                <th class="text-end num">Total</th>
+                                <th>File</th>
+                                <th>By</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var b in Model)
+                        {
+                            <tr>
+                                <td class="num">@b.ImportedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@(entityMap.TryGetValue(b.EntityId, out var el) ? el : b.EntityId.ToString())</td>
+                                <td>@SourceLabel(b.Source)</td>
+                                <td class="num">@b.PeriodFrom&ndash;@b.PeriodTo</td>
+                                <td class="text-end num">@b.RowsImported</td>
+                                <td class="text-end num">@b.TotalAmount.ToString("N0")</td>
+                                <td class="small text-muted">@b.SourceFile</td>
+                                <td class="small text-muted">@b.ImportedBy</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>

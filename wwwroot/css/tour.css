@@ -1,0 +1,97 @@
+/* GovBudget guided-tour styles (self-contained, no dependencies) */
+.govtour-highlight {
+    position: fixed;
+    z-index: 20000;
+    border-radius: 6px;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, .75), 0 0 0 9999px rgba(0, 0, 0, .55);
+    transition: top .2s ease, left .2s ease, width .2s ease, height .2s ease;
+    pointer-events: none;
+}
+
+.govtour-popover {
+    position: fixed;
+    z-index: 20001;
+    max-width: 330px;
+    background: #fff;
+    color: #212529;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, .3);
+    padding: 16px 18px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.govtour-title {
+    font-weight: 700;
+    color: #0d6efd;
+    font-size: 15px;
+    margin-bottom: 6px;
+}
+
+.govtour-text {
+    margin-bottom: 12px;
+}
+
+.govtour-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.govtour-progress {
+    font-size: 12px;
+    color: #6c757d;
+    white-space: nowrap;
+}
+
+.govtour-btns {
+    display: flex;
+    gap: 6px;
+}
+
+    .govtour-btns button {
+        border: 1px solid #ced4da;
+        background: #fff;
+        color: #495057;
+        border-radius: 6px;
+        padding: 5px 12px;
+        font-size: 13px;
+        cursor: pointer;
+    }
+
+    .govtour-btns .govtour-next {
+        background: #0d6efd;
+        border-color: #0d6efd;
+        color: #fff;
+    }
+
+        .govtour-btns .govtour-next:hover {
+            background: #0b5ed7;
+        }
+
+    .govtour-btns .govtour-skip {
+        border: none;
+        color: #adb5bd;
+    }
+
+    .govtour-btns button:hover {
+        filter: brightness(.98);
+    }
+
+[data-bs-theme="dark"] .govtour-popover {
+    background: #2b3035;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .govtour-btns button {
+    background: #343a40;
+    border-color: #495057;
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .govtour-btns .govtour-next {
+    background: #0d6efd;
+    border-color: #0d6efd;
+    color: #fff;
+}

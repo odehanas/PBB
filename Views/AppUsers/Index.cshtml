@@ -1,0 +1,107 @@
+@model IEnumerable<GovBudget.Models.AppUsers>
+
+@{
+    ViewData["Title"] = "Users";
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <h1 class="mb-0">Users</h1>
+    <a asp-action="Create" class="btn btn-primary">Add User</a>
+</div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success">@TempData["Success"]</div>
+}
+
+@{
+    var resetLink = TempData["ResetLink"] as string;
+    var resetLinkUser = TempData["ResetLinkUser"] as string;
+}
+@if (!string.IsNullOrEmpty(resetLink))
+{
+    <div class="card border-success mb-3">
+        <div class="card-body">
+            <h6 class="card-title">Reset link for <strong>@resetLinkUser</strong></h6>
+            <p class="text-muted small mb-2">Copy this link and send it to the user. It expires in 7 days and can be used once.</p>
+            <div class="input-group">
+                <input type="text" id="resetLinkBox" class="form-control" value="@resetLink" readonly />
+                <button type="button" class="btn btn-outline-success" onclick="copyResetLink()">Copy</button>
+            </div>
+        </div>
+    </div>
+}
+
+<table class="table table-striped align-middle">
+    <thead>
+        <tr>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Entity</th>
+            <th>Department</th>
+            <th>Status</th>
+            <th class="text-end">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var u in Model)
+        {
+            <tr>
+                <td>@u.UserName</td>
+                <td>@u.Role</td>
+                <td>
+                    @if (u.Entity != null)
+                    {
+                        @u.Entity.EntityCode
+                    }
+                    else if (u.Department?.Entity != null)
+                    {
+                        @u.Department.Entity.EntityCode
+                    }
+                </td>
+                <td>
+                    @if (u.Department != null)
+                    {
+                        @u.Department.DeptCode
+                    }
+                </td>
+                <td>
+                    @if (u.IsActive)
+                    {
+                        <span class="badge bg-success">Active</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-secondary">Inactive</span>
+                    }
+                </td>
+                <td class="text-end">
+                    <a asp-action="Details" asp-route-id="@u.UserId" class="btn btn-sm btn-outline-secondary">Details</a>
+                    <a asp-action="Edit" asp-route-id="@u.UserId" class="btn btn-sm btn-outline-primary">Edit</a>
+                    <form asp-action="IssueResetLink" method="post" class="d-inline" onsubmit="return confirm('Generate a password reset link for @u.UserName?');">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="id" value="@u.UserId" />
+                        <button type="submit" class="btn btn-sm btn-outline-success">Reset Password</button>
+                    </form>
+                    <a asp-action="Delete" asp-route-id="@u.UserId" class="btn btn-sm btn-outline-danger">Deactivate</a>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@section Scripts {
+    <script>
+        function copyResetLink() {
+            var box = document.getElementById('resetLinkBox');
+            if (!box) return;
+            box.select();
+            box.setSelectionRange(0, 99999);
+            navigator.clipboard.writeText(box.value).then(function () {
+                box.classList.add('is-valid');
+                setTimeout(function () { box.classList.remove('is-valid'); }, 1200);
+            });
+        }
+    </script>
+}
+

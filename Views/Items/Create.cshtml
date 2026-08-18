@@ -1,0 +1,45 @@
+﻿@model GovBudget.Models.Items
+@{
+    ViewData["Title"] = "Create Item";
+}
+<h1>Create Item</h1>
+<hr />
+<div class="row">
+    <div class="col-md-6">
+        <form asp-action="Create" method="post">
+            <div asp-validation-summary="All" class="text-danger"></div>
+
+            <div class="mb-3">
+                <label asp-for="ItemCode" class="form-label"></label>
+                <input asp-for="ItemCode" class="form-control" />
+                <span asp-validation-for="ItemCode" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="ItemName" class="form-label"></label>
+                <input asp-for="ItemName" class="form-control" />
+                <span asp-validation-for="ItemName" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">GL Account</label>
+                <select asp-for="GLAccountId" class="form-select" asp-items="ViewBag.GLAccountId"></select>
+                <span asp-validation-for="GLAccountId" class="text-danger"></span>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" asp-for="IsActive" />
+                <label class="form-check-label" asp-for="IsActive"></label>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a asp-action="Index" class="btn btn-secondary">Back</a>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
+}
