@@ -33,6 +33,7 @@ namespace GovBudget.Utils
         public const string Performance = "PERFORMANCE";
         public const string Requests = "REQUESTS";
         public const string Guides = "GUIDES";
+        public const string Assistant = "ASSISTANT";
 
         public const string AdminRoom = "ADMIN_ROOM";
         public const string Users = "USERS";
@@ -68,6 +69,7 @@ namespace GovBudget.Utils
             new() { Key = Performance,      Group = GroupReporting, Display = "Performance Data",   Description = "KPIs, outputs and maturity assessments." },
             new() { Key = Requests,         Group = GroupReporting, Display = "Requests",           Description = "Internal messages and requests." },
             new() { Key = Guides,           Group = GroupReporting, Display = "User Guides",        Description = "Help documentation.", ViewOnlyByNature = true },
+            new() { Key = Assistant,        Group = GroupReporting, Display = "Assistant",          Description = "Ask questions about your budget, performance data and OECD PBB practice.", ViewOnlyByNature = true },
 
             new() { Key = AdminRoom, Group = GroupAdmin, Display = "Admin Room",       Description = "Administration landing page." },
             new() { Key = Users,     Group = GroupAdmin, Display = "Users",            Description = "Create and maintain application users." },
