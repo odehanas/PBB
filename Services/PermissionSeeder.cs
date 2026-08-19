@@ -151,13 +151,13 @@ END;
             // USER: budget preparation plus read access to reporting.
             GrantFull("USER", AppForms.BudgetSetup, AppForms.BudgetEntry, AppForms.HrAllocation, AppForms.MidYear);
             GrantFull("USER", AppForms.WhatIf, AppForms.Requests);
-            GrantViewOnly("USER", AppForms.Reports, AppForms.BudgetVsActual, AppForms.Guides);
+            GrantViewOnly("USER", AppForms.Reports, AppForms.BudgetVsActual, AppForms.Guides, AppForms.Assistant);
 
             // VIEWER: the review-only role — can see, can change nothing.
             GrantViewOnly("VIEWER",
                 AppForms.BudgetSetup, AppForms.BudgetEntry, AppForms.HrAllocation, AppForms.MidYear,
                 AppForms.Reports, AppForms.BudgetVsActual, AppForms.ManagementReview,
-                AppForms.Performance, AppForms.Requests, AppForms.Guides);
+                AppForms.Performance, AppForms.Requests, AppForms.Guides, AppForms.Assistant);
 
             if (rows.Count > 0)
             {

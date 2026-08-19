@@ -1,0 +1,49 @@
+@* Floating assistant. Rendered from _Layout for signed-in users who hold the ASSISTANT right. *@
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
+@{
+    var tokens = Antiforgery.GetAndStoreTokens(Context);
+}
+<div id="assistantWidget" class="assistant-widget d-print-none"
+     data-ask-url="@Url.Action("Ask", "Chat")"
+     data-reset-url="@Url.Action("Reset", "Chat")"
+     data-token="@tokens.RequestToken">
+    <button type="button" class="assistant-launcher btn btn-primary" id="assistantLauncher"
+            title="Ask the assistant" aria-expanded="false" aria-controls="assistantPanel">
+        <i class="bi bi-chat-dots"></i>
+    </button>
+
+    <div class="assistant-panel card shadow" id="assistantPanel" hidden>
+        <div class="card-header d-flex align-items-center">
+            <strong class="me-auto"><i class="bi bi-robot me-2"></i>Budget Assistant</strong>
+            <button type="button" class="btn btn-sm btn-outline-secondary me-1" id="assistantReset" title="Clear conversation">
+                <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="assistantClose" title="Close">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div class="card-body assistant-log" id="assistantLog">
+            <div class="assistant-msg assistant-msg-bot">
+                Ask me about your budget, actuals, programs, activities or KPIs — or about OECD
+                performance-based budgeting practice and standard ratios.
+                <div class="assistant-suggestions mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary assistant-suggestion">What is my total OPEX budget this year by cost center?</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary assistant-suggestion">Which KPIs are below target?</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary assistant-suggestion">What ratios does the OECD recommend for performance budgeting?</button>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <form id="assistantForm" class="d-flex gap-2" autocomplete="off">
+                <input type="text" class="form-control" id="assistantInput" maxlength="2000"
+                       placeholder="Ask a question…" aria-label="Ask a question" />
+                <button type="submit" class="btn btn-primary" id="assistantSend" title="Send">
+                    <i class="bi bi-send"></i>
+                </button>
+            </form>
+            <div class="small text-muted mt-1">Read-only. Answers use your own data scope.</div>
+        </div>
+    </div>
+</div>
+<link rel="stylesheet" href="~/css/assistant.css" asp-append-version="true" />
+<script src="~/js/assistant.js" asp-append-version="true"></script>

@@ -189,5 +189,9 @@
             </div>
         </div>
     </div>
+    @if ((User.Identity?.IsAuthenticated ?? false) && CanOpen(AppForms.Assistant))
+    {
+        @await Html.PartialAsync("_ChatWidget")
+    }
 </body>
 </html>
