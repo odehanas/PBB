@@ -22,7 +22,12 @@
             <div class="mb-3">
                 <label asp-for="Password" class="form-label">New Password</label>
                 <input asp-for="Password" type="password" class="form-control" autocomplete="new-password" />
-                <div class="form-text">Leave blank to keep the current password.</div>
+                <div class="form-text">
+                    Leave blank to keep the current password. If you set one:
+                    @GovBudget.Utils.PasswordPolicy.Summary
+                    The user must replace it at their next sign-in, and any active session for
+                    that account is signed out.
+                </div>
                 <span asp-validation-for="Password" class="text-danger"></span>
             </div>
 

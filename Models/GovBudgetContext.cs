@@ -141,6 +141,10 @@ public partial class GovBudgetContext : DbContext
 
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.Password).HasMaxLength(128);
+            entity.Property(e => e.PasswordHash).HasMaxLength(200);
+            entity.Property(e => e.MustChangePassword).HasDefaultValue(false);
+            entity.Property(e => e.FailedLoginCount).HasDefaultValue(0);
+            entity.Property(e => e.SecurityStamp).HasMaxLength(64);
             entity.Property(e => e.Role).HasMaxLength(20);
             entity.Property(e => e.UserName).HasMaxLength(100);
 
@@ -1025,6 +1029,13 @@ public partial class GovBudgetContext : DbContext
             entity.HasOne(d => d.ImportBatch).WithMany()
                 .HasForeignKey(d => d.ImportBatchId)
                 .HasConstraintName("FK_HrActualPostings_Batch");
+        });
+
+        // Security hardening: only the digest of a reset token is persisted.
+        modelBuilder.Entity<PasswordResetRequests>(entity =>
+        {
+            entity.Property(e => e.TokenHash).HasMaxLength(100);
+            entity.HasIndex(e => e.TokenHash, "IX_PasswordResetRequests_TokenHash");
         });
 
         OnModelCreatingPartial(modelBuilder);

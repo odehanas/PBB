@@ -1,14 +1,62 @@
+using System.Threading.RateLimiting;
 using GovBudget.Models;
+using GovBudget.Utils;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // MVC. The form-permission filter enforces the Roles & Rights matrix on every request,
 // so a view-only role cannot add, edit or delete even by posting directly to an action.
+// AutoValidateAntiforgeryToken makes CSRF validation the default for every unsafe verb,
+// so a forgotten [ValidateAntiForgeryToken] can no longer leave a hole.
 builder.Services.AddControllersWithViews(options =>
 {
     options.Filters.Add<GovBudget.Utils.FormPermissionFilter>();
+    options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute());
+});
+
+builder.Services.AddAntiforgery(options =>
+{
+    options.Cookie.Name = ".GovBudget.Antiforgery";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+});
+
+// Data-protection keys back the auth cookie and antiforgery tokens. Persisting them keeps
+// sessions valid across restarts and across instances instead of regenerating on each boot.
+try
+{
+    var keyRing = new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "App_Data", "keys"));
+    keyRing.Create();
+    builder.Services.AddDataProtection()
+        .SetApplicationName("GovBudget")
+        .PersistKeysToFileSystem(keyRing);
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"Data protection key persistence unavailable: {ex.Message}");
+}
+
+// Brute-force / credential-stuffing brake on the sign-in and reset endpoints, keyed by
+// client IP. Account lockout in AccountController handles the per-user case.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        }));
 });
 
 // DbContext from appsettings.json
@@ -33,6 +81,22 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         opt.LoginPath = "/Account/Login";
         opt.LogoutPath = "/Account/Logout";
         opt.AccessDeniedPath = "/Account/Denied";
+
+        // Session lifetime: 60 minutes of inactivity, refreshed while the user works.
+        opt.ExpireTimeSpan = TimeSpan.FromMinutes(60);
+        opt.SlidingExpiration = true;
+
+        opt.Cookie.Name = ".GovBudget.Auth";
+        opt.Cookie.HttpOnly = true;                              // not readable from script
+        opt.Cookie.SecurePolicy = CookieSecurePolicy.Always;     // HTTPS only
+        opt.Cookie.SameSite = SameSiteMode.Lax;                  // cross-site POST blocked
+        opt.Cookie.IsEssential = true;
+
+        // Deactivations, role changes and password resets take effect within ~2 minutes.
+        opt.Events = new CookieAuthenticationEvents
+        {
+            OnValidatePrincipal = GovBudget.Services.CookieSecurityValidator.ValidateAsync
+        };
     });
 
 builder.Services.AddAuthorization(options =>
@@ -47,13 +111,38 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<GovBudget.Services.IPermissionService, GovBudget.Services.PermissionService>();
 
 // Session for holding the selected Year/Entity/Department
-builder.Services.AddSession();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(60);
+    options.Cookie.Name = ".GovBudget.Session";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.IsEssential = true;
+});
 
 // Password reset delivery. NoOp for now (admin shares the link manually);
 // swap for an SMTP implementation later without touching callers.
 builder.Services.AddScoped<GovBudget.Services.IPasswordResetNotifier, GovBudget.Services.NoOpPasswordResetNotifier>();
 
 var app = builder.Build();
+
+// Credential hardening: add the hash/lockout columns when missing and convert any
+// remaining clear-text password into a PBKDF2 hash. Runs before anything else touches
+// AppUsers so the new columns are always present.
+try
+{
+    using var securityScope = app.Services.CreateScope();
+    var securityDb = securityScope.ServiceProvider.GetRequiredService<GovBudgetContext>();
+    if (securityDb.Database.CanConnect())
+    {
+        GovBudget.Services.SecurityUpgrade.Run(securityDb, app.Logger);
+    }
+}
+catch (Exception ex)
+{
+    app.Logger.LogError(ex, "Security upgrade failed at startup.");
+}
 
 // Ensure the core budget categories always exist (Budget Entry relies on these codes).
 try
@@ -401,13 +490,18 @@ else
 }
 
 app.UseHttpsRedirection();
+app.UseSecurityHeaders(app.Configuration["Security:ContentSecurityPolicy"]);
 app.UseStaticFiles();
 
 app.UseRouting();
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseSession();
+
+// An administrator-issued password can only be used to choose a new one.
+app.UseForcePasswordChange();
 
 app.MapControllerRoute(
     name: "default",

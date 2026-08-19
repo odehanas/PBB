@@ -76,9 +76,10 @@ namespace GovBudget.Controllers
                 _context.Projects.Add(project);
                 await _context.SaveChangesAsync();
             }
-            catch (DbUpdateException ex)
+            catch (DbUpdateException)
             {
-                return Json(new { ok = false, error = "Could not save project: " + (ex.InnerException?.Message ?? ex.Message) });
+                // Internal database messages are not echoed back to the browser.
+                return Json(new { ok = false, error = "Could not save the project. Check the code is unique and try again." });
             }
 
             return Json(new
