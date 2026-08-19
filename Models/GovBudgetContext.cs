@@ -930,6 +930,7 @@ public partial class GovBudgetContext : DbContext
             entity.ToTable("AllocationRuns", "core");
             entity.Property(e => e.Period).HasMaxLength(20).HasDefaultValue("Annual");
             entity.Property(e => e.Status).HasMaxLength(20).HasDefaultValue("Draft");
+            entity.Property(e => e.ScenarioName).HasMaxLength(120);
             entity.Property(e => e.Method).HasMaxLength(20).HasDefaultValue("StepDown");
             entity.Property(e => e.RunAt).HasDefaultValueSql("(sysutcdatetime())");
             entity.Property(e => e.RunBy).HasMaxLength(100);

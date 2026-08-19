@@ -360,6 +360,140 @@
         </div>
     </div>
 
+    @* ---------- Allocation scenario comparison (opt-in) ---------- *@
+    @{
+        var sc = Model.Scenarios;
+        var scKeys = sc.SelectedKeys;
+        var scBase = sc.BaselineKey;
+    }
+    <div class="card shadow-sm mb-3 pbb-long">
+        <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+            <span>Allocation Scenario Comparison</span>
+            @if (sc.Compare && scKeys.Count > 0)
+            {
+                <span class="text-muted small">Baseline: @sc.Label(scBase)</span>
+            }
+        </div>
+        <div class="card-body">
+            <div class="text-muted small mb-2">
+                Programme cost <strong>after allocation</strong> under each scenario. Every allocation run is kept, so the
+                official run can be measured against alternative bases and against the standard equal split.
+                The rest of this report always uses the <strong>official</strong> (latest posted) run.
+            </div>
+
+            <form method="get" class="mb-3 d-print-none">
+                <input type="hidden" name="year" value="@Model.Year" />
+                <input type="hidden" name="entityId" value="@(Model.EntityId?.ToString() ?? "")" />
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="compareScenarios" value="true"
+                           id="compareScenarios" checked="@sc.Compare" onchange="this.form.submit()" />
+                    <label class="form-check-label fw-bold" for="compareScenarios">Compare allocation scenarios</label>
+                </div>
+                @if (sc.Compare)
+                {
+                    <div class="row g-2">
+                        @foreach (var opt in sc.Options)
+                        {
+                            var oid = "sc_" + opt.Key.Replace(":", "_");
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="scenarios" value="@opt.Key"
+                                           id="@oid" checked="@scKeys.Contains(opt.Key)" />
+                                    <label class="form-check-label" for="@oid">
+                                        <span class="fw-bold">@opt.Label</span>
+                                        <span class="badge @(opt.IsOfficial ? "bg-success" : opt.RunId == null ? "bg-secondary" : "bg-primary")">@opt.StatusLabel</span>
+                                        <br /><span class="text-muted small">@opt.Description</span>
+                                        @if (opt.RunId != null)
+                                        {
+                                            <br /><span class="text-muted small">@opt.TotalAllocated.ToString("N2") allocated</span>
+                                        }
+                                    </label>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div class="mt-2">
+                        <button type="submit" class="btn btn-sm btn-primary">Update comparison</button>
+                        <span class="text-muted small ms-2">The first selected scenario is the baseline.</span>
+                    </div>
+                }
+            </form>
+
+            @if (sc.Compare)
+            {
+                if (sc.Rows.Count == 0)
+                {
+                    <div class="alert alert-info mb-0">No programme cost to compare for the selected filters.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Entity</th>
+                                    <th>Programme</th>
+                                    <th>Type</th>
+                                    <th class="text-end">Direct</th>
+                                    @foreach (var k in scKeys)
+                                    {
+                                        <th class="text-end">@sc.Label(k)@(k == scBase ? " (baseline)" : "")</th>
+                                        @if (k != scBase)
+                                        {
+                                            <th class="text-end">vs baseline</th>
+                                        }
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var r in sc.Rows)
+                            {
+                                <tr>
+                                    <td>@r.EntityCode</td>
+                                    <td>@r.ProgramCode - @r.ProgramName</td>
+                                    <td><span class="badge @(r.ProgramType == "Support" ? "bg-warning text-dark" : "bg-light text-dark")">@r.ProgramType</span></td>
+                                    <td class="text-end">@r.Direct.ToString("N2")</td>
+                                    @foreach (var k in scKeys)
+                                    {
+                                        <td class="text-end @(k == scBase ? "fw-bold" : "")">@r.Total(k).ToString("N2")</td>
+                                        @if (k != scBase)
+                                        {
+                                            var v = r.Variance(k, scBase);
+                                            <td class="text-end @(v > 0 ? "text-danger" : v < 0 ? "text-success" : "text-muted")">
+                                                @v.ToString("N2")
+                                                <span class="small">(@r.VariancePct(k, scBase).ToString("N1")%)</span>
+                                            </td>
+                                        }
+                                    }
+                                </tr>
+                            }
+                            </tbody>
+                            <tfoot>
+                                <tr class="fw-bold table-light">
+                                    <td colspan="3" class="text-end">Total</td>
+                                    <td class="text-end">@sc.Rows.Sum(r => r.Direct).ToString("N2")</td>
+                                    @foreach (var k in scKeys)
+                                    {
+                                        <td class="text-end">@sc.Rows.Sum(r => r.Total(k)).ToString("N2")</td>
+                                        @if (k != scBase)
+                                        {
+                                            <td class="text-end">@sc.Rows.Sum(r => r.Variance(k, scBase)).ToString("N2")</td>
+                                        }
+                                    }
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <div class="text-muted small mt-2">
+                        Each scenario reallocates the same total cost, so the column totals agree; only the split
+                        between programmes changes. A positive variance means the programme carries more cost than
+                        under the baseline scenario.
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
     <h2 class="pbb-h2">Performance Scorecard</h2>
 
     @* ---------- KPI Scorecard ---------- *@

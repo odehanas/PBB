@@ -34,8 +34,11 @@ namespace GovBudget.Controllers
         // Access: SYSADMIN and global ADMINs see all entities and may filter; entity-scoped
         // ADMINs are allowed in but the report data is locked to their own entity (see ResolveEntityScope).
 
+        // compareScenarios / scenarios: opt-in allocation-scenario comparison. Left off, the page is
+        // exactly what it was before - every section still reads the official (latest Posted) run.
         [HttpGet]
-        public async Task<IActionResult> Index(int? year = null, int? entityId = null)
+        public async Task<IActionResult> Index(int? year = null, int? entityId = null,
+            bool compareScenarios = false, string[]? scenarios = null)
         {
             var thisYear = DateTime.Now.Year;
             var selectedYear = year ?? HttpContext.Session.GetInt("ctxYear") ?? thisYear;
@@ -81,6 +84,7 @@ namespace GovBudget.Controllers
             vm.EntityProfiles = await BuildEntityProfiles(selectedYear, effectiveEntityId,
                 vm.CostStructure, vm.Manpower, vm.KpiScorecard, vm.MaturityLadder);
             vm.Narratives = ToNarrativeVm(await LoadReviewNarratives(selectedYear));
+            vm.Scenarios = await BuildScenarioComparison(selectedYear, effectiveEntityId, scenarios, compareScenarios);
 
             return View(vm);
         }
@@ -382,54 +386,13 @@ namespace GovBudget.Controllers
             var entityIds = entities.Select(e => e.EntityId).ToList();
             var entityNameMap = entities.ToDictionary(e => e.EntityId);
 
-            // Materialize non-revenue budget lines (resolve programme in memory to avoid EF translation pitfalls)
-            var rawLines = await (
-                from b in _db.BudgetLines.AsNoTracking()
-                join cat in _db.Categories.AsNoTracking() on b.CategoryId equals cat.CategoryId
-                join act in _db.Activities.AsNoTracking() on b.ActivityId equals act.ActivityId into actJoin
-                from act in actJoin.DefaultIfEmpty()
-                where b.BudgetYear == year && entityIds.Contains(b.EntityId)
-                      && cat.CategoryCode != "REVENUE"
-                select new
-                {
-                    b.EntityId,
-                    b.ProgramId,
-                    ActProgramId = (int?)(act == null ? (int?)null : act.ProgramId),
-                    b.ActivityId,
-                    b.Amount
-                }
-            ).ToListAsync();
-
-            // Direct budget per programme (tagged directly or via its activity)
-            var directBudget = rawLines
-                .Select(x => new { x.EntityId, ProgramId = x.ProgramId ?? x.ActProgramId, x.Amount })
-                .Where(x => x.ProgramId != null)
-                .GroupBy(x => new { x.EntityId, ProgramId = x.ProgramId!.Value })
-                .Select(g => new { g.Key.EntityId, g.Key.ProgramId, Amount = g.Sum(x => x.Amount) })
-                .ToList();
-
-            // Untagged overhead pool per entity (no programme and no activity)
-            var overheadMap = rawLines
-                .Where(x => x.ProgramId == null && x.ActProgramId == null && x.ActivityId == null)
-                .GroupBy(x => x.EntityId)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
-
-            // Direct HR allocated to a programme's activities
-            var directHr = await (
-                from a in _db.HrEmployeeCostAllocations.AsNoTracking()
-                join emp in _db.HrEmployeeCosts.AsNoTracking() on a.EmployeeCostId equals emp.EmployeeCostId
-                join act in _db.Activities.AsNoTracking() on a.ActivityId equals act.ActivityId
-                where emp.BudgetYear == year && emp.EntityId != null && entityIds.Contains(emp.EntityId.Value)
-                group a.AllocatedAmount by new { EntityId = emp.EntityId!.Value, act.ProgramId } into g
-                select new { g.Key.EntityId, g.Key.ProgramId, Amount = g.Sum() }
-            ).ToListAsync();
+            var (directMap, overheadMap) = await ProgrammeDirectCost(year, entityIds);
 
             // Reflect the latest Posted step-down allocation run (Cost Allocation module):
             // net = allocated-in (to Mandate targets) minus allocated-out (from Support sources) per programme.
             var netAlloc = await AllocationNetByProgram(year, entityIds);
 
-            var programIds = directBudget.Select(x => x.ProgramId)
-                .Concat(directHr.Select(x => x.ProgramId))
+            var programIds = directMap.Keys.Select(k => k.programId)
                 .Concat(netAlloc.Keys.Select(k => k.programId))
                 .Distinct().ToList();
             var programs = await _db.Programs.AsNoTracking()
@@ -437,12 +400,6 @@ namespace GovBudget.Controllers
                 .Select(p => new { p.ProgramId, p.EntityId, p.ProgramCode, p.ProgramName })
                 .ToListAsync();
             var programMap = programs.ToDictionary(p => p.ProgramId);
-
-            var directMap = new Dictionary<(int entityId, int programId), decimal>();
-            foreach (var d in directBudget)
-                directMap[(d.EntityId, d.ProgramId)] = directMap.GetValueOrDefault((d.EntityId, d.ProgramId)) + d.Amount;
-            foreach (var d in directHr)
-                directMap[(d.EntityId, d.ProgramId)] = directMap.GetValueOrDefault((d.EntityId, d.ProgramId)) + d.Amount;
 
             var entityDirectTotal = directMap
                 .GroupBy(kv => kv.Key.entityId)
@@ -485,15 +442,94 @@ namespace GovBudget.Controllers
             return rows.OrderBy(x => x.EntityCode).ThenByDescending(x => x.Total).ToList();
         }
 
-        // Net step-down allocation per (entity, programme) from the latest Posted run in scope.
-        // Positive = cost allocated IN (Mandate target); negative = cost allocated OUT (Support source).
-        // Sums to zero within an entity, so it reallocates cost without changing the entity total.
-        private async Task<Dictionary<(int entityId, int programId), decimal>> AllocationNetByProgram(int year, List<int> entityIds)
+        // Direct cost per (entity, programme) plus the untagged overhead pool per entity.
+        // Direct = non-revenue budget lines tagged to the programme (directly or through their
+        // activity) + HR allocated to the programme's activities. Shared by the Programme Cost
+        // report and by the allocation-scenario comparison so both rest on the same base.
+        private async Task<(Dictionary<(int entityId, int programId), decimal> Direct, Dictionary<int, decimal> OverheadPool)>
+            ProgrammeDirectCost(int year, List<int> entityIds)
+        {
+            var directMap = new Dictionary<(int entityId, int programId), decimal>();
+            var overheadMap = new Dictionary<int, decimal>();
+            if (entityIds.Count == 0) return (directMap, overheadMap);
+
+            // Materialize non-revenue budget lines (resolve programme in memory to avoid EF translation pitfalls)
+            var rawLines = await (
+                from b in _db.BudgetLines.AsNoTracking()
+                join cat in _db.Categories.AsNoTracking() on b.CategoryId equals cat.CategoryId
+                join act in _db.Activities.AsNoTracking() on b.ActivityId equals act.ActivityId into actJoin
+                from act in actJoin.DefaultIfEmpty()
+                where b.BudgetYear == year && entityIds.Contains(b.EntityId)
+                      && cat.CategoryCode != "REVENUE"
+                select new
+                {
+                    b.EntityId,
+                    b.ProgramId,
+                    ActProgramId = (int?)(act == null ? (int?)null : act.ProgramId),
+                    b.ActivityId,
+                    b.Amount
+                }
+            ).ToListAsync();
+
+            // Direct budget per programme (tagged directly or via its activity)
+            foreach (var x in rawLines)
+            {
+                var programId = x.ProgramId ?? x.ActProgramId;
+                if (programId == null) continue;
+                var key = (x.EntityId, programId.Value);
+                directMap[key] = directMap.GetValueOrDefault(key) + x.Amount;
+            }
+
+            // Untagged overhead pool per entity (no programme and no activity)
+            foreach (var x in rawLines.Where(x => x.ProgramId == null && x.ActProgramId == null && x.ActivityId == null))
+                overheadMap[x.EntityId] = overheadMap.GetValueOrDefault(x.EntityId) + x.Amount;
+
+            // Direct HR allocated to a programme's activities
+            var directHr = await (
+                from a in _db.HrEmployeeCostAllocations.AsNoTracking()
+                join emp in _db.HrEmployeeCosts.AsNoTracking() on a.EmployeeCostId equals emp.EmployeeCostId
+                join act in _db.Activities.AsNoTracking() on a.ActivityId equals act.ActivityId
+                where emp.BudgetYear == year && emp.EntityId != null && entityIds.Contains(emp.EntityId.Value)
+                group a.AllocatedAmount by new { EntityId = emp.EntityId!.Value, act.ProgramId } into g
+                select new { g.Key.EntityId, g.Key.ProgramId, Amount = g.Sum() }
+            ).ToListAsync();
+
+            foreach (var d in directHr)
+            {
+                var key = (d.EntityId, d.ProgramId);
+                directMap[key] = directMap.GetValueOrDefault(key) + d.Amount;
+            }
+
+            return (directMap, overheadMap);
+        }
+
+        // Net step-down allocation per (entity, programme). Positive = cost allocated IN (Mandate
+        // target); negative = cost allocated OUT (Support source). Sums to zero within an entity,
+        // so it reallocates cost without changing the entity total.
+        // runId: null = the latest Posted run in scope (what every standard report uses);
+        //        a value = that specific run, so a Scenario or Superseded run can be compared.
+        private async Task<Dictionary<(int entityId, int programId), decimal>> AllocationNetByProgram(
+            int year, List<int> entityIds, int? runId = null)
         {
             var result = new Dictionary<(int entityId, int programId), decimal>();
             if (entityIds.Count == 0) return result;
             try
             {
+                if (runId.HasValue)
+                {
+                    // An explicitly chosen run: honour the entity scope of the caller.
+                    var chosen = await _db.AllocationRuns.AsNoTracking()
+                        .FirstOrDefaultAsync(r => r.RunId == runId.Value && r.BudgetYear == year
+                            && (r.EntityId == null || entityIds.Contains(r.EntityId.Value)));
+                    if (chosen == null) return result;
+
+                    var chosenTxns = await _db.AllocationTransactions.AsNoTracking()
+                        .Where(t => t.RunId == chosen.RunId && entityIds.Contains(t.EntityId))
+                        .ToListAsync();
+                    foreach (var tx in chosenTxns) Apply(result, tx.EntityId, tx.TargetProgramId, tx.SourceProgramId, tx.Amount);
+                    return result;
+                }
+
                 // Candidate posted runs: entity-specific runs, plus any global (null-entity) run.
                 var posted = await _db.AllocationRuns.AsNoTracking()
                     .Where(r => r.BudgetYear == year && r.Status == "Posted"
@@ -512,13 +548,7 @@ namespace GovBudget.Controllers
                     var txns = await _db.AllocationTransactions.AsNoTracking()
                         .Where(t => t.RunId == run.RunId && t.EntityId == eid)
                         .ToListAsync();
-                    foreach (var tx in txns)
-                    {
-                        var kIn = (eid, tx.TargetProgramId);
-                        var kOut = (eid, tx.SourceProgramId);
-                        result[kIn] = result.GetValueOrDefault(kIn) + tx.Amount;
-                        result[kOut] = result.GetValueOrDefault(kOut) - tx.Amount;
-                    }
+                    foreach (var tx in txns) Apply(result, eid, tx.TargetProgramId, tx.SourceProgramId, tx.Amount);
                 }
             }
             catch
@@ -526,6 +556,232 @@ namespace GovBudget.Controllers
                 // Allocation tables may not exist yet (migration not applied) -> Direct only.
             }
             return result;
+
+            static void Apply(Dictionary<(int, int), decimal> map, int entityId, int targetProgramId, int sourceProgramId, decimal amount)
+            {
+                var kIn = (entityId, targetProgramId);
+                var kOut = (entityId, sourceProgramId);
+                map[kIn] = map.GetValueOrDefault(kIn) + amount;
+                map[kOut] = map.GetValueOrDefault(kOut) - amount;
+            }
+        }
+
+        // ---------- Allocation scenarios (comparison) ----------
+
+        // Key of the always-available reference scenario: 100% of every Support programme's direct
+        // cost split equally across the Mandate programmes of the same entity. It needs no stored
+        // run, so management always has a neutral baseline to compare the executed runs against.
+        public const string EqualScenarioKey = "equal";
+        private const int MaxScenarioRuns = 30;
+
+        private static int? RunIdFromKey(string? key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return null;
+            if (!key.StartsWith("run:", StringComparison.OrdinalIgnoreCase)) return null;
+            return int.TryParse(key.Substring(4), out var id) ? id : (int?)null;
+        }
+
+        // The equal-split reference allocation, computed in memory from the same direct-cost base
+        // as the Programme Cost report (mirrors the engine's equal fallback across Mandate targets).
+        private async Task<Dictionary<(int entityId, int programId), decimal>> EqualAllocationNetByProgram(
+            int year, List<int> entityIds, Dictionary<(int entityId, int programId), decimal> directMap)
+        {
+            var result = new Dictionary<(int entityId, int programId), decimal>();
+            if (entityIds.Count == 0) return result;
+
+            var programs = await _db.Programs.AsNoTracking()
+                .Where(p => entityIds.Contains(p.EntityId))
+                .Select(p => new { p.ProgramId, p.EntityId, p.ProgramType, p.IsActive })
+                .ToListAsync();
+
+            foreach (var eid in entityIds)
+            {
+                var supports = programs
+                    .Where(p => p.EntityId == eid && string.Equals(p.ProgramType, "Support", StringComparison.OrdinalIgnoreCase))
+                    .Select(p => p.ProgramId).ToList();
+                var mandates = programs
+                    .Where(p => p.EntityId == eid && p.IsActive
+                        && !string.Equals(p.ProgramType, "Support", StringComparison.OrdinalIgnoreCase))
+                    .Select(p => p.ProgramId).OrderBy(id => id).ToList();
+                if (supports.Count == 0 || mandates.Count == 0) continue;
+
+                foreach (var sp in supports)
+                {
+                    var pool = directMap.GetValueOrDefault((eid, sp));
+                    if (pool <= 0m) continue;
+
+                    var kOut = (eid, sp);
+                    result[kOut] = result.GetValueOrDefault(kOut) - pool;
+
+                    var running = 0m;
+                    for (var i = 0; i < mandates.Count; i++)
+                    {
+                        var share = (i == mandates.Count - 1)
+                            ? pool - running
+                            : Math.Round(pool / mandates.Count, 2, MidpointRounding.AwayFromZero);
+                        running += share;
+                        var kIn = (eid, mandates[i]);
+                        result[kIn] = result.GetValueOrDefault(kIn) + share;
+                    }
+                }
+            }
+            return result;
+        }
+
+        // Selectable scenarios: the equal-split reference first, then every retained run in scope
+        // (Posted = official, plus Scenario and Superseded runs), newest first.
+        private async Task<List<AllocationScenarioOptionVm>> BuildScenarioOptions(int year, List<int> entityIds)
+        {
+            var options = new List<AllocationScenarioOptionVm>
+            {
+                new AllocationScenarioOptionVm
+                {
+                    Key = EqualScenarioKey,
+                    Label = "Standard equal allocation",
+                    StatusLabel = "Reference",
+                    Description = "Support cost split equally across Mandate programmes. Computed on the fly - no run needed."
+                }
+            };
+            if (entityIds.Count == 0) return options;
+
+            try
+            {
+                var runs = await _db.AllocationRuns.AsNoTracking()
+                    .Where(r => r.BudgetYear == year
+                        && (r.Status == "Posted" || r.Status == "Scenario" || r.Status == "Superseded")
+                        && (r.EntityId == null || entityIds.Contains(r.EntityId.Value)))
+                    .OrderByDescending(r => r.Status == "Posted")
+                    .ThenByDescending(r => r.RunAt)
+                    .Take(MaxScenarioRuns)
+                    .ToListAsync();
+                if (runs.Count == 0) return options;
+
+                var runIds = runs.Select(r => r.RunId).ToList();
+                var totals = await _db.AllocationTransactions.AsNoTracking()
+                    .Where(t => runIds.Contains(t.RunId) && entityIds.Contains(t.EntityId))
+                    .GroupBy(t => t.RunId)
+                    .Select(g => new { RunId = g.Key, Total = g.Sum(x => x.Amount) })
+                    .ToListAsync();
+                var totalMap = totals.ToDictionary(x => x.RunId, x => x.Total);
+
+                foreach (var r in runs)
+                {
+                    options.Add(new AllocationScenarioOptionVm
+                    {
+                        Key = "run:" + r.RunId,
+                        RunId = r.RunId,
+                        Label = string.IsNullOrWhiteSpace(r.ScenarioName) ? "Run #" + r.RunId : r.ScenarioName!,
+                        StatusLabel = r.Status == "Posted" ? "Official" : r.Status,
+                        IsOfficial = r.Status == "Posted",
+                        RunAt = r.RunAt,
+                        TotalAllocated = totalMap.GetValueOrDefault(r.RunId),
+                        Description = $"Run #{r.RunId} - {r.RunAt:yyyy-MM-dd HH:mm} UTC"
+                            + (string.IsNullOrWhiteSpace(r.RunBy) ? "" : " by " + r.RunBy)
+                    });
+                }
+            }
+            catch
+            {
+                // Allocation tables may not exist yet -> only the reference scenario is offered.
+            }
+            return options;
+        }
+
+        // Programme cost AFTER allocation for each selected scenario, side by side.
+        // Read-only and additive: the standard sections above keep using the official run.
+        private async Task<AllocationScenarioComparisonVm> BuildScenarioComparison(int year, int? entityId, string[]? selectedKeys, bool compare)
+        {
+            var vm = new AllocationScenarioComparisonVm { Compare = compare };
+            if (entityId.HasValue && entityId.Value <= 0) return vm;
+
+            var entities = await EntityScopeList(entityId);
+            if (entities.Count == 0) return vm;
+            var entityIds = entities.Select(e => e.EntityId).ToList();
+            var entityNameMap = entities.ToDictionary(e => e.EntityId);
+
+            vm.Options = await BuildScenarioOptions(year, entityIds);
+            if (!compare) return vm;
+
+            // Default selection: the official run (when one exists) against the equal-split reference.
+            var keys = (selectedKeys ?? Array.Empty<string>())
+                .Where(k => vm.Options.Any(o => o.Key == k))
+                .Distinct().ToList();
+            if (keys.Count == 0)
+            {
+                var official = vm.Options.FirstOrDefault(o => o.IsOfficial);
+                if (official != null) keys.Add(official.Key);
+                keys.Add(EqualScenarioKey);
+            }
+            // Keep the picker order so the columns read predictably.
+            keys = vm.Options.Where(o => keys.Contains(o.Key)).Select(o => o.Key).ToList();
+            vm.SelectedKeys = keys;
+            vm.BaselineKey = keys.FirstOrDefault() ?? "";
+
+            var (directMap, overheadMap) = await ProgrammeDirectCost(year, entityIds);
+            var entityDirectTotal = directMap
+                .GroupBy(kv => kv.Key.entityId)
+                .ToDictionary(g => g.Key, g => g.Sum(kv => kv.Value));
+
+            var netByScenario = new Dictionary<string, Dictionary<(int entityId, int programId), decimal>>();
+            foreach (var key in keys)
+            {
+                netByScenario[key] = key == EqualScenarioKey
+                    ? await EqualAllocationNetByProgram(year, entityIds, directMap)
+                    : await AllocationNetByProgram(year, entityIds, RunIdFromKey(key));
+            }
+
+            var allKeys = directMap.Keys.ToHashSet();
+            foreach (var net in netByScenario.Values)
+                foreach (var k in net.Keys) allKeys.Add(k);
+
+            var programIds = allKeys.Select(k => k.programId).Distinct().ToList();
+            var programs = await _db.Programs.AsNoTracking()
+                .Where(p => programIds.Contains(p.ProgramId))
+                .Select(p => new { p.ProgramId, p.ProgramCode, p.ProgramName, p.ProgramType })
+                .ToListAsync();
+            var programMap = programs.ToDictionary(p => p.ProgramId);
+
+            foreach (var key in allKeys)
+            {
+                var (entId, progId) = key;
+                if (!programMap.TryGetValue(progId, out var prog)) continue;
+
+                var direct = directMap.GetValueOrDefault(key);
+
+                // Legacy untagged-overhead pool share, identical in every scenario (0 when everything is tagged).
+                var pool = overheadMap.GetValueOrDefault(entId);
+                var entTotal = entityDirectTotal.GetValueOrDefault(entId);
+                var overheadShare = entTotal > 0
+                    ? Math.Round(pool * (direct / entTotal), 2, MidpointRounding.AwayFromZero)
+                    : 0m;
+
+                entityNameMap.TryGetValue(entId, out var ent);
+                var row = new AllocationScenarioRowVm
+                {
+                    EntityCode = ent?.EntityCode ?? "",
+                    ProgramCode = prog.ProgramCode,
+                    ProgramName = prog.ProgramName,
+                    ProgramType = prog.ProgramType,
+                    Direct = direct
+                };
+
+                var anyValue = direct != 0m;
+                foreach (var sk in keys)
+                {
+                    var net = netByScenario[sk].GetValueOrDefault(key);
+                    row.TotalByScenario[sk] = direct + overheadShare + net;
+                    if (net != 0m) anyValue = true;
+                }
+                if (!anyValue) continue;
+
+                vm.Rows.Add(row);
+            }
+
+            vm.Rows = vm.Rows
+                .OrderBy(r => r.EntityCode)
+                .ThenByDescending(r => vm.BaselineKey.Length > 0 ? r.TotalByScenario.GetValueOrDefault(vm.BaselineKey) : r.Direct)
+                .ToList();
+            return vm;
         }
 
         private const string DefaultPeriod = "MidYear";
@@ -1550,6 +1806,55 @@ namespace GovBudget.Controllers
         public List<CostPerOutputRowVm> CostPerOutput { get; set; } = new();
         public List<EntityProfileVm> EntityProfiles { get; set; } = new();
         public ReviewNarrativesVm Narratives { get; set; } = new();
+        // Opt-in allocation-scenario comparison (empty Rows unless the user asks for it).
+        public AllocationScenarioComparisonVm Scenarios { get; set; } = new();
+    }
+
+    // ---------- Allocation scenario comparison ----------
+
+    public class AllocationScenarioComparisonVm
+    {
+        public bool Compare { get; set; }
+        public List<AllocationScenarioOptionVm> Options { get; set; } = new();
+        public List<string> SelectedKeys { get; set; } = new();
+        // First selected scenario: every other column is measured against it.
+        public string BaselineKey { get; set; } = "";
+        public List<AllocationScenarioRowVm> Rows { get; set; } = new();
+
+        public AllocationScenarioOptionVm? Option(string key) => Options.FirstOrDefault(o => o.Key == key);
+        public string Label(string key) => Option(key)?.Label ?? key;
+    }
+
+    public class AllocationScenarioOptionVm
+    {
+        public string Key { get; set; } = "";
+        public int? RunId { get; set; }
+        public string Label { get; set; } = "";
+        // Official (latest Posted run), Scenario, Superseded, or Reference (equal split).
+        public string StatusLabel { get; set; } = "";
+        public bool IsOfficial { get; set; }
+        public DateTime? RunAt { get; set; }
+        public decimal TotalAllocated { get; set; }
+        public string Description { get; set; } = "";
+    }
+
+    public class AllocationScenarioRowVm
+    {
+        public string EntityCode { get; set; } = "";
+        public string ProgramCode { get; set; } = "";
+        public string ProgramName { get; set; } = "";
+        public string ProgramType { get; set; } = "";
+        public decimal Direct { get; set; }
+        // Cost after allocation per scenario key.
+        public Dictionary<string, decimal> TotalByScenario { get; set; } = new();
+
+        public decimal Total(string key) => TotalByScenario.TryGetValue(key, out var v) ? v : 0m;
+        public decimal Variance(string key, string baselineKey) => Total(key) - Total(baselineKey);
+        public decimal VariancePct(string key, string baselineKey)
+        {
+            var b = Total(baselineKey);
+            return b == 0m ? 0m : Math.Round(Variance(key, baselineKey) / Math.Abs(b) * 100m, 1);
+        }
     }
 
     public class EntityProfileVm

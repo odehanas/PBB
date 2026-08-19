@@ -1718,8 +1718,35 @@ namespace GovBudget.Controllers
             return all;
         }
 
+        // Reallocation postings behind the reported figures. Only the run the reports actually use
+        // is listed (latest Posted per entity, falling back to a global run); scenario and superseded
+        // runs keep their transactions but must not be added on top of the official ones.
         private async Task<List<ReallocExportRow>> GetReallocationExportRows(int year, int? entityId)
         {
+            var posted = await _db.AllocationRuns.AsNoTracking()
+                .Where(r => r.BudgetYear == year && r.Status == "Posted"
+                    && (entityId == null || r.EntityId == null || r.EntityId == entityId))
+                .OrderByDescending(r => r.RunAt)
+                .ToListAsync();
+            if (posted.Count == 0) return new List<ReallocExportRow>();
+
+            var postedIds = posted.Select(r => r.RunId).ToList();
+
+            var txEntityIds = await _db.AllocationTransactions.AsNoTracking()
+                .Where(t => t.BudgetYear == year && postedIds.Contains(t.RunId)
+                    && (entityId == null || t.EntityId == entityId))
+                .Select(t => t.EntityId).Distinct().ToListAsync();
+
+            // One run per entity: the entity's own latest posted run, else the latest global run.
+            var allowed = new HashSet<(int runId, int entityId)>();
+            foreach (var eid in txEntityIds)
+            {
+                var run = posted.FirstOrDefault(r => r.EntityId == eid)
+                          ?? posted.FirstOrDefault(r => r.EntityId == null);
+                if (run != null) allowed.Add((run.RunId, eid));
+            }
+            if (allowed.Count == 0) return new List<ReallocExportRow>();
+
             var raw = await (
                 from t in _db.AllocationTransactions.AsNoTracking()
                 join sp in _db.Programs.AsNoTracking() on t.SourceProgramId equals sp.ProgramId into spj
@@ -1732,20 +1759,30 @@ namespace GovBudget.Controllers
                 from ta in taj.DefaultIfEmpty()
                 join ent in _db.Entities.AsNoTracking() on t.EntityId equals ent.EntityId into entj
                 from ent in entj.DefaultIfEmpty()
-                where t.BudgetYear == year && (entityId == null || t.EntityId == entityId)
-                select new ReallocExportRow
+                where t.BudgetYear == year && postedIds.Contains(t.RunId)
+                    && (entityId == null || t.EntityId == entityId)
+                select new
                 {
-                    EntityLabel = ent != null ? (ent.EntityCode + " - " + ent.EntityName) : "",
-                    SourceProgram = sp != null ? sp.ProgramCode + " - " + sp.ProgramName : "",
-                    SourceActivity = sa != null ? sa.ActivityCode + " - " + sa.ActivityName : "",
-                    TargetProgram = tp != null ? tp.ProgramCode + " - " + tp.ProgramName : "",
-                    TargetActivity = ta != null ? ta.ActivityCode + " - " + ta.ActivityName : "",
-                    Category = t.SourceCategoryCode ?? "",
-                    AllocationPct = t.AllocationPct,
-                    Amount = t.Amount
+                    t.RunId,
+                    t.EntityId,
+                    Row = new ReallocExportRow
+                    {
+                        EntityLabel = ent != null ? (ent.EntityCode + " - " + ent.EntityName) : "",
+                        SourceProgram = sp != null ? sp.ProgramCode + " - " + sp.ProgramName : "",
+                        SourceActivity = sa != null ? sa.ActivityCode + " - " + sa.ActivityName : "",
+                        TargetProgram = tp != null ? tp.ProgramCode + " - " + tp.ProgramName : "",
+                        TargetActivity = ta != null ? ta.ActivityCode + " - " + ta.ActivityName : "",
+                        Category = t.SourceCategoryCode ?? "",
+                        AllocationPct = t.AllocationPct,
+                        Amount = t.Amount
+                    }
                 }
             ).ToListAsync();
-            return raw;
+
+            return raw
+                .Where(x => allowed.Contains((x.RunId, x.EntityId)))
+                .Select(x => x.Row)
+                .ToList();
         }
 
         private static void BuildActivityTransactionsWorksheet(XLWorkbook wb, List<CostTxnExportRow> txns, List<ReallocExportRow> realloc, int year, string entityLabel)

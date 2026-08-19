@@ -171,6 +171,22 @@ catch (Exception ex)
     app.Logger.LogError(ex, "Security upgrade failed at startup.");
 }
 
+// Allocation scenarios: add the optional run label when the column is missing, so several
+// named allocation scenarios can be compared in Management Review.
+try
+{
+    using var allocScope = app.Services.CreateScope();
+    var allocDb = allocScope.ServiceProvider.GetRequiredService<GovBudgetContext>();
+    if (allocDb.Database.CanConnect())
+    {
+        GovBudget.Services.AllocationScenarioUpgrade.Run(allocDb, app.Logger);
+    }
+}
+catch (Exception ex)
+{
+    app.Logger.LogError(ex, "Allocation scenario upgrade failed at startup.");
+}
+
 // Ensure the core budget categories always exist (Budget Entry relies on these codes).
 try
 {
