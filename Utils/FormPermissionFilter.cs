@@ -41,6 +41,7 @@ namespace GovBudget.Utils
                 ["AppUsers"] = new[] { AppForms.Users },
                 ["AuditLogs"] = new[] { AppForms.AuditLog },
                 ["BudgetLines"] = new[] { AppForms.BudgetEntry },
+                ["Chat"] = new[] { AppForms.Assistant },
                 ["Departments"] = new[] { AppForms.Departments },
                 ["Entities"] = new[] { AppForms.Entities },
                 ["GLAccounts"] = new[] { AppForms.GlAccounts },

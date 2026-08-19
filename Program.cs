@@ -49,6 +49,33 @@ builder.Services.AddScoped<GovBudget.Services.IPermissionService, GovBudget.Serv
 // Session for holding the selected Year/Entity/Department
 builder.Services.AddSession();
 
+// In-app assistant. The API key comes from user secrets, the platform configuration or the
+// OPENAI_API_KEY environment variable; without one the widget stays visible but explains
+// that it is not configured.
+builder.Services.Configure<GovBudget.Services.Assistant.AssistantOptions>(
+    builder.Configuration.GetSection(GovBudget.Services.Assistant.AssistantOptions.SectionName));
+builder.Services.PostConfigure<GovBudget.Services.Assistant.AssistantOptions>(opt =>
+{
+    if (string.IsNullOrWhiteSpace(opt.ApiKey))
+    {
+        opt.ApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? "";
+    }
+});
+
+var assistantTimeout = TimeSpan.FromSeconds(
+    builder.Configuration.GetValue<int?>("Assistant:TimeoutSeconds") ?? 90);
+builder.Services.AddHttpClient(GovBudget.Services.Assistant.OpenAIChatAssistantService.HttpClientName,
+    c => c.Timeout = assistantTimeout);
+builder.Services.AddHttpClient(GovBudget.Services.Assistant.OecdKnowledgeToolProvider.HttpClientName, c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(30);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("GovBudget-Assistant/1.0");
+});
+
+builder.Services.AddScoped<GovBudget.Services.Assistant.IAssistantToolProvider, GovBudget.Services.Assistant.BudgetDataToolProvider>();
+builder.Services.AddScoped<GovBudget.Services.Assistant.IAssistantToolProvider, GovBudget.Services.Assistant.OecdKnowledgeToolProvider>();
+builder.Services.AddScoped<GovBudget.Services.Assistant.IChatAssistantService, GovBudget.Services.Assistant.OpenAIChatAssistantService>();
+
 // Password reset delivery. NoOp for now (admin shares the link manually);
 // swap for an SMTP implementation later without touching callers.
 builder.Services.AddScoped<GovBudget.Services.IPasswordResetNotifier, GovBudget.Services.NoOpPasswordResetNotifier>();
