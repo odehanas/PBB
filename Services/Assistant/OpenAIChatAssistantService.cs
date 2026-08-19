@@ -56,6 +56,7 @@ namespace GovBudget.Services.Assistant
 
             var tools = _toolProviders.SelectMany(p => p.GetTools()).ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
             var toolsUsed = new List<string>();
+            var hrExcluded = false;
 
             var messages = new JsonArray
             {
@@ -113,9 +114,12 @@ namespace GovBudget.Services.Assistant
                 if (toolCalls.Count == 0)
                 {
                     var content = message.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
-                    return new AssistantAnswer(true,
-                        string.IsNullOrWhiteSpace(content) ? "I could not produce an answer for that question." : content,
-                        toolsUsed);
+                    if (string.IsNullOrWhiteSpace(content))
+                    {
+                        return new AssistantAnswer(true, "I could not produce an answer for that question.", toolsUsed);
+                    }
+
+                    return new AssistantAnswer(true, WithHrCaveat(content, hrExcluded), toolsUsed);
                 }
 
                 var assistantMessage = new JsonObject
@@ -147,6 +151,7 @@ namespace GovBudget.Services.Assistant
                             using var argsDoc = JsonDocument.Parse(string.IsNullOrWhiteSpace(argsJson) ? "{}" : argsJson);
                             result = await tool.InvokeAsync(argsDoc.RootElement, user, ct);
                             toolsUsed.Add(name);
+                            hrExcluded |= ExcludesHrStaffCost(result);
                         }
                         catch (Exception ex)
                         {
@@ -166,6 +171,39 @@ namespace GovBudget.Services.Assistant
             }
 
             return new AssistantAnswer(false, "I could not finish that request. Please narrow the question and try again.", toolsUsed);
+        }
+
+        /// <summary>
+        /// The model is asked to flag figures that leave staff cost out, but the caveat matters too
+        /// much to depend on it, so it is appended here when a tool reported the exclusion.
+        /// </summary>
+        private static string WithHrCaveat(string reply, bool hrExcluded)
+        {
+            if (!hrExcluded || reply.Contains("HR", StringComparison.OrdinalIgnoreCase)
+                || reply.Contains("staff cost", StringComparison.OrdinalIgnoreCase)
+                || reply.Contains("تكلفة الموظفين"))
+            {
+                return reply;
+            }
+
+            return reply.TrimEnd()
+                + "\n\n**Note:** these figures come from the budget lines and exclude HR staff cost, "
+                + "which is held separately. Ask for the budget by category to see it included.";
+        }
+
+        private static bool ExcludesHrStaffCost(string toolResult)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(toolResult);
+                return doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("excludes_hr_staff_cost", out var flag)
+                    && flag.ValueKind == JsonValueKind.True;
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
         }
 
         private async Task<JsonElement> PostAsync(HttpClient client, JsonObject payload, CancellationToken ct)

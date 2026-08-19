@@ -241,33 +241,151 @@ namespace GovBudget.Services.Assistant
             var start = args.TryGetProperty("start_period", out var s) ? s.GetString() : null;
             var end = args.TryGetProperty("end_period", out var e) ? e.GetString() : null;
 
-            // SDMX path segments carry ',', '@' and '+' verbatim; percent-encoding them fails upstream.
-            var url = $"{_options.OecdApiBaseUrl.TrimEnd('/')}/data/{SdmxSegment(dataflow)}/{SdmxSegment(string.IsNullOrWhiteSpace(key) ? "all" : key)}?format=jsondata&dimensionAtObservation=AllDimensions";
-            if (!string.IsNullOrWhiteSpace(start)) url += $"&startPeriod={Uri.EscapeDataString(start)}";
-            if (!string.IsNullOrWhiteSpace(end)) url += $"&endPeriod={Uri.EscapeDataString(end)}";
+            string resolved;
+            try
+            {
+                var catalogue = await GetCatalogueAsync(ct);
+                var match = ResolveDataflow(catalogue, dataflow);
+                if (match is null)
+                {
+                    return JsonSerializer.Serialize(new
+                    {
+                        error = $"'{dataflow}' is not a dataflow in the OECD catalogue.",
+                        hint = "Call oecd_find_dataflow and use one of the identifiers it returns verbatim."
+                    });
+                }
+                resolved = match.Reference;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "OECD dataflow catalogue could not be loaded");
+                resolved = dataflow;
+            }
 
             try
             {
                 var client = _httpClientFactory.CreateClient(HttpClientName);
-                using var response = await client.GetAsync(url, ct);
-                var body = await response.Content.ReadAsStringAsync(ct);
 
-                if (!response.IsSuccessStatusCode)
+                // Narrow query first; if the OECD returns nothing, widen the key and drop the
+                // period filter rather than reporting an empty result the user cannot act on.
+                var attempts = new List<string> { BuildDataUrl(resolved, key, start, end) };
+                if (!string.IsNullOrWhiteSpace(start) || !string.IsNullOrWhiteSpace(end))
                 {
+                    attempts.Add(BuildDataUrl(resolved, key, null, null));
+                }
+                if (!string.IsNullOrWhiteSpace(key) && key != "all")
+                {
+                    attempts.Add(BuildDataUrl(resolved, null, null, null));
+                }
+
+                string? lastError = null;
+                string? lastUrl = null;
+
+                foreach (var url in attempts)
+                {
+                    lastUrl = url;
+                    using var response = await client.GetAsync(url, ct);
+                    var body = await response.Content.ReadAsStringAsync(ct);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        lastError = $"OECD API returned {(int)response.StatusCode}.";
+                        continue;
+                    }
+
+                    if (!HasObservations(body))
+                    {
+                        lastError = "The OECD dataflow returned no observations for that selection.";
+                        continue;
+                    }
+
                     return JsonSerializer.Serialize(new
                     {
-                        error = $"OECD API returned {(int)response.StatusCode}.",
-                        hint = "Check the dataflow identifier and key on data-explorer.oecd.org.",
-                        url
+                        source = url,
+                        dataflow = resolved,
+                        data = Truncate(body, 12000)
                     });
                 }
 
-                return JsonSerializer.Serialize(new { source = url, data = Truncate(body, 12000) });
+                return JsonSerializer.Serialize(new
+                {
+                    error = lastError ?? "No data was returned.",
+                    hint = "Try a different dataflow from oecd_find_dataflow, or answer from the built-in reference instead.",
+                    dataflow = resolved,
+                    url = lastUrl
+                });
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "OECD data query failed for {Url}", url);
-                return JsonSerializer.Serialize(new { error = "The OECD data service could not be reached.", url });
+                _logger.LogWarning(ex, "OECD data query failed for {Dataflow}", resolved);
+                return JsonSerializer.Serialize(new { error = "The OECD data service could not be reached.", dataflow = resolved });
+            }
+        }
+
+        private string BuildDataUrl(string dataflow, string? key, string? start, string? end)
+        {
+            // SDMX path segments carry ',', '@' and '+' verbatim; percent-encoding them fails upstream.
+            var url = $"{_options.OecdApiBaseUrl.TrimEnd('/')}/data/{SdmxSegment(dataflow)}/{SdmxSegment(string.IsNullOrWhiteSpace(key) ? "all" : key)}?format=jsondata&dimensionAtObservation=AllDimensions";
+            if (!string.IsNullOrWhiteSpace(start)) url += $"&startPeriod={Uri.EscapeDataString(start)}";
+            if (!string.IsNullOrWhiteSpace(end)) url += $"&endPeriod={Uri.EscapeDataString(end)}";
+            return url;
+        }
+
+        /// <summary>
+        /// Accepts an exact 'agency,dataflow,version' reference, or repairs one where the model
+        /// dropped the agency, the version or the DSD prefix of the dataflow id.
+        /// </summary>
+        private static OecdDataflow? ResolveDataflow(IReadOnlyList<OecdDataflow> catalogue, string requested)
+        {
+            var wanted = requested.Trim();
+            var exact = catalogue.FirstOrDefault(f => f.Reference.Equals(wanted, StringComparison.OrdinalIgnoreCase));
+            if (exact is not null) return exact;
+
+            var parts = wanted.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            var id = parts.Length >= 2 ? parts[1] : parts.FirstOrDefault() ?? wanted;
+            var agency = parts.Length >= 2 ? parts[0] : null;
+
+            bool IdMatches(OecdDataflow f)
+            {
+                var flowId = f.Reference.Split(',')[1];
+                return flowId.Equals(id, StringComparison.OrdinalIgnoreCase)
+                    || flowId.EndsWith("@" + id, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return catalogue.FirstOrDefault(f => IdMatches(f)
+                       && (agency is null || f.Reference.StartsWith(agency + ",", StringComparison.OrdinalIgnoreCase)))
+                   ?? catalogue.FirstOrDefault(IdMatches);
+        }
+
+        private static bool HasObservations(string jsonBody)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(jsonBody);
+                if (!doc.RootElement.TryGetProperty("data", out var data)) return false;
+                if (!data.TryGetProperty("dataSets", out var sets) || sets.ValueKind != JsonValueKind.Array) return false;
+
+                foreach (var set in sets.EnumerateArray())
+                {
+                    if (set.TryGetProperty("observations", out var obs)
+                        && obs.ValueKind == JsonValueKind.Object
+                        && obs.EnumerateObject().Any())
+                    {
+                        return true;
+                    }
+                    if (set.TryGetProperty("series", out var series)
+                        && series.ValueKind == JsonValueKind.Object
+                        && series.EnumerateObject().Any())
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+            catch (JsonException)
+            {
+                return false;
             }
         }
 
