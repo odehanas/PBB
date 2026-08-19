@@ -361,3 +361,12 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Runtime state. App_Data/keys holds the ASP.NET Core data-protection key ring that
+# protects authentication cookies - committing it would let anyone forge a session.
+App_Data/
+
+# Local secret overrides (API keys, connection strings). Never commit these.
+appsettings.Local.json
+appsettings.Production.json
+appsettings.*.local.json
