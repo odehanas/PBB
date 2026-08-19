@@ -299,11 +299,14 @@ namespace GovBudget.Services.Assistant
                         continue;
                     }
 
+                    var observations = ParseObservations(body, 120);
                     return JsonSerializer.Serialize(new
                     {
                         source = url,
                         dataflow = resolved,
-                        data = Truncate(body, 12000)
+                        observation_count = observations.Count,
+                        note = "Report these observations exactly as given, with their unit. Do not compute ratios, shares or percentages from them.",
+                        observations
                     });
                 }
 
@@ -355,6 +358,71 @@ namespace GovBudget.Services.Assistant
             return catalogue.FirstOrDefault(f => IdMatches(f)
                        && (agency is null || f.Reference.StartsWith(agency + ",", StringComparison.OrdinalIgnoreCase)))
                    ?? catalogue.FirstOrDefault(IdMatches);
+        }
+
+        /// <summary>
+        /// Turns an SDMX-JSON payload into flat observations - dimension labels plus the value -
+        /// so the model reads real figures instead of guessing at a raw message.
+        /// </summary>
+        private static List<Dictionary<string, object?>> ParseObservations(string jsonBody, int max)
+        {
+            var rows = new List<Dictionary<string, object?>>();
+            try
+            {
+                using var doc = JsonDocument.Parse(jsonBody);
+                var data = doc.RootElement.GetProperty("data");
+                if (!data.TryGetProperty("structures", out var structures) || structures.GetArrayLength() == 0)
+                {
+                    return rows;
+                }
+
+                foreach (var dataSet in data.GetProperty("dataSets").EnumerateArray())
+                {
+                    var structureIndex = dataSet.TryGetProperty("structure", out var si) && si.TryGetInt32(out var idx) ? idx : 0;
+                    var dims = structures[structureIndex]
+                        .GetProperty("dimensions")
+                        .GetProperty("observation")
+                        .EnumerateArray()
+                        .Select(d => (
+                            Id: d.GetProperty("id").GetString() ?? "",
+                            Values: d.GetProperty("values").EnumerateArray()
+                                .Select(v => v.TryGetProperty("name", out var n) ? n.GetString() : v.GetProperty("id").GetString())
+                                .ToList()))
+                        .ToList();
+
+                    if (!dataSet.TryGetProperty("observations", out var obs) || obs.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    foreach (var ob in obs.EnumerateObject())
+                    {
+                        if (rows.Count >= max) return rows;
+
+                        var indices = ob.Name.Split(':');
+                        var row = new Dictionary<string, object?>();
+                        for (var i = 0; i < dims.Count && i < indices.Length; i++)
+                        {
+                            if (int.TryParse(indices[i], out var vi) && vi >= 0 && vi < dims[i].Values.Count)
+                            {
+                                row[dims[i].Id] = dims[i].Values[vi];
+                            }
+                        }
+
+                        var first = ob.Value.ValueKind == JsonValueKind.Array && ob.Value.GetArrayLength() > 0
+                            ? ob.Value[0]
+                            : default;
+                        row["value"] = first.ValueKind == JsonValueKind.Number ? first.GetDouble() : (object?)null;
+                        rows.Add(row);
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+            {
+                return rows;
+            }
+
+            return rows;
         }
 
         private static bool HasObservations(string jsonBody)

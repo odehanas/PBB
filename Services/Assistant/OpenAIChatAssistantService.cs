@@ -241,6 +241,10 @@ namespace GovBudget.Services.Assistant
             - The tools already restrict data to what this user may see. If a tool returns no
               rows, say so plainly instead of inventing numbers.
             - Cite the source of external material (OECD page or dataset) in your answer.
+            - Copy every figure digit for digit from the tool result, with its unit or
+              currency. Never re-type from memory, never round, and never derive a ratio,
+              share or percentage that the tool did not return - if the user wants one that
+              is not in the data, say it is not available.
             - Amounts are whole units of the reporting currency. Never label a column
               "in thousands" or "in millions", never rescale a figure, and keep the two
               decimals the tool returned. Show thousands separators and state the year.
