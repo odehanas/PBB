@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -56,6 +57,21 @@ namespace GovBudget.Controllers
                 && !string.Equals(requested, docsRoot, StringComparison.OrdinalIgnoreCase))
             {
                 return Forbid();
+            }
+
+            // Only the curated documents and their images are served. The docs folder also
+            // carries internal material (security review, schema scripts) that must never be
+            // reachable from a browser.
+            var relative = requested[docsRoot.Length..]
+                .TrimStart(Path.DirectorySeparatorChar)
+                .Replace('\\', '/');
+
+            var isCurated = Docs.Any(d => string.Equals(d.File, relative, StringComparison.OrdinalIgnoreCase));
+            var isAsset = relative.StartsWith("images/", StringComparison.OrdinalIgnoreCase);
+
+            if (!isCurated && !isAsset)
+            {
+                return NotFound();
             }
 
             if (!System.IO.File.Exists(requested))

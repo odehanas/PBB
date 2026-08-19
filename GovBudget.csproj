@@ -27,6 +27,9 @@
 		<Content Include="docs\**\*.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Content Include="docs\images\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Content Include="docs\**\*.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+
+		<!-- Internal security material stays in the repository; it is never deployed. -->
+		<Content Remove="docs\Security_Review.md" />
 	</ItemGroup>
 
 </Project>
