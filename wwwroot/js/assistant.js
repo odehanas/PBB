@@ -36,12 +36,16 @@
                 var cells = function (row) {
                     return row.trim().replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); });
                 };
-                html += '<table><thead><tr>' + cells(line).map(function (c) {
+                var header = cells(line);
+                html += '<table><thead><tr>' + header.map(function (c) {
                     return '<th>' + c + '</th>';
                 }).join('') + '</tr></thead><tbody>';
                 i += 2;
                 while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) {
-                    html += '<tr>' + cells(lines[i]).map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>';
+                    // Keep every row the width of the header so short rows cannot shift columns.
+                    var row = cells(lines[i]).slice(0, header.length);
+                    while (row.length < header.length) row.push('');
+                    html += '<tr>' + row.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>';
                     i++;
                 }
                 html += '</tbody></table>';

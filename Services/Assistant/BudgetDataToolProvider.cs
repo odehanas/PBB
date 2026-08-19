@@ -17,6 +17,11 @@ namespace GovBudget.Services.Assistant
     /// </summary>
     public sealed class BudgetDataToolProvider : IAssistantToolProvider
     {
+        private const string HrCategoryCode = "HR";
+        private const string AmountUnit = "whole currency units, not thousands or millions";
+
+        private sealed record SummaryRow(string name, decimal amount, int lines);
+
         private readonly GovBudgetContext _db;
         private readonly AssistantOptions _options;
 
@@ -36,12 +41,12 @@ namespace GovBudget.Services.Assistant
 
             yield return new AssistantToolDefinition(
                 "get_budget_summary",
-                "Total budgeted amounts for a year, grouped by category (Revenue/OPEX/CAPEX), department, program, activity or item.",
+                "Total budgeted amounts for a year, grouped by category (Revenue/OPEX/CAPEX/HR), department, program, activity or item. HR staff cost comes from the HR employee cost tables, so it appears when grouping by category or department but not by program, activity or item.",
                 """
                 {"type":"object","properties":{
                   "year":{"type":"integer","description":"Budget year. Defaults to the working year."},
                   "group_by":{"type":"string","enum":["category","department","program","activity","item"],"description":"Grouping level. Default category."},
-                  "category_code":{"type":"string","description":"Optional filter: REVENUE, OPEX or CAPEX."}
+                  "category_code":{"type":"string","description":"Optional filter: REVENUE, OPEX, CAPEX or HR."}
                 },"additionalProperties":false}
                 """,
                 GetBudgetSummaryAsync);
@@ -141,13 +146,28 @@ namespace GovBudget.Services.Assistant
         private static int? ScopeDepartmentId(AssistantUserContext user) =>
             user.IsGlobalAdmin || user.Role is "ADMIN" or "SYSADMIN" ? null : user.DepartmentId;
 
+        /// <summary>
+        /// Budget lines the user may see. HR-categorised lines are excluded because staff cost
+        /// is sourced from the HR employee cost tables, exactly as the reports do it.
+        /// </summary>
         private IQueryable<BudgetLines> ScopedLines(AssistantUserContext user, int year)
         {
-            var q = _db.BudgetLines.AsNoTracking().Where(b => b.BudgetYear == year);
+            var q = _db.BudgetLines.AsNoTracking()
+                .Where(b => b.BudgetYear == year && b.Category.CategoryCode != HrCategoryCode);
             var entityId = ScopeEntityId(user);
             if (entityId.HasValue) q = q.Where(b => b.EntityId == entityId.Value);
             var deptId = ScopeDepartmentId(user);
             if (deptId.HasValue) q = q.Where(b => b.DepartmentId == deptId.Value);
+            return q;
+        }
+
+        private IQueryable<HrEmployeeCosts> ScopedHrCosts(AssistantUserContext user, int year)
+        {
+            var q = _db.HrEmployeeCosts.AsNoTracking().Where(h => h.BudgetYear == year);
+            var entityId = ScopeEntityId(user);
+            if (entityId.HasValue) q = q.Where(h => h.EntityId == entityId.Value);
+            var deptId = ScopeDepartmentId(user);
+            if (deptId.HasValue) q = q.Where(h => h.DepartmentId == deptId.Value);
             return q;
         }
 
@@ -199,6 +219,9 @@ namespace GovBudget.Services.Assistant
                 lines = lines.Where(b => b.Category.CategoryCode == categoryCode);
             }
 
+            var wantsHr = categoryCode is null || string.Equals(categoryCode, HrCategoryCode, StringComparison.OrdinalIgnoreCase);
+            var onlyHr = string.Equals(categoryCode, HrCategoryCode, StringComparison.OrdinalIgnoreCase);
+
             var rows = groupBy switch
             {
                 "department" => await lines
@@ -223,7 +246,54 @@ namespace GovBudget.Services.Assistant
                     .OrderByDescending(r => r.amount).Take(_options.MaxRows).ToListAsync(ct)
             };
 
-            return Json(new { year, grouped_by = groupBy, category_code = categoryCode, total = rows.Sum(r => r.amount), rows });
+            var all = onlyHr
+                ? new List<SummaryRow>()
+                : rows.Select(r => new SummaryRow(r.name, r.amount, r.lines)).ToList();
+
+            // Staff cost lives in the HR tables, so it is added to the groupings that carry it.
+            if (wantsHr && groupBy is "category" or "department")
+            {
+                var hrRows = groupBy == "department"
+                    ? await ScopedHrCosts(user, year)
+                        .GroupBy(h => h.DepartmentName)
+                        .Select(g => new SummaryRow(g.Key, g.Sum(x => x.AnnualCost), g.Count()))
+                        .ToListAsync(ct)
+                    : await ScopedHrCosts(user, year)
+                        .GroupBy(h => 1)
+                        .Select(g => new SummaryRow("HR (staff cost)", g.Sum(x => x.AnnualCost), g.Count()))
+                        .ToListAsync(ct);
+
+                foreach (var hr in hrRows.Where(r => r.amount != 0m))
+                {
+                    var existing = all.FindIndex(r => r.name == hr.name);
+                    if (groupBy == "department" && existing >= 0)
+                    {
+                        all[existing] = all[existing] with
+                        {
+                            amount = all[existing].amount + hr.amount,
+                            lines = all[existing].lines + hr.lines
+                        };
+                    }
+                    else
+                    {
+                        all.Add(hr);
+                    }
+                }
+
+                all = all.OrderByDescending(r => r.amount).ToList();
+            }
+
+            return Json(new
+            {
+                year,
+                grouped_by = groupBy,
+                category_code = categoryCode,
+                amount_unit = AmountUnit,
+                includes_hr_staff_cost = wantsHr && groupBy is "category" or "department",
+                excludes_hr_staff_cost = groupBy is not ("category" or "department"),
+                total = all.Sum(r => r.amount),
+                rows = all
+            });
         }
 
         private async Task<string> SearchBudgetLinesAsync(JsonElement args, AssistantUserContext user, CancellationToken ct)
@@ -303,7 +373,7 @@ namespace GovBudget.Services.Assistant
                     variance = monthlyBudget[m - 1] - (monthlyActual.TryGetValue(m, out var a2) ? a2 : 0m)
                 }).ToList();
 
-                return Json(new { year, grouped_by = "month", rows = months });
+                return Json(new { year, grouped_by = "month", amount_unit = AmountUnit, excludes_hr_staff_cost = true, rows = months });
             }
 
             var budgetByGl = await lines
@@ -323,7 +393,7 @@ namespace GovBudget.Services.Assistant
                     var actual = actualByGl.TryGetValue(b.gl, out var a) ? a : 0m;
                     return new
                     {
-                        gl_code = b.gl,
+                        gl_code = string.IsNullOrWhiteSpace(b.gl) ? "(unmapped)" : b.gl,
                         budget = b.budget,
                         actual,
                         variance = b.budget - actual,
@@ -338,6 +408,8 @@ namespace GovBudget.Services.Assistant
             {
                 year,
                 grouped_by = "gl",
+                amount_unit = AmountUnit,
+                excludes_hr_staff_cost = true,
                 total_budget = rows.Sum(r => r.budget),
                 total_actual = rows.Sum(r => r.actual),
                 rows

@@ -68,7 +68,7 @@ builder.Services.AddHttpClient(GovBudget.Services.Assistant.OpenAIChatAssistantS
     c => c.Timeout = assistantTimeout);
 builder.Services.AddHttpClient(GovBudget.Services.Assistant.OecdKnowledgeToolProvider.HttpClientName, c =>
 {
-    c.Timeout = TimeSpan.FromSeconds(30);
+    c.Timeout = TimeSpan.FromSeconds(60);
     c.DefaultRequestHeaders.UserAgent.ParseAdd("GovBudget-Assistant/1.0");
 });
 

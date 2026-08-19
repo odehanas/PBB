@@ -27,6 +27,16 @@ namespace GovBudget.Services.Assistant
         private static readonly Regex HtmlTag = new("<[^>]+>", RegexOptions.Compiled);
         private static readonly Regex Whitespace = new(@"\s{2,}", RegexOptions.Compiled);
 
+        private static readonly Regex DataflowEntry = new(
+            "<(?:\\w+:)?Dataflow id=\"([^\"]+)\" agencyID=\"([^\"]+)\" version=\"([^\"]+)\".*?<(?:\\w+:)?Name[^>]*>(.*?)</(?:\\w+:)?Name>",
+            RegexOptions.Singleline | RegexOptions.Compiled);
+
+        private static readonly SemaphoreSlim CatalogueLock = new(1, 1);
+        private static IReadOnlyList<OecdDataflow>? _catalogue;
+        private static DateTimeOffset _catalogueLoadedAt;
+
+        private sealed record OecdDataflow(string Reference, string Name);
+
         private readonly AssistantOptions _options;
         private readonly IHostEnvironment _env;
         private readonly IHttpClientFactory _httpClientFactory;
@@ -59,11 +69,21 @@ namespace GovBudget.Services.Assistant
             if (!_options.OecdLiveEnabled) yield break;
 
             yield return new AssistantToolDefinition(
-                "oecd_data_query",
-                "Query the OECD public SDMX data API for a dataflow and return the observations as JSON. Use when the user asks for current OECD statistics or international comparators.",
+                "oecd_find_dataflow",
+                "Search the OECD SDMX catalogue for dataflows matching keywords and return their exact identifiers. Always call this before oecd_data_query - identifiers guessed from memory do not exist.",
                 """
                 {"type":"object","properties":{
-                  "dataflow":{"type":"string","description":"Agency,dataflow,version - e.g. 'OECD.GOV.GIP,DSD_GOV@DF_GOV,1.0'."},
+                  "query":{"type":"string","description":"Keywords, e.g. 'government expenditure cofog' or 'public finance'."}
+                },"required":["query"],"additionalProperties":false}
+                """,
+                FindDataflowAsync);
+
+            yield return new AssistantToolDefinition(
+                "oecd_data_query",
+                "Query the OECD public SDMX data API for a dataflow and return the observations as JSON. Use when the user asks for current OECD statistics or international comparators. The dataflow must come from oecd_find_dataflow.",
+                """
+                {"type":"object","properties":{
+                  "dataflow":{"type":"string","description":"Exact 'agency,dataflow,version' from oecd_find_dataflow, e.g. 'OECD.GOV.GIP,DSD_GOV@DF_GOV_PF_2025,1.0'."},
                   "key":{"type":"string","description":"SDMX series key, e.g. 'ARE+FRA.A.GG_EXP...'. Use 'all' when unsure."},
                   "start_period":{"type":"string","description":"e.g. 2019"},
                   "end_period":{"type":"string","description":"e.g. 2024"}
@@ -130,6 +150,85 @@ namespace GovBudget.Services.Assistant
 
         // ---------------- live OECD ----------------
 
+        private async Task<string> FindDataflowAsync(JsonElement args, AssistantUserContext user, CancellationToken ct)
+        {
+            var query = args.TryGetProperty("query", out var q) ? q.GetString() ?? "" : "";
+            var terms = Regex.Split(query.ToLowerInvariant(), @"[^a-z0-9]+")
+                .Where(t => t.Length > 2)
+                .Distinct()
+                .ToList();
+
+            IReadOnlyList<OecdDataflow> catalogue;
+            try
+            {
+                catalogue = await GetCatalogueAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "OECD dataflow catalogue could not be loaded");
+                return JsonSerializer.Serialize(new { error = "The OECD SDMX catalogue could not be reached." });
+            }
+
+            var matches = catalogue
+                .Select(f => new
+                {
+                    f.Reference,
+                    f.Name,
+                    score = terms.Count == 0
+                        ? 0
+                        : terms.Count(t => f.Name.Contains(t, StringComparison.OrdinalIgnoreCase)
+                                        || f.Reference.Contains(t, StringComparison.OrdinalIgnoreCase))
+                })
+                .Where(f => f.score > 0)
+                .OrderByDescending(f => f.score)
+                .ThenBy(f => f.Name)
+                .Take(15)
+                .Select(f => new { dataflow = f.Reference, name = f.Name })
+                .ToList();
+
+            return JsonSerializer.Serialize(new
+            {
+                query,
+                source = $"{_options.OecdApiBaseUrl.TrimEnd('/')}/dataflow/all/all/latest",
+                matches
+            });
+        }
+
+        private async Task<IReadOnlyList<OecdDataflow>> GetCatalogueAsync(CancellationToken ct)
+        {
+            if (_catalogue is not null && DateTimeOffset.UtcNow - _catalogueLoadedAt < TimeSpan.FromHours(12))
+            {
+                return _catalogue;
+            }
+
+            await CatalogueLock.WaitAsync(ct);
+            try
+            {
+                if (_catalogue is not null && DateTimeOffset.UtcNow - _catalogueLoadedAt < TimeSpan.FromHours(12))
+                {
+                    return _catalogue;
+                }
+
+                var client = _httpClientFactory.CreateClient(HttpClientName);
+                var xml = await client.GetStringAsync(
+                    $"{_options.OecdApiBaseUrl.TrimEnd('/')}/dataflow/all/all/latest", ct);
+
+                var flows = DataflowEntry.Matches(xml)
+                    .Select(m => new OecdDataflow(
+                        $"{m.Groups[2].Value},{m.Groups[1].Value},{m.Groups[3].Value}",
+                        System.Net.WebUtility.HtmlDecode(m.Groups[4].Value).Trim()))
+                    .ToList();
+
+                _catalogue = flows;
+                _catalogueLoadedAt = DateTimeOffset.UtcNow;
+                return flows;
+            }
+            finally
+            {
+                CatalogueLock.Release();
+            }
+        }
+
         private async Task<string> QueryOecdDataAsync(JsonElement args, AssistantUserContext user, CancellationToken ct)
         {
             var dataflow = args.TryGetProperty("dataflow", out var d) ? d.GetString() : null;
@@ -142,7 +241,8 @@ namespace GovBudget.Services.Assistant
             var start = args.TryGetProperty("start_period", out var s) ? s.GetString() : null;
             var end = args.TryGetProperty("end_period", out var e) ? e.GetString() : null;
 
-            var url = $"{_options.OecdApiBaseUrl.TrimEnd('/')}/data/{Uri.EscapeDataString(dataflow)}/{Uri.EscapeDataString(string.IsNullOrWhiteSpace(key) ? "all" : key)}?format=jsondata&dimensionAtObservation=AllDimensions";
+            // SDMX path segments carry ',', '@' and '+' verbatim; percent-encoding them fails upstream.
+            var url = $"{_options.OecdApiBaseUrl.TrimEnd('/')}/data/{SdmxSegment(dataflow)}/{SdmxSegment(string.IsNullOrWhiteSpace(key) ? "all" : key)}?format=jsondata&dimensionAtObservation=AllDimensions";
             if (!string.IsNullOrWhiteSpace(start)) url += $"&startPeriod={Uri.EscapeDataString(start)}";
             if (!string.IsNullOrWhiteSpace(end)) url += $"&endPeriod={Uri.EscapeDataString(end)}";
 
@@ -210,6 +310,9 @@ namespace GovBudget.Services.Assistant
                 return JsonSerializer.Serialize(new { error = "The OECD page could not be reached.", url });
             }
         }
+
+        private static string SdmxSegment(string value) =>
+            Regex.Replace(value.Trim(), @"[^A-Za-z0-9_,.@\-+:*]", "");
 
         private static string Truncate(string value, int max) =>
             value.Length <= max ? value : value[..max] + " …[truncated]";
