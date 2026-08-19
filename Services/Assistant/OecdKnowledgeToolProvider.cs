@@ -299,13 +299,15 @@ namespace GovBudget.Services.Assistant
                         continue;
                     }
 
-                    var observations = ParseObservations(body, 120);
+                    var (observations, total) = ParseObservations(body, 120);
                     return JsonSerializer.Serialize(new
                     {
                         source = url,
                         dataflow = resolved,
-                        observation_count = observations.Count,
-                        note = "Report these observations exactly as given, with their unit. Do not compute ratios, shares or percentages from them.",
+                        total_observations = total,
+                        returned_observations = observations.Count,
+                        truncated = total > observations.Count,
+                        note = "Report these observations exactly as given, with their unit. Do not compute ratios, shares or percentages from them. This is a sample of the dataflow, so do not describe the whole dataset from it.",
                         observations
                     });
                 }
@@ -364,7 +366,7 @@ namespace GovBudget.Services.Assistant
         /// Turns an SDMX-JSON payload into flat observations - dimension labels plus the value -
         /// so the model reads real figures instead of guessing at a raw message.
         /// </summary>
-        private static List<Dictionary<string, object?>> ParseObservations(string jsonBody, int max)
+        private static (List<Dictionary<string, object?>> Rows, int Total) ParseObservations(string jsonBody, int max)
         {
             var rows = new List<Dictionary<string, object?>>();
             try
@@ -373,7 +375,7 @@ namespace GovBudget.Services.Assistant
                 var data = doc.RootElement.GetProperty("data");
                 if (!data.TryGetProperty("structures", out var structures) || structures.GetArrayLength() == 0)
                 {
-                    return rows;
+                    return (rows, 0);
                 }
 
                 foreach (var dataSet in data.GetProperty("dataSets").EnumerateArray())
@@ -397,8 +399,6 @@ namespace GovBudget.Services.Assistant
 
                     foreach (var ob in obs.EnumerateObject())
                     {
-                        if (rows.Count >= max) return rows;
-
                         var indices = ob.Name.Split(':');
                         var row = new Dictionary<string, object?>();
                         for (var i = 0; i < dims.Count && i < indices.Length; i++)
@@ -419,10 +419,17 @@ namespace GovBudget.Services.Assistant
             }
             catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
             {
-                return rows;
+                return (rows, rows.Count);
             }
 
-            return rows;
+            // Reported figures come first, so a truncated sample never looks like an empty dataflow.
+            var total = rows.Count;
+            var sample = rows
+                .OrderBy(r => r["value"] is null ? 2 : (Convert.ToDouble(r["value"]) == 0d ? 1 : 0))
+                .Take(max)
+                .ToList();
+
+            return (sample, total);
         }
 
         private static bool HasObservations(string jsonBody)
