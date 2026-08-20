@@ -1,101 +1,127 @@
 # GovBudget — Deployment Guide (SmarterASP.NET)
 
-How to publish updates to the live site. The goal is to replace the slow loop
-(publish to folder -> zip -> upload -> unzip on server -> run) with a one-click
-**Publish** from Visual Studio.
+The deploy loop is **one click**: Visual Studio → *Publish*. No folder publish, no zip,
+no unzip on the server, and nothing to repair by hand afterwards.
+
+This guide exists because the manual zip loop kept destroying server-only files. The
+publish profiles in `Properties/PublishProfiles/` now prevent that structurally.
 
 ---
 
-## What gets deployed
+## 1. The rule that makes redeploying safe
 
-GovBudget is an ASP.NET Core (`net10.0`) MVC app. Two kinds of files matter:
+Some files live **only on the server** and must survive every deployment. They are not in
+the repository (they hold secrets or runtime state), so any deploy that mirrors the folder
+wipes them — that is the "information left to fix manually" problem.
 
-- **Razor views (`.cshtml`)** — these are **compiled into the app DLLs** at build
-  time (no runtime compilation is enabled). Editing a `.cshtml` requires a
-  **rebuild + redeploy**; uploading the `.cshtml` alone does nothing on the server.
-- **Static files under `wwwroot/`** (e.g. `wwwroot/js/tour.js`, `wwwroot/css/tour.css`)
-  — served as-is. They must be uploaded, but need no rebuild.
+| Server-only file / folder     | Holds                                              | If it is overwritten |
+|-------------------------------|----------------------------------------------------|----------------------|
+| `appsettings.Production.json` | OpenAI API key, live connection string overrides    | Assistant reports "not configured"; DB login may fail |
+| `App_Data/keys/`              | Data-protection key ring (auth cookies, antiforgery)| Every signed-in user is logged out at once |
+| `logs/`                       | stdout diagnostics                                  | Loses start-up failure evidence |
+| `web.config`                  | ASP.NET Core Module settings, `ASPNETCORE_ENVIRONMENT` | Now safe: it is versioned in the repo and only transformed by publish |
 
-A full **Publish** handles both at once, so always prefer it over hand-picking files.
-
----
-
-## Option A — Web Deploy (recommended: one click, only changed files)
-
-Pushes DLLs **and** `wwwroot` together, uploading only what changed.
-
-### One-time setup
-1. Log in to the **SmarterASP.NET control panel**.
-2. Open your site → find **Auto Deploy / Web Deploy** (often under
-   *Websites → Manage → Publish Settings*) and **download the `.PublishSettings`** file.
-3. Visual Studio → right-click the project → **Publish** → **Import Profile** →
-   select the downloaded `.PublishSettings`.
-4. If it warns about a certificate, open the profile's advanced settings and set
-   **Allow untrusted certificate = true**.
-5. Click **Publish** once to validate.
-
-### Every future deploy
-- Just click **Publish**. No zip, no manual unzip.
+`SmarterASP.pubxml` protects all of these three ways at once: they are excluded from the
+payload, msdeploy **skip rules** block add/update/delete on the destination, and
+`SkipExtraFilesOnServer=true` means a deploy never deletes anything on the server.
 
 ---
 
-## Option B — FTP publish profile (no zip, uploads all files)
+## 2. What actually needs deploying
 
-Use if Web Deploy is unavailable on your plan.
+- **Razor views (`.cshtml`)** are **compiled into the DLLs**. Runtime compilation is off,
+  so uploading a `.cshtml` on its own changes nothing — a view edit needs rebuild + deploy.
+- **`wwwroot/` static files** are served as-is; they need upload but no rebuild.
 
-1. In the SmarterASP control panel, get your **FTP host, username, password**.
-2. Visual Studio → **Publish → New → FTP**; enter credentials.
-3. Set **Site Path** to your web root (often `/` or the site's `wwwroot`,
-   depending on the SmarterASP layout).
-4. Click **Publish** to upload directly over FTP.
-
-FTP re-uploads everything each time (slower than Web Deploy's incremental), but
-still removes the zip/unzip steps.
+A full publish covers both. Never hand-pick files.
 
 ---
 
-## Avoiding "file in use / locked DLL" errors
+## 3. One-time setup (about five minutes)
 
-When overwriting a running .NET app, DLLs may be locked. Standard fix:
+1. SmarterASP control panel → your site → download the **`.PublishSettings`** file
+   (usually under *Websites → Manage → Publish Settings* or *Auto Deploy*).
+2. Open it in Notepad. Copy three attribute values out of the `publishProfile` element:
+   `publishUrl`, `msdeploySite`, `userName`.
+3. Paste them over the three `REPLACE_ME_*` placeholders in
+   `Properties/PublishProfiles/SmarterASP.pubxml`.
+4. Visual Studio → right-click the project → **Publish** → select the **SmarterASP**
+   profile → **Publish**. Enter the password when prompted and tick **Save password**.
 
-- Place a file named **`app_offline.htm`** in the site root **before** deploying.
-  ASP.NET Core stops the app and serves that page; after deploy, **remove it** to
-  bring the app back.
-- **Web Deploy does this automatically.** With **FTP**, you may need to add/remove
-  `app_offline.htm` manually if you hit a lock.
+The password goes into `SmarterASP.pubxml.user`, which git ignores. **Never** type a
+password into the `.pubxml` itself — that file is committed.
 
-A simple `app_offline.htm` example:
+If the plan does not offer Web Deploy, use `SmarterASP-FTP.pubxml` instead and read the
+caveats in its header.
 
-```html
-<!doctype html>
-<html><head><meta charset="utf-8"><title>Maintenance</title></head>
-<body style="font-family:Segoe UI,Arial,sans-serif;text-align:center;padding:60px">
-  <h2>GovBudget is being updated</h2>
-  <p>The system will be back in a few minutes.</p>
-</body></html>
+---
+
+## 4. Every deploy after that
+
+Visual Studio → **Publish** → **Publish**. Or, scriptable, from a terminal:
+
+```
+dotnet publish -c Release /p:PublishProfile=SmarterASP /p:Password=THEPASSWORD
 ```
 
----
+Web Deploy uploads only changed files, drops `app_offline.htm` for the duration so the
+DLLs are never locked, and removes it when finished. The app pool recycles by itself.
 
-## After every deploy
-
-1. The app pool recycles automatically.
-2. Do a browser **hard refresh** (Ctrl+F5) so updated static files
-   (`tour.js`, `tour.css`, CSS) are not served from cache.
-3. Smoke-test the changed screen (e.g. open **Budget Entry** and click
-   **Take a tour**).
+After deploying: **Ctrl+F5** in the browser, so changed `wwwroot` CSS/JS is not served
+from cache, then smoke-test the screen you changed.
 
 ---
 
-## Quick comparison
+## 5. Database changes
 
-| Step                | Current (zip) | Web Deploy | FTP   |
-|---------------------|---------------|------------|-------|
-| Build / publish     | manual        | automatic  | automatic |
-| Zip                 | yes           | none       | none  |
-| Upload              | manual        | 1 click    | 1 click |
-| Unzip on server     | manual        | none       | none  |
-| Only changed files  | no            | yes        | no    |
+Most schema work is automatic. `Program.cs` runs idempotent upgrades at start-up, so a
+deploy is enough:
 
-**Recommendation:** set up **Web Deploy** once; afterwards every change is a single
-**Publish** click that ships both the recompiled views and the `wwwroot` assets.
+- `SecurityUpgrade` — security columns on `core.AppUsers`, password hashing backfill.
+- `AllocationScenarioUpgrade` — `ScenarioName` on `AllocationRuns`.
+
+Scripts under `docs/*.sql` are **manual, run once** in SQL Server Management Studio
+against the live database — for example `AddKpiClassification.sql`. They all guard with
+`COL_LENGTH` checks, so re-running them is harmless.
+
+---
+
+## 6. Troubleshooting
+
+**A config change had no effect.**
+Configuration is read once at start-up and `IOptions<T>` is cached for the life of the
+process. A browser refresh changes nothing — the app pool must recycle. Force it by
+saving `web.config` unchanged in the server's File Manager, or by creating then deleting
+`app_offline.htm`.
+
+**"The assistant is not configured yet."**
+`appsettings.Production.json` in the site root (next to `GovBudget.dll`) must contain the
+section shape, then the app must be restarted:
+
+```json
+{ "Assistant": { "ApiKey": "sk-..." } }
+```
+
+`OPENAI_API_KEY` only works as a real environment variable, never as a JSON key.
+
+**HTTP 500.30 after a deploy.**
+Start-up crash. Set `stdoutLogEnabled="true"` in `web.config`, reproduce, read
+`logs/stdout_*.log`, then set it back to `false` (the file grows without limit). Usual
+causes: malformed `appsettings.Production.json`, or the database being unreachable.
+
+**"File in use" / locked `GovBudget.dll`.**
+Only happens over FTP. Upload an `app_offline.htm` to the site root, publish, delete it.
+
+**Removing a stale file.**
+Because `SkipExtraFilesOnServer=true` never deletes, a file dropped from the project stays
+on the server. Delete it by hand in the File Manager. This trade is deliberate: silent
+deletion is what used to break the live site.
+
+---
+
+## 7. `deploy-update.cmd`
+
+A robocopy-based incremental deploy for a site folder reachable as a **local or UNC path**
+(on-premise IIS, or a mapped drive). It is not usable against SmarterASP, which exposes
+only FTP and Web Deploy. It protects the same server-only files and is kept for the
+eventual move to government-hosted infrastructure.

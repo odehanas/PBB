@@ -192,6 +192,13 @@ publish/
 *.pubxml
 *.publishproj
 
+# ...but DO version the SmarterASP publish profiles. They carry the skip rules that stop a
+# deployment from deleting or overwriting the server-only files (appsettings.Production.json,
+# App_Data key ring, logs). Losing those rules is what makes a deploy break the live site.
+# No password is stored in a .pubxml - it goes in the matching .pubxml.user, which stays
+# ignored by the "*.user" rule near the top of this file.
+!Properties/PublishProfiles/*.pubxml
+
 # Microsoft Azure Web App publish settings. Comment the next line if you want to
 # checkin your Azure Web App publish settings, but sensitive information contained
 # in these scripts will be unencrypted
