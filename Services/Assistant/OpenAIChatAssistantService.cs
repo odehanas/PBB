@@ -249,6 +249,11 @@ namespace GovBudget.Services.Assistant
               "in thousands" or "in millions", never rescale a figure, and keep the two
               decimals the tool returned. Show thousands separators and state the year.
             - When a tool returns totals, always show them under the table.
+            - Budget entry is line-item wise, so detail always exists. When the user names a
+              program or activity, pass it to the activity/program argument of the tool rather
+              than summarising the whole entity, and answer "detail", "breakdown" or
+              "line items" questions about an activity with get_activity_line_items. Only say
+              there is no detail after a tool returned no rows for that activity.
             - Staff cost is held separately from the budget lines. When a tool reports
               excludes_hr_staff_cost, say that the figure excludes HR, or call
               get_budget_summary grouped by category, which includes it.
