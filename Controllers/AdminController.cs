@@ -296,7 +296,11 @@ namespace GovBudget.Controllers
             var programs = await programsQ.OrderBy(p => p.ProgramCode).ToListAsync();
             var programById = programs.ToDictionary(p => p.ProgramId, p => p);
 
-            var activitiesQ = _db.Activities.AsNoTracking().Include(a => a.Program).AsQueryable();
+            // Inactive activities drop out of the structure tree (and its Excel export) as soon as
+            // nothing references them any more; ones that still carry data stay, flagged Inactive,
+            // so their cost never disappears silently. See Utils/ActivityVisibility.
+            var activitiesQ = _db.Activities.AsNoTracking().Include(a => a.Program)
+                .Where(GovBudget.Utils.ActivityVisibility.IsVisible(_db)).AsQueryable();
             if (adminEntityId.HasValue) activitiesQ = activitiesQ.Where(a => a.Program.EntityId == adminEntityId.Value);
             var activities = await activitiesQ.OrderBy(a => a.ActivityCode).ToListAsync();
 

@@ -32,4 +32,18 @@
 		<Content Remove="docs\Security_Review.md" />
 	</ItemGroup>
 
+	<!--
+		Deployment conveniences:
+		  - logs\.keep makes the .\logs folder exist in the publish output, so the ASP.NET Core
+		    Module's stdout log folder no longer has to be created by hand on the server.
+		  - App_Data is runtime state (data-protection key ring) created by the app itself and
+		    must never be published, or a deployment would overwrite the live key ring and sign
+		    every user out.
+	-->
+	<ItemGroup>
+		<Content Include="logs\.keep" CopyToOutputDirectory="Never" CopyToPublishDirectory="PreserveNewest" />
+		<Content Remove="App_Data\**" />
+		<None Remove="App_Data\**" />
+	</ItemGroup>
+
 </Project>

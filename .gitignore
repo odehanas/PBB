@@ -32,6 +32,11 @@ bld/
 [Oo]ut/
 [Ll]og/
 [Ll]ogs/
+# ...but keep the placeholder that makes the deployed .\logs folder exist, so the ASP.NET
+# Core Module never has to have it created by hand on the server after a deployment.
+!logs/
+logs/*
+!logs/.keep
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/

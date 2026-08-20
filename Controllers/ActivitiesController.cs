@@ -633,6 +633,217 @@ namespace GovBudget.Controllers
             return RedirectToAction(nameof(Index));
         }
 
+        // =====================================================================
+        // Technical report: transactions still linked to INACTIVE activities.
+        //
+        // Deactivating an activity hides it from data entry but leaves every posting that
+        // already points at it. Those rows are what make an inactive activity impossible to
+        // hide from the reports without losing money, so this report lists them per activity
+        // and tells you which activities are clean (safe to hide) and which still carry value.
+        // =====================================================================
+        [HttpGet]
+        public async Task<IActionResult> InactiveLinks(int? year = null)
+        {
+            var vm = await BuildInactiveLinks(year, GetAdminScopedEntityId());
+            return View(vm);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> InactiveLinksExport(int? year = null)
+        {
+            var vm = await BuildInactiveLinks(year, GetAdminScopedEntityId());
+
+            using var wb = new XLWorkbook();
+            var ws = wb.Worksheets.Add("Inactive Activity Links");
+
+            ws.Cell(1, 1).Value = "Transactions linked to inactive activities";
+            ws.Cell(2, 1).Value = "Year: " + (vm.Year?.ToString() ?? "All years")
+                + "    Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+            ws.Range(1, 1, 1, 14).Merge().Style.Font.Bold = true;
+            ws.Range(1, 1, 1, 14).Style.Font.FontSize = 14;
+            ws.Range(2, 1, 2, 14).Merge().Style.Font.Italic = true;
+
+            string[] headers =
+            {
+                "Entity", "Programme", "Cost center", "Activity code", "Activity name",
+                "Budget lines", "Budget amount", "HR allocations", "HR amount",
+                "Submission lines", "KPIs", "Outputs", "Allocation postings", "Allocation rules",
+                "Total linked rows", "Value at risk", "Verdict"
+            };
+            var row = 4;
+            for (var i = 0; i < headers.Length; i++) ws.Cell(row, i + 1).Value = headers[i];
+            var head = ws.Range(row, 1, row, headers.Length);
+            head.Style.Font.Bold = true;
+            head.Style.Fill.BackgroundColor = XLColor.LightGray;
+
+            row++;
+            foreach (var r in vm.Rows)
+            {
+                var c = 1;
+                ws.Cell(row, c++).Value = r.EntityLabel;
+                ws.Cell(row, c++).Value = r.ProgramLabel;
+                ws.Cell(row, c++).Value = r.DepartmentLabel;
+                ws.Cell(row, c++).Value = r.ActivityCode;
+                ws.Cell(row, c++).Value = r.ActivityName;
+                ws.Cell(row, c++).Value = r.BudgetLineCount;
+                ws.Cell(row, c++).Value = r.BudgetLineAmount;
+                ws.Cell(row, c++).Value = r.HrAllocationCount;
+                ws.Cell(row, c++).Value = r.HrAllocationAmount;
+                ws.Cell(row, c++).Value = r.SubmissionLineCount;
+                ws.Cell(row, c++).Value = r.KpiCount;
+                ws.Cell(row, c++).Value = r.OutputCount;
+                ws.Cell(row, c++).Value = r.AllocationTxnCount;
+                ws.Cell(row, c++).Value = r.AllocationRuleCount;
+                ws.Cell(row, c++).Value = r.LinkedRowCount;
+                ws.Cell(row, c++).Value = r.ValueAtRisk;
+                ws.Cell(row, c++).Value = r.HasLinks ? "Must stay - carries data" : "Clean - safe to hide";
+                row++;
+            }
+
+            ws.Range(5, 7, row - 1, 7).Style.NumberFormat.Format = "#,##0.00";
+            ws.Range(5, 9, row - 1, 9).Style.NumberFormat.Format = "#,##0.00";
+            ws.Range(5, 16, row - 1, 16).Style.NumberFormat.Format = "#,##0.00";
+            ws.Columns().AdjustToContents();
+
+            using var ms = new MemoryStream();
+            wb.SaveAs(ms);
+            var name = $"InactiveActivityLinks_{(vm.Year?.ToString() ?? "AllYears")}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx";
+            return File(ms.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", name);
+        }
+
+        private async Task<InactiveActivityReportVm> BuildInactiveLinks(int? year, int? adminEntityId)
+        {
+            var vm = new InactiveActivityReportVm { Year = year };
+
+            var thisYear = DateTime.Now.Year;
+            vm.YearOptions = new List<SelectListItem> { new SelectListItem("All years", "", !year.HasValue) };
+            foreach (var y in new[] { thisYear - 2, thisYear - 1, thisYear, thisYear + 1, thisYear + 2 })
+                vm.YearOptions.Add(new SelectListItem(y.ToString(), y.ToString(), year == y));
+
+            var query = _context.Activities.AsNoTracking()
+                .Include(a => a.Program).ThenInclude(p => p.Entity)
+                .Include(a => a.Department)
+                .Where(a => !a.IsActive);
+            if (adminEntityId.HasValue) query = query.Where(a => a.Program.EntityId == adminEntityId.Value);
+
+            var inactive = await query.ToListAsync();
+            if (inactive.Count == 0) return vm;
+
+            var ids = inactive.Select(a => a.ActivityId).ToList();
+
+            // Budget lines (the main source of value that would vanish from reports).
+            var budgetLines = await _context.BudgetLines.AsNoTracking()
+                .Where(b => b.ActivityId != null && ids.Contains(b.ActivityId.Value)
+                    && (year == null || b.BudgetYear == year.Value))
+                .GroupBy(b => b.ActivityId!.Value)
+                .Select(g => new { ActivityId = g.Key, Count = g.Count(), Amount = g.Sum(x => x.Amount) })
+                .ToListAsync();
+
+            // HR cost allocations - year lives on the parent employee-cost row.
+            var hrAllocations = await (
+                from a in _context.HrEmployeeCostAllocations.AsNoTracking()
+                join e in _context.HrEmployeeCosts.AsNoTracking() on a.EmployeeCostId equals e.EmployeeCostId
+                where ids.Contains(a.ActivityId) && (year == null || e.BudgetYear == year.Value)
+                group a.AllocatedAmount by a.ActivityId into g
+                select new { ActivityId = g.Key, Count = g.Count(), Amount = g.Sum() }
+            ).ToListAsync();
+
+            // Submitted budget snapshots.
+            var submissionLines = await _context.BudgetSubmissionLines.AsNoTracking()
+                .Where(s => s.ActivityId != null && ids.Contains(s.ActivityId.Value)
+                    && (year == null || s.BudgetYear == year.Value))
+                .GroupBy(s => s.ActivityId!.Value)
+                .Select(g => new { ActivityId = g.Key, Count = g.Count(), Amount = g.Sum(x => x.Amount) })
+                .ToListAsync();
+
+            var kpis = await _context.Kpis.AsNoTracking()
+                .Where(k => k.ActivityId != null && ids.Contains(k.ActivityId.Value)
+                    && (year == null || k.BudgetYear == year.Value))
+                .GroupBy(k => k.ActivityId!.Value)
+                .Select(g => new { ActivityId = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var outputs = await _context.ActivityOutputs.AsNoTracking()
+                .Where(o => ids.Contains(o.ActivityId) && (year == null || o.BudgetYear == year.Value))
+                .GroupBy(o => o.ActivityId)
+                .Select(g => new { ActivityId = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            // Cost-allocation postings reference an activity as source and/or as target.
+            var txnSource = await _context.AllocationTransactions.AsNoTracking()
+                .Where(t => t.SourceActivityId != null && ids.Contains(t.SourceActivityId.Value)
+                    && (year == null || t.BudgetYear == year.Value))
+                .GroupBy(t => t.SourceActivityId!.Value)
+                .Select(g => new { ActivityId = g.Key, Count = g.Count(), Amount = g.Sum(x => x.Amount) })
+                .ToListAsync();
+
+            var txnTarget = await _context.AllocationTransactions.AsNoTracking()
+                .Where(t => t.TargetActivityId != null && ids.Contains(t.TargetActivityId.Value)
+                    && (year == null || t.BudgetYear == year.Value))
+                .GroupBy(t => t.TargetActivityId!.Value)
+                .Select(g => new { ActivityId = g.Key, Count = g.Count(), Amount = g.Sum(x => x.Amount) })
+                .ToListAsync();
+
+            // Allocation configuration still pointing at the activity.
+            var ruleSource = await _context.AllocationRules.AsNoTracking()
+                .Where(r => r.SourceActivityId != null && ids.Contains(r.SourceActivityId.Value)
+                    && (year == null || r.BudgetYear == year.Value))
+                .GroupBy(r => r.SourceActivityId!.Value)
+                .Select(g => new { ActivityId = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var ruleTarget = await (
+                from t in _context.AllocationRuleTargets.AsNoTracking()
+                join r in _context.AllocationRules.AsNoTracking() on t.RuleId equals r.RuleId
+                where t.TargetActivityId != null && ids.Contains(t.TargetActivityId.Value)
+                    && (year == null || r.BudgetYear == year.Value)
+                group t by t.TargetActivityId!.Value into g
+                select new { ActivityId = g.Key, Count = g.Count() }
+            ).ToListAsync();
+
+            var blMap = budgetLines.ToDictionary(x => x.ActivityId);
+            var hrMap = hrAllocations.ToDictionary(x => x.ActivityId);
+            var subMap = submissionLines.ToDictionary(x => x.ActivityId);
+            var kpiMap = kpis.ToDictionary(x => x.ActivityId, x => x.Count);
+            var outMap = outputs.ToDictionary(x => x.ActivityId, x => x.Count);
+            var txnSrcMap = txnSource.ToDictionary(x => x.ActivityId);
+            var txnTgtMap = txnTarget.ToDictionary(x => x.ActivityId);
+            var ruleSrcMap = ruleSource.ToDictionary(x => x.ActivityId, x => x.Count);
+            var ruleTgtMap = ruleTarget.ToDictionary(x => x.ActivityId, x => x.Count);
+
+            foreach (var a in inactive)
+            {
+                var r = new InactiveActivityRow
+                {
+                    ActivityId = a.ActivityId,
+                    ActivityCode = a.ActivityCode,
+                    ActivityName = a.ActivityName,
+                    EntityLabel = a.Program?.Entity == null ? "" : a.Program.Entity.EntityCode + " - " + a.Program.Entity.EntityName,
+                    ProgramLabel = a.Program == null ? "" : a.Program.ProgramCode + " - " + a.Program.ProgramName,
+                    DepartmentLabel = a.Department == null ? "" : a.Department.DeptCode + " - " + a.Department.DeptName
+                };
+
+                if (blMap.TryGetValue(a.ActivityId, out var bl)) { r.BudgetLineCount = bl.Count; r.BudgetLineAmount = bl.Amount; }
+                if (hrMap.TryGetValue(a.ActivityId, out var hr)) { r.HrAllocationCount = hr.Count; r.HrAllocationAmount = hr.Amount; }
+                if (subMap.TryGetValue(a.ActivityId, out var sb)) { r.SubmissionLineCount = sb.Count; r.SubmissionLineAmount = sb.Amount; }
+                r.KpiCount = kpiMap.GetValueOrDefault(a.ActivityId);
+                r.OutputCount = outMap.GetValueOrDefault(a.ActivityId);
+                if (txnSrcMap.TryGetValue(a.ActivityId, out var ts)) { r.AllocationTxnCount += ts.Count; r.AllocationTxnAmount += ts.Amount; }
+                if (txnTgtMap.TryGetValue(a.ActivityId, out var tt)) { r.AllocationTxnCount += tt.Count; r.AllocationTxnAmount += tt.Amount; }
+                r.AllocationRuleCount = ruleSrcMap.GetValueOrDefault(a.ActivityId) + ruleTgtMap.GetValueOrDefault(a.ActivityId);
+
+                vm.Rows.Add(r);
+            }
+
+            vm.Rows = vm.Rows
+                .OrderByDescending(r => r.HasLinks)
+                .ThenByDescending(r => r.ValueAtRisk)
+                .ThenBy(r => r.EntityLabel)
+                .ThenBy(r => r.ActivityCode)
+                .ToList();
+            return vm;
+        }
+
         private bool ActivitiesExists(int id) => _context.Activities.Any(e => e.ActivityId == id);
 
         private void PopulateProgramDropDown(int? selectedId = null, int? allowedEntityId = null)
@@ -682,5 +893,57 @@ namespace GovBudget.Controllers
 
             ViewData["DepartmentId"] = new SelectList(deps, "DepartmentId", "Display", selectedId);
         }
+    }
+
+    // ---- Technical report: inactive activities and the rows still pointing at them ----
+
+    public class InactiveActivityReportVm
+    {
+        // null = every year (the default; a cleanup review should see all history).
+        public int? Year { get; set; }
+        public List<SelectListItem> YearOptions { get; set; } = new();
+        public List<InactiveActivityRow> Rows { get; set; } = new();
+
+        public int TotalInactive => Rows.Count;
+        public int WithLinks => Rows.Count(r => r.HasLinks);
+        public int Clean => Rows.Count(r => !r.HasLinks);
+        public decimal TotalValueAtRisk => Rows.Sum(r => r.ValueAtRisk);
+        public int TotalLinkedRows => Rows.Sum(r => r.LinkedRowCount);
+    }
+
+    public class InactiveActivityRow
+    {
+        public int ActivityId { get; set; }
+        public string ActivityCode { get; set; } = "";
+        public string ActivityName { get; set; } = "";
+        public string EntityLabel { get; set; } = "";
+        public string ProgramLabel { get; set; } = "";
+        public string DepartmentLabel { get; set; } = "";
+
+        public int BudgetLineCount { get; set; }
+        public decimal BudgetLineAmount { get; set; }
+        public int HrAllocationCount { get; set; }
+        public decimal HrAllocationAmount { get; set; }
+        public int SubmissionLineCount { get; set; }
+        public decimal SubmissionLineAmount { get; set; }
+        public int KpiCount { get; set; }
+        public int OutputCount { get; set; }
+        public int AllocationTxnCount { get; set; }
+        public decimal AllocationTxnAmount { get; set; }
+        public int AllocationRuleCount { get; set; }
+
+        public int LinkedRowCount => BudgetLineCount + HrAllocationCount + SubmissionLineCount
+            + KpiCount + OutputCount + AllocationTxnCount + AllocationRuleCount;
+
+        public bool HasLinks => LinkedRowCount > 0;
+
+        // Money that would disappear from the reports if this activity were simply hidden.
+        // Submission lines are snapshots of budget lines and allocation postings are derived
+        // from them, so neither is counted again here.
+        public decimal ValueAtRisk => BudgetLineAmount + HrAllocationAmount;
+
+        // Cost carriers vs. definitions only: a KPI or an output can be hidden without
+        // touching a single figure, budget lines and HR allocations cannot.
+        public bool CarriesCost => BudgetLineCount > 0 || HrAllocationCount > 0;
     }
 }

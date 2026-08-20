@@ -809,8 +809,40 @@
     @if (Model.KpiCostLinks.Count > 0)
     {
         <div class="card shadow-sm mb-3 pbb-long">
-            <div class="card-header bg-white fw-bold">KPI &#8596; Cost Linkage (Cost per Unit of Improvement)</div>
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                <span>KPI &#8596; Cost Linkage (Cost per Unit of Improvement &mdash; Planned &amp; Achieved)</span>
+                @if (!Model.ActualsUploaded)
+                {
+                    <span class="badge bg-warning text-dark">Actuals not uploaded</span>
+                }
+            </div>
             <div class="card-body p-0">
+                <div class="px-3 pt-2 text-muted small">
+                    Two period-consistent views of the same cost. <strong>Planned</strong> divides the
+                    <strong>full-year budget</strong> by Target &minus; Baseline &mdash; the full-year commitment, so it is
+                    available all year. <strong>Achieved</strong> divides the <strong>actual cost to date</strong> by
+                    Actual &minus; Baseline, so both sides cover the same part of the year. While the actuals are partial
+                    the achieved improvement is often still negative, and no achieved unit cost can be derived yet.
+                </div>
+                @* Open by default so the basis is part of the printed / PDF report. *@
+                <details open class="px-3 pt-2 small">
+                    <summary class="text-muted" style="cursor:pointer;">Basis of calculation</summary>
+                    <ul class="text-muted mb-2 mt-1" style="font-size:12px;line-height:1.6;">
+                        <li><strong>Budget cost (full year)</strong> &mdash; the tagged activity's direct budget lines plus
+                            HR cost allocated to it. For a programme-linked KPI, the programme's Direct + Allocated cost.</li>
+                        <li><strong>Actual cost (to date)</strong> &mdash; derived: GL actuals are split across activities in
+                            proportion to their budget share of each GL, and HR actuals follow each employee's allocation.
+                            A programme figure is the sum of its activities' derived actuals, so budget lines never tagged
+                            to an activity are not included &mdash; activity-linked KPIs are the exact ones.</li>
+                        <li><strong>Planned improvement</strong> = Target &minus; Baseline (for a DOWN KPI, Baseline &minus; Target).</li>
+                        <li><strong>Achieved improvement</strong> = Actual &minus; Baseline (for a DOWN KPI, Baseline &minus; Actual).</li>
+                        <li><strong>Cost / Planned Impr.</strong> = full-year budget cost &divide; planned improvement.</li>
+                        <li><strong>Cost / Achieved Impr.</strong> = actual cost to date &divide; achieved improvement.</li>
+                        <li><strong>Progress vs Plan</strong> = achieved improvement &divide; planned improvement.</li>
+                        <li>A unit cost appears only where the matching improvement is positive; the achieved one also
+                            requires actuals to have been imported.</li>
+                    </ul>
+                </details>
                 @foreach (var g in Model.KpiCostLinks.GroupBy(x => new { x.EntityCode, x.EntityName }))
                 {
                     <div class="kl-entity">@g.Key.EntityCode@(string.IsNullOrWhiteSpace(g.Key.EntityName) ? "" : " — " + g.Key.EntityName)</div>
@@ -830,16 +862,28 @@
                                 @(string.IsNullOrWhiteSpace(x.LinkLabel) ? "No linked cost driver" : x.LinkLabel)
                             </div>
                             <div class="kl-metrics">
-                                <div class="m"><span class="m-l">Linked Cost</span><span class="m-v">@(x.LinkedCost.HasValue ? x.LinkedCost.Value.ToString("N0") : "—")</span></div>
+                                <div class="m"><span class="m-l">Budget Cost (full yr)</span><span class="m-v">@(x.LinkedCost.HasValue ? x.LinkedCost.Value.ToString("N0") : "—")</span></div>
+                                <div class="m"><span class="m-l">Actual Cost (to date)</span><span class="m-v">@(x.LinkedActualCost.HasValue ? x.LinkedActualCost.Value.ToString("N0") : "—")</span></div>
                                 <div class="m"><span class="m-l">Baseline</span><span class="m-v">@(x.Baseline?.ToString("N2") ?? "—")</span></div>
+                                <div class="m"><span class="m-l">Target</span><span class="m-v">@(x.Target?.ToString("N2") ?? "—")</span></div>
                                 <div class="m"><span class="m-l">Actual</span><span class="m-v">@(x.Actual?.ToString("N2") ?? "—")</span></div>
-                                <div class="m"><span class="m-l">Improvement</span><span class="m-v">@(x.Improvement?.ToString("N2") ?? "—")</span></div>
-                                <div class="m accent"><span class="m-l">Cost / Improvement</span><span class="m-v">@(x.CostPerImprovement.HasValue ? x.CostPerImprovement.Value.ToString("N0") : "—")</span></div>
+                                <div class="m"><span class="m-l">Planned Impr. (Target − Base)</span><span class="m-v">@(x.PlannedImprovement?.ToString("N2") ?? "—")</span></div>
+                                <div class="m accent"><span class="m-l">Cost / Planned Impr.</span><span class="m-v">@(x.CostPerPlannedImprovement.HasValue ? x.CostPerPlannedImprovement.Value.ToString("N0") : "—")</span></div>
+                                <div class="m">
+                                    <span class="m-l">Achieved Impr. (Actual − Base)</span>
+                                    <span class="m-v" style="@(x.Improvement.HasValue && x.Improvement.Value < 0 ? "color:#b02a37;" : "")">@(x.Improvement?.ToString("N2") ?? "—")</span>
+                                </div>
+                                <div class="m accent"><span class="m-l">Cost / Achieved Impr.</span><span class="m-v">@(x.CostPerImprovement.HasValue ? x.CostPerImprovement.Value.ToString("N0") : "—")</span></div>
+                                <div class="m"><span class="m-l">Progress vs Plan</span><span class="m-v">@(x.ProgressPct.HasValue ? x.ProgressPct.Value.ToString("0.0") + "%" : "—")</span></div>
                             </div>
                         </div>
                     }
                 }
-                <div class="text-muted small p-2">Cost is taken from the KPI's tagged activity (preferred) or programme. Improvement is direction-aware; cost-per-improvement is shown only when improvement is positive.</div>
+                <div class="text-muted small p-2">
+                    Cost is taken from the KPI's tagged activity (preferred) or its programme. See
+                    <em>Basis of calculation</em> above for each figure; the same note is written onto the
+                    <em>KPI Cost Linkage</em> sheet of the Excel export.
+                </div>
             </div>
         </div>
     }

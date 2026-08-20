@@ -1255,6 +1255,12 @@ namespace GovBudget.Controllers
 
         // KPI <-> cost linkage: ties each KPI to the cost of its tagged activity (preferred) or programme,
         // and computes direction-aware improvement and cost-per-unit-of-improvement.
+        //
+        // Two period-consistent pairs, never mixed:
+        //   Planned  = full-year BUDGET      / (Target - Baseline)   <- available all year
+        //   Achieved = derived ACTUAL to date / (Actual - Baseline)   <- needs actuals imported
+        // Dividing the full-year budget by a part-year improvement would overstate the unit cost,
+        // so the achieved side deliberately uses the actual cost incurred so far.
         private async Task<List<KpiCostLinkRowVm>> BuildKpiCostLinkage(int year, int? entityId)
         {
             var kpis = await LoadKpis(year, entityId);
@@ -1270,6 +1276,28 @@ namespace GovBudget.Controllers
             var programmeCost = programmeRows
                 .GroupBy(p => p.ProgramId)
                 .ToDictionary(g => g.Key, g => g.Sum(p => p.Total));
+
+            // Derived actual cost to date (GL actuals split across activities by budget share).
+            var hasActuals = await HasActualsForScope(year, entityIds);
+            var activityActual = hasActuals
+                ? await ComputeActivityActualMap(year, entityIds)
+                : new Dictionary<int, decimal>();
+
+            // Programme actual = sum of its activities' derived actuals. Budget lines that were never
+            // tagged to an activity carry no derived actual, so a programme figure can be lower than
+            // the programme's full actual; activity-linked KPIs are the exact ones.
+            var programmeActual = new Dictionary<int, decimal>();
+            if (activityActual.Count > 0)
+            {
+                var actualActIds = activityActual.Keys.ToList();
+                var actProgLinks = await _db.Activities.AsNoTracking()
+                    .Where(a => actualActIds.Contains(a.ActivityId))
+                    .Select(a => new { a.ActivityId, a.ProgramId })
+                    .ToListAsync();
+                foreach (var link in actProgLinks)
+                    programmeActual[link.ProgramId] =
+                        programmeActual.GetValueOrDefault(link.ProgramId) + activityActual[link.ActivityId];
+            }
 
             var actIds = kpis.Where(k => k.ActivityId != null).Select(k => k.ActivityId!.Value).Distinct().ToList();
             var actMeta = await _db.Activities.AsNoTracking()
@@ -1291,6 +1319,7 @@ namespace GovBudget.Controllers
                 string linkLevel;
                 string linkLabel;
                 decimal? linkedCost = null;
+                decimal? linkedActualCost = null;
 
                 if (k.ActivityId != null && activityCost.TryGetValue(k.ActivityId.Value, out var ac))
                 {
@@ -1298,6 +1327,8 @@ namespace GovBudget.Controllers
                     linkLabel = actMetaMap.TryGetValue(k.ActivityId.Value, out var am)
                         ? am.ActivityCode + " - " + am.ActivityName : "Activity " + k.ActivityId.Value;
                     linkedCost = ac;
+                    if (hasActuals)
+                        linkedActualCost = Math.Round(activityActual.GetValueOrDefault(k.ActivityId.Value), 2, MidpointRounding.AwayFromZero);
                 }
                 else if (k.ProgramId != null && programmeCost.TryGetValue(k.ProgramId.Value, out var pc))
                 {
@@ -1305,6 +1336,8 @@ namespace GovBudget.Controllers
                     linkLabel = progMetaMap.TryGetValue(k.ProgramId.Value, out var pm)
                         ? pm.ProgramCode + " - " + pm.ProgramName : "Programme " + k.ProgramId.Value;
                     linkedCost = pc;
+                    if (hasActuals)
+                        linkedActualCost = Math.Round(programmeActual.GetValueOrDefault(k.ProgramId.Value), 2, MidpointRounding.AwayFromZero);
                 }
                 else
                 {
@@ -1312,17 +1345,45 @@ namespace GovBudget.Controllers
                     linkLabel = "";
                 }
 
+                var isDown = string.Equals(k.Direction, "DOWN", StringComparison.OrdinalIgnoreCase);
+
+                // Achieved improvement: Actual vs Baseline. Mid-year actuals cover only part of the
+                // year, so on cumulative KPIs this is usually still below baseline (negative) and no
+                // cost per unit can be derived from it yet.
                 decimal? improvement = null;
                 if (k.Baseline != null && k.ActualValue != null)
                 {
-                    improvement = string.Equals(k.Direction, "DOWN", StringComparison.OrdinalIgnoreCase)
+                    improvement = isDown
                         ? k.Baseline.Value - k.ActualValue.Value
                         : k.ActualValue.Value - k.Baseline.Value;
                 }
 
+                // Planned improvement: Target vs Baseline. This is the full-year commitment, so it is
+                // available from day one and gives the planned cost per unit of improvement even
+                // before the actuals catch up.
+                decimal? plannedImprovement = null;
+                if (k.Baseline != null && k.Target != null)
+                {
+                    plannedImprovement = isDown
+                        ? k.Baseline.Value - k.Target.Value
+                        : k.Target.Value - k.Baseline.Value;
+                }
+
+                // Achieved unit cost uses the ACTUAL cost to date, so the numerator and the
+                // denominator cover the same part of the year.
                 decimal? costPerImprovement = null;
-                if (linkedCost.HasValue && improvement.HasValue && improvement.Value > 0)
-                    costPerImprovement = Math.Round(linkedCost.Value / improvement.Value, 2, MidpointRounding.AwayFromZero);
+                if (linkedActualCost.HasValue && linkedActualCost.Value > 0m
+                    && improvement.HasValue && improvement.Value > 0)
+                    costPerImprovement = Math.Round(linkedActualCost.Value / improvement.Value, 2, MidpointRounding.AwayFromZero);
+
+                decimal? costPerPlannedImprovement = null;
+                if (linkedCost.HasValue && plannedImprovement.HasValue && plannedImprovement.Value > 0)
+                    costPerPlannedImprovement = Math.Round(linkedCost.Value / plannedImprovement.Value, 2, MidpointRounding.AwayFromZero);
+
+                // How far the achieved improvement has come against the planned improvement.
+                decimal? progressPct = null;
+                if (improvement.HasValue && plannedImprovement.HasValue && plannedImprovement.Value > 0)
+                    progressPct = Math.Round(improvement.Value / plannedImprovement.Value * 100m, 1, MidpointRounding.AwayFromZero);
 
                 entMap.TryGetValue(k.EntityId, out var ent);
                 rows.Add(new KpiCostLinkRowVm
@@ -1334,10 +1395,15 @@ namespace GovBudget.Controllers
                     LinkLevel = linkLevel,
                     LinkLabel = linkLabel,
                     LinkedCost = linkedCost,
+                    LinkedActualCost = linkedActualCost,
                     Baseline = k.Baseline,
+                    Target = k.Target,
                     Actual = k.ActualValue,
+                    PlannedImprovement = plannedImprovement,
+                    CostPerPlannedImprovement = costPerPlannedImprovement,
                     Improvement = improvement,
                     CostPerImprovement = costPerImprovement,
+                    ProgressPct = progressPct,
                     Status = ResolveKpiStatus(k)
                 });
             }
@@ -1650,9 +1716,40 @@ namespace GovBudget.Controllers
         private static void BuildKpiCostLinkSheet(XLWorkbook wb, List<KpiCostLinkRowVm> rows, int year, string entityLabel)
         {
             var ws = wb.Worksheets.Add("KPI Cost Linkage");
-            TitleRows(ws, "KPI <-> Cost Linkage (Cost per Unit Improvement)", year, entityLabel, 10);
-            var r = 4;
-            string[] headers = { "Entity", "KPI", "Unit", "Linked To", "Cost Driver", "Linked Cost", "Baseline", "Actual", "Improvement", "Cost / Improvement" };
+            TitleRows(ws, "KPI <-> Cost Linkage (planned: Target - Baseline; achieved: Actual - Baseline)", year, entityLabel, 15);
+
+            // Basis of calculation, on the sheet itself so an exported copy can be read on its own.
+            var noteRow = 4;
+            var notes = new[]
+            {
+                "Basis of calculation",
+                "Budget cost = full-year budget of the KPI's tagged activity (direct budget lines + HR allocated); for a programme-linked KPI, the programme's Direct + Allocated cost.",
+                "Actual cost = derived actual to date: GL actuals split across activities in proportion to their budget share of each GL; HR actuals follow each employee's allocation. Programme actual = sum of its activities' derived actuals.",
+                "Planned improvement = Target - Baseline (for a DOWN KPI: Baseline - Target).",
+                "Achieved improvement = Actual - Baseline (for a DOWN KPI: Baseline - Actual).",
+                "Cost / Planned Improvement = full-year budget cost / planned improvement.",
+                "Cost / Achieved Improvement = actual cost to date / achieved improvement (both cover the same part of the year).",
+                "Progress % = achieved improvement / planned improvement.",
+                "A unit cost is shown only where the matching improvement is positive; the achieved unit cost also needs actuals to be imported."
+            };
+            foreach (var n in notes)
+            {
+                ws.Cell(noteRow, 1).Value = n;
+                ws.Range(noteRow, 1, noteRow, 15).Merge();
+                ws.Cell(noteRow, 1).Style.Font.Italic = true;
+                ws.Cell(noteRow, 1).Style.Font.FontSize = 9;
+                ws.Cell(noteRow, 1).Style.Font.FontColor = XLColor.FromHtml("#555555");
+                noteRow++;
+            }
+            ws.Cell(4, 1).Style.Font.Bold = true;
+            ws.Cell(4, 1).Style.Font.Italic = false;
+
+            var r = noteRow + 1;
+            var headerRow = r;
+            string[] headers = { "Entity", "KPI", "Unit", "Linked To", "Cost Driver", "Budget Cost (full year)", "Actual Cost (to date)",
+                "Baseline", "Target", "Actual",
+                "Planned Improvement", "Cost / Planned Improvement",
+                "Achieved Improvement", "Cost / Achieved Improvement", "Progress %" };
             for (var i = 0; i < headers.Length; i++) ws.Cell(r, i + 1).Value = headers[i];
             ApplyHeaderStyle(ws.Range(r, 1, r, headers.Length));
             r++;
@@ -1664,15 +1761,27 @@ namespace GovBudget.Controllers
                 ws.Cell(r, 4).Value = x.LinkLevel;
                 ws.Cell(r, 5).Value = x.LinkLabel;
                 if (x.LinkedCost.HasValue) ws.Cell(r, 6).Value = x.LinkedCost.Value;
-                if (x.Baseline.HasValue) ws.Cell(r, 7).Value = x.Baseline.Value;
-                if (x.Actual.HasValue) ws.Cell(r, 8).Value = x.Actual.Value;
-                if (x.Improvement.HasValue) ws.Cell(r, 9).Value = x.Improvement.Value;
-                if (x.CostPerImprovement.HasValue) ws.Cell(r, 10).Value = x.CostPerImprovement.Value;
-                ws.Cell(r, 6).Style.NumberFormat.Format = "#,##0.00";
-                ws.Cell(r, 10).Style.NumberFormat.Format = "#,##0.00";
+                if (x.LinkedActualCost.HasValue) ws.Cell(r, 7).Value = x.LinkedActualCost.Value;
+                if (x.Baseline.HasValue) ws.Cell(r, 8).Value = x.Baseline.Value;
+                if (x.Target.HasValue) ws.Cell(r, 9).Value = x.Target.Value;
+                if (x.Actual.HasValue) ws.Cell(r, 10).Value = x.Actual.Value;
+                if (x.PlannedImprovement.HasValue) ws.Cell(r, 11).Value = x.PlannedImprovement.Value;
+                if (x.CostPerPlannedImprovement.HasValue) ws.Cell(r, 12).Value = x.CostPerPlannedImprovement.Value;
+                if (x.Improvement.HasValue) ws.Cell(r, 13).Value = x.Improvement.Value;
+                if (x.CostPerImprovement.HasValue) ws.Cell(r, 14).Value = x.CostPerImprovement.Value;
+                if (x.ProgressPct.HasValue)
+                {
+                    ws.Cell(r, 15).Value = x.ProgressPct.Value / 100m;
+                    ws.Cell(r, 15).Style.NumberFormat.Format = "0.0%";
+                }
+                ws.Range(r, 6, r, 7).Style.NumberFormat.Format = "#,##0.00";
+                ws.Cell(r, 12).Style.NumberFormat.Format = "#,##0.00";
+                ws.Cell(r, 14).Style.NumberFormat.Format = "#,##0.00";
                 r++;
             }
-            ws.Columns(1, 10).AdjustToContents();
+            ws.Columns(1, 15).AdjustToContents();
+            ws.Column(1).Width = 14;
+            ws.SheetView.FreezeRows(headerRow);
         }
 
         private static void BuildCostPerOutputSheet(XLWorkbook wb, List<CostPerOutputRowVm> rows, int year, string entityLabel)
@@ -1997,11 +2106,25 @@ namespace GovBudget.Controllers
         public string Unit { get; set; } = "";
         public string LinkLevel { get; set; } = "";
         public string LinkLabel { get; set; } = "";
+        // Full-year budget of the linked activity / programme. Drives the planned unit cost.
         public decimal? LinkedCost { get; set; }
+        // Derived actual cost incurred so far on the same activity / programme. Null when no actuals
+        // have been imported. Drives the achieved unit cost, keeping numerator and denominator on the
+        // same period.
+        public decimal? LinkedActualCost { get; set; }
         public decimal? Baseline { get; set; }
+        public decimal? Target { get; set; }
         public decimal? Actual { get; set; }
+        // Planned improvement = Target - Baseline (direction-aware). Full-year commitment, so it is
+        // available before the actuals are complete.
+        public decimal? PlannedImprovement { get; set; }
+        public decimal? CostPerPlannedImprovement { get; set; }
+        // Achieved improvement = Actual - Baseline (direction-aware). Partial-year actuals often
+        // make this negative, which is why the planned figures sit alongside it.
         public decimal? Improvement { get; set; }
         public decimal? CostPerImprovement { get; set; }
+        // Achieved improvement as a % of the planned improvement.
+        public decimal? ProgressPct { get; set; }
         public string Status { get; set; } = "";
     }
 
