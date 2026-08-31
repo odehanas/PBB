@@ -31,11 +31,11 @@ namespace GovBudget.Controllers
             new GuideDoc(
                 "Complete Guide",
                 "Everything in one document: concepts, budget preparation, submission and approval, cost allocation, cost per hour, reports and administration.",
-                "GovBudget_Guide_EN.html", "EN", "Guide"),
+                "GovBudget_Guide_EN.html", "EN", "Complete"),
             new GuideDoc(
                 "الدليل الشامل",
                 "كل شيء في مستند واحد: المفاهيم، إعداد الموازنة، التقديم والاعتماد، توزيع التكاليف، تكلفة الساعة، التقارير والإدارة.",
-                "GovBudget_Guide_AR.html", "AR", "Guide"),
+                "GovBudget_Guide_AR.html", "AR", "Complete"),
             new GuideDoc(
                 "Power BI Reporting Guide",
                 "Technical reference for the combined-cost SQL views used in Power BI.",
