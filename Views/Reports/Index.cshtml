@@ -179,6 +179,13 @@
             </li>
             <li class="nav-item">
                 <a class="nav-link"
+                   asp-controller="Reports" asp-action="SubmissionReview"
+                   asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-clock-history app-nav-icon"></i>Submission Review
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link"
                    asp-controller="Reports" asp-action="Builder"
                    asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
                     <i class="bi bi-tools app-nav-icon"></i>Report Builder

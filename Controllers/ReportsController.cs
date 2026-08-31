@@ -387,6 +387,293 @@ namespace GovBudget.Controllers
             return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
         }
 
+        // ---------- Submission review: compare two versions of one submission ----------
+
+        [HttpGet]
+        public async Task<IActionResult> SubmissionReview(
+            int? year = null, int? entityId = null, int? deptId = null, int? categoryId = null,
+            long? fromId = null, long? toId = null)
+        {
+            var vm = await BuildSubmissionReview(year, entityId, deptId, categoryId, fromId, toId);
+            return View(vm);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> SubmissionReviewExport(
+            int? year = null, int? entityId = null, int? deptId = null, int? categoryId = null,
+            long? fromId = null, long? toId = null)
+        {
+            var vm = await BuildSubmissionReview(year, entityId, deptId, categoryId, fromId, toId);
+            if (!vm.HasResult)
+            {
+                TempData["Error"] = vm.Message ?? "Nothing to export.";
+                return RedirectToAction(nameof(SubmissionReview), new { year, entityId, deptId, categoryId, fromId, toId });
+            }
+
+            using var wb = new XLWorkbook();
+            BuildSubmissionReviewWorkbook(wb, vm);
+
+            using var stream = new MemoryStream();
+            wb.SaveAs(stream);
+            var name = $"SubmissionReview_{vm.Year}_{vm.ScopeLabel}_v{vm.From?.VersionNo}-v{vm.To?.VersionNo}.xlsx"
+                .Replace(' ', '_').Replace('/', '-');
+            return File(stream.ToArray(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", name);
+        }
+
+        private async Task<SubmissionReviewVm> BuildSubmissionReview(
+            int? year, int? entityId, int? deptId, int? categoryId, long? fromId, long? toId)
+        {
+            var thisYear = DateTime.Now.Year;
+            var selectedYear = year ?? HttpContext.Session.GetInt("ctxYear") ?? thisYear;
+
+            var isAdmin = User.IsInRole("ADMIN");
+            var isSysAdmin = User.IsInRole("SYSADMIN");
+            var isAdminLike = isAdmin || isSysAdmin;
+            var scopedEntityId = GetEntityClaimId();
+            var isGlobalAdmin = IsGlobalAdmin(isAdmin, isSysAdmin, scopedEntityId);
+            var effectiveEntityId = ResolveEntityScope(isAdminLike, isGlobalAdmin, entityId);
+
+            var vm = new SubmissionReviewVm
+            {
+                Year = selectedYear,
+                IsAdmin = isAdminLike,
+                EntityId = effectiveEntityId,
+                DepartmentId = deptId,
+                CategoryId = categoryId,
+                FromSubmissionId = fromId,
+                ToSubmissionId = toId,
+                YearOptions = new[] { thisYear - 1, thisYear, thisYear + 1, thisYear + 2 }
+                    .Select(y => new SelectListItem(y.ToString(), y.ToString(), y == selectedYear)).ToList(),
+            };
+
+            // ResolveEntityScope returns -1 for an account with no entity assigned. That
+            // would filter to nothing anyway, but relying on a sentinel to match no rows is
+            // implicit; refuse explicitly instead. This report exposes return notes and
+            // approver names, so the scope guard should be obvious rather than incidental.
+            if (effectiveEntityId.HasValue && effectiveEntityId.Value <= 0)
+            {
+                vm.Message = "Your account is not assigned to an entity, so no submissions are visible.";
+                return vm;
+            }
+
+            // Every submission this user is allowed to see, for the chosen year.
+            var scopeQuery = _db.BudgetSubmissions.AsNoTracking()
+                .Include(s => s.Entity).Include(s => s.Department).Include(s => s.Category)
+                .Where(s => s.BudgetYear == selectedYear);
+
+            if (effectiveEntityId.HasValue)
+            {
+                scopeQuery = scopeQuery.Where(s => s.EntityId == effectiveEntityId.Value);
+            }
+
+            var all = await scopeQuery.ToListAsync();
+
+            vm.EntityOptions = all.Select(s => new { s.EntityId, Label = s.Entity.EntityCode + " - " + s.Entity.EntityName })
+                .Distinct().OrderBy(x => x.Label)
+                .Select(x => new SelectListItem(x.Label, x.EntityId.ToString(), x.EntityId == effectiveEntityId))
+                .ToList();
+            if (isGlobalAdmin) vm.EntityOptions.Insert(0, new SelectListItem("Select entity", "", !effectiveEntityId.HasValue));
+
+            vm.DepartmentOptions = all.Where(s => !effectiveEntityId.HasValue || s.EntityId == effectiveEntityId.Value)
+                .Select(s => new { s.DepartmentId, Label = s.Department.DeptCode + " - " + s.Department.DeptName })
+                .Distinct().OrderBy(x => x.Label)
+                .Select(x => new SelectListItem(x.Label, x.DepartmentId.ToString(), x.DepartmentId == deptId))
+                .ToList();
+            vm.DepartmentOptions.Insert(0, new SelectListItem("Select cost centre", "", !deptId.HasValue));
+
+            vm.CategoryOptions = all.Select(s => new { s.CategoryId, Label = s.Category.CategoryCode })
+                .Distinct().OrderBy(x => x.Label)
+                .Select(x => new SelectListItem(x.Label, x.CategoryId.ToString(), x.CategoryId == categoryId))
+                .ToList();
+            vm.CategoryOptions.Insert(0, new SelectListItem("Select category", "", !categoryId.HasValue));
+
+            if (all.Count == 0)
+            {
+                vm.Message = $"No budget submissions exist for {selectedYear} within your access.";
+                return vm;
+            }
+
+            if (!effectiveEntityId.HasValue || !deptId.HasValue || !categoryId.HasValue)
+            {
+                vm.Message = "Choose an entity, cost centre and category to compare versions.";
+                return vm;
+            }
+
+            // The full version history for this one submission stream, oldest first.
+            var stream2 = all
+                .Where(s => s.EntityId == effectiveEntityId.Value
+                         && s.DepartmentId == deptId.Value
+                         && s.CategoryId == categoryId.Value)
+                .OrderBy(s => s.VersionNo)
+                .ToList();
+
+            vm.ScopeLabel = stream2.Count > 0
+                ? $"{stream2[0].Entity.EntityCode}/{stream2[0].Department.DeptCode} — {stream2[0].Category.CategoryCode}"
+                : "";
+
+            vm.VersionOptions = stream2
+                .Select(s => new SelectListItem($"v{s.VersionNo} — {s.Status}", s.SubmissionId.ToString()))
+                .ToList();
+
+            vm.Trail = BuildSubmissionTrail(stream2);
+
+            if (stream2.Count < 2)
+            {
+                vm.Message = stream2.Count == 1
+                    ? "This category has only one version, so there is nothing to compare yet. A comparison becomes available once a submission is returned and re-submitted."
+                    : "No submission found for that combination.";
+                return vm;
+            }
+
+            // Default to the widest span - first version against latest. That is the
+            // question a reviewer is usually asked: what did the whole cycle change?
+            var from = fromId.HasValue ? stream2.FirstOrDefault(s => s.SubmissionId == fromId.Value) : stream2.First();
+            var to = toId.HasValue ? stream2.FirstOrDefault(s => s.SubmissionId == toId.Value) : stream2.Last();
+            if (from == null || to == null)
+            {
+                vm.Message = "One of the selected versions is not part of this submission.";
+                return vm;
+            }
+
+            vm.From = from;
+            vm.To = to;
+            vm.FromSubmissionId = from.SubmissionId;
+            vm.ToSubmissionId = to.SubmissionId;
+            vm.VersionOptions = stream2
+                .Select(s => new SelectListItem($"v{s.VersionNo} — {s.Status}", s.SubmissionId.ToString()))
+                .ToList();
+
+            await PopulateSubmissionDiff(vm, from.SubmissionId, to.SubmissionId);
+            vm.HasResult = true;
+            return vm;
+        }
+
+        // Flattens each version's dated actions into one chronological trail. This is the
+        // part reviewers are actually asked for: who returned it, when, and why.
+        private static List<SubmissionTrailVm> BuildSubmissionTrail(List<BudgetSubmissions> versions)
+        {
+            var trail = new List<SubmissionTrailVm>();
+
+            foreach (var s in versions)
+            {
+                void Add(string action, DateTime? at, string? by, string? note)
+                {
+                    if (!at.HasValue && string.IsNullOrWhiteSpace(by)) return;
+                    trail.Add(new SubmissionTrailVm { VersionNo = s.VersionNo, Action = action, At = at, By = by, Note = note });
+                }
+
+                Add("Submitted", s.SubmittedAt, s.SubmittedBy, null);
+                Add("Returned", s.ReturnedAt, s.ReturnedBy, s.ReturnNote);
+                Add("Approved by entity", s.ApprovedAt, s.ApprovedBy, s.ApprovalNote);
+                Add("Sent to central", s.SentToCentralAt, s.SentToCentralBy, null);
+                Add("Approved centrally", s.SysApprovedAt, s.SysApprovedBy, s.SysApprovalNote);
+                Add("Finalised", s.FinalizedAt, s.FinalizedBy, null);
+            }
+
+            return trail
+                .OrderBy(t => t.VersionNo)
+                .ThenBy(t => t.At ?? DateTime.MaxValue)
+                .ToList();
+        }
+
+        private async Task PopulateSubmissionDiff(SubmissionReviewVm vm, long fromSubmissionId, long toSubmissionId)
+        {
+            var fromLines = await _db.BudgetSubmissionLines.AsNoTracking()
+                .Where(l => l.SubmissionId == fromSubmissionId).ToListAsync();
+            var toLines = await _db.BudgetSubmissionLines.AsNoTracking()
+                .Where(l => l.SubmissionId == toSubmissionId).ToListAsync();
+
+            // Same identity rule as the existing Variance screen, so the two agree.
+            static string Key(BudgetSubmissionLines l) =>
+                $"{l.ItemId}|{l.ProgramId}|{l.ActivityId}|{l.ProjectId}|{(l.Description ?? "").Trim()}";
+
+            var fromByKey = fromLines.GroupBy(Key).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+            var toByKey = toLines.GroupBy(Key).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+            var sample = fromLines.Concat(toLines).GroupBy(Key).ToDictionary(g => g.Key, g => g.First());
+
+            vm.TotalFrom = fromLines.Sum(l => l.Amount);
+            vm.TotalTo = toLines.Sum(l => l.Amount);
+
+            // Look-ups for the codes and names, resolved in bulk rather than per row.
+            var itemIds = sample.Values.Select(l => l.ItemId).Distinct().ToList();
+            var items = (await _db.Items.AsNoTracking().Where(i => itemIds.Contains(i.ItemId))
+                    .Select(i => new { i.ItemId, i.ItemCode, i.ItemName }).ToListAsync())
+                .ToDictionary(i => i.ItemId, i => i.ItemCode + " - " + i.ItemName);
+
+            var actIds = sample.Values.Where(l => l.ActivityId.HasValue).Select(l => l.ActivityId!.Value).Distinct().ToList();
+            var acts = (await _db.Activities.AsNoTracking().Where(a => actIds.Contains(a.ActivityId))
+                    .Select(a => new { a.ActivityId, a.ActivityCode, a.ActivityName, a.ProgramId }).ToListAsync())
+                .ToDictionary(a => a.ActivityId);
+
+            var progIds = sample.Values.Where(l => l.ProgramId.HasValue).Select(l => l.ProgramId!.Value)
+                .Concat(acts.Values.Select(a => a.ProgramId)).Distinct().ToList();
+            var progs = (await _db.Programs.AsNoTracking().Where(p => progIds.Contains(p.ProgramId))
+                    .Select(p => new { p.ProgramId, p.ProgramCode, p.ProgramName }).ToListAsync())
+                .ToDictionary(p => p.ProgramId, p => p.ProgramCode + " - " + p.ProgramName);
+
+            var projIds = sample.Values.Where(l => l.ProjectId.HasValue).Select(l => l.ProjectId!.Value).Distinct().ToList();
+            var projs = (await _db.Projects.AsNoTracking().Where(p => projIds.Contains(p.ProjectId))
+                    .Select(p => new { p.ProjectId, p.ProjectCode, p.ProjectName }).ToListAsync())
+                .ToDictionary(p => p.ProjectId, p => p.ProjectCode + " - " + p.ProjectName);
+
+            var lines = new List<SubmissionReviewLineVm>();
+
+            foreach (var key in fromByKey.Keys.Concat(toByKey.Keys).Distinct())
+            {
+                var hasFrom = fromByKey.TryGetValue(key, out var fromAmt);
+                var hasTo = toByKey.TryGetValue(key, out var toAmt);
+
+                // Status comes from whether the line EXISTS on each side, not from whether
+                // the amount happens to be zero: a line budgeted at zero is not the same
+                // thing as a line that was deleted, and a reviewer reads them differently.
+                var status = !hasFrom ? "Added" : !hasTo ? "Removed" : "Changed";
+
+                if (status == "Changed" && fromAmt == toAmt)
+                {
+                    vm.UnchangedCount++;
+                    continue;
+                }
+
+                var l = sample[key];
+                var programme =
+                    l.ProgramId.HasValue && progs.TryGetValue(l.ProgramId.Value, out var pd) ? pd
+                    : l.ActivityId.HasValue && acts.TryGetValue(l.ActivityId.Value, out var av)
+                        && progs.TryGetValue(av.ProgramId, out var pd2) ? pd2
+                    : "(no programme)";
+
+                lines.Add(new SubmissionReviewLineVm
+                {
+                    Status = status,
+                    Programme = programme,
+                    Activity = l.ActivityId.HasValue && acts.TryGetValue(l.ActivityId.Value, out var a)
+                        ? a.ActivityCode + " - " + a.ActivityName : "",
+                    Project = l.ProjectId.HasValue && projs.TryGetValue(l.ProjectId.Value, out var pr) ? pr : "",
+                    Item = items.TryGetValue(l.ItemId, out var it) ? it : l.ItemId.ToString(),
+                    Description = (l.Description ?? "").Trim(),
+                    FromAmount = hasFrom ? fromAmt : 0m,
+                    ToAmount = hasTo ? toAmt : 0m,
+                });
+            }
+
+            vm.AddedCount = lines.Count(x => x.Status == "Added");
+            vm.RemovedCount = lines.Count(x => x.Status == "Removed");
+            vm.ChangedCount = lines.Count(x => x.Status == "Changed");
+
+            vm.Lines = lines.OrderByDescending(x => Math.Abs(x.Delta)).ToList();
+
+            vm.Programmes = lines
+                .GroupBy(x => x.Programme)
+                .Select(g => new SubmissionReviewGroupVm
+                {
+                    Programme = g.Key,
+                    FromAmount = g.Sum(x => x.FromAmount),
+                    ToAmount = g.Sum(x => x.ToAmount),
+                })
+                .OrderByDescending(g => Math.Abs(g.Delta))
+                .ToList();
+        }
+
         // ---------- Report Builder ----------
 
         [HttpGet]
@@ -2100,6 +2387,118 @@ namespace GovBudget.Controllers
             ws.Columns(1, 8).AdjustToContents();
         }
 
+        // Three sheets, because a reviewer defending a decision needs all three: the
+        // headline movement, the lines behind it, and the dated record of who decided what.
+        private static void BuildSubmissionReviewWorkbook(XLWorkbook wb, SubmissionReviewVm vm)
+        {
+            var header = $"{vm.ScopeLabel}  —  v{vm.From?.VersionNo} ({vm.From?.Status}) → v{vm.To?.VersionNo} ({vm.To?.Status})";
+
+            // ---- Sheet 1: summary by programme ----
+            var ws = wb.Worksheets.Add("Summary");
+            ws.Cell(1, 1).Value = "Budget Submission Review";
+            ws.Cell(2, 1).Value = $"Year: {vm.Year}    {header}";
+            ws.Range(1, 1, 1, 5).Merge().Style.Font.Bold = true;
+            ws.Range(1, 1, 1, 5).Style.Font.FontSize = 14;
+            ws.Range(2, 1, 2, 5).Merge().Style.Font.Bold = true;
+
+            var r = 4;
+            ws.Cell(r, 1).Value = "Total before";
+            ws.Cell(r, 2).Value = vm.TotalFrom;
+            ws.Cell(r, 3).Value = "Total after";
+            ws.Cell(r, 4).Value = vm.TotalTo;
+            ws.Cell(r, 5).Value = "Change";
+            ws.Cell(r, 6).Value = vm.Delta;
+            ws.Range(r, 1, r, 6).Style.Font.Bold = true;
+            ws.Range(r, 2, r, 2).Style.NumberFormat.Format = "#,##0.00";
+            ws.Range(r, 4, r, 4).Style.NumberFormat.Format = "#,##0.00";
+            ws.Range(r, 6, r, 6).Style.NumberFormat.Format = "#,##0.00";
+
+            r += 1;
+            ws.Cell(r, 1).Value = $"Lines added: {vm.AddedCount}    removed: {vm.RemovedCount}    changed: {vm.ChangedCount}    unchanged: {vm.UnchangedCount}";
+            ws.Range(r, 1, r, 6).Merge().Style.Font.Italic = true;
+
+            r += 2;
+            ws.Cell(r, 1).Value = "Programme";
+            ws.Cell(r, 2).Value = "Before";
+            ws.Cell(r, 3).Value = "After";
+            ws.Cell(r, 4).Value = "Change";
+            ws.Cell(r, 5).Value = "Change %";
+            ApplyHeaderStyle(ws.Range(r, 1, r, 5));
+
+            r++;
+            foreach (var g in vm.Programmes)
+            {
+                ws.Cell(r, 1).Value = g.Programme;
+                ws.Cell(r, 2).Value = g.FromAmount;
+                ws.Cell(r, 3).Value = g.ToAmount;
+                ws.Cell(r, 4).Value = g.Delta;
+                if (g.DeltaPct.HasValue) ws.Cell(r, 5).Value = g.DeltaPct.Value;
+                ws.Range(r, 2, r, 4).Style.NumberFormat.Format = "#,##0.00";
+                ws.Cell(r, 5).Style.NumberFormat.Format = "0.00";
+                r++;
+            }
+            ws.Columns(1, 5).AdjustToContents();
+
+            // ---- Sheet 2: line detail ----
+            var wd = wb.Worksheets.Add("Changed lines");
+            wd.Cell(1, 1).Value = "Changed lines";
+            wd.Cell(2, 1).Value = $"Year: {vm.Year}    {header}";
+            wd.Range(1, 1, 1, 9).Merge().Style.Font.Bold = true;
+            wd.Range(1, 1, 1, 9).Style.Font.FontSize = 14;
+            wd.Range(2, 1, 2, 9).Merge().Style.Font.Bold = true;
+
+            var dr = 4;
+            string[] cols = { "Status", "Programme", "Activity", "Project", "Item", "Description", "Before", "After", "Change" };
+            for (var i = 0; i < cols.Length; i++) wd.Cell(dr, i + 1).Value = cols[i];
+            ApplyHeaderStyle(wd.Range(dr, 1, dr, cols.Length));
+
+            dr++;
+            foreach (var l in vm.Lines)
+            {
+                wd.Cell(dr, 1).Value = l.Status;
+                wd.Cell(dr, 2).Value = l.Programme;
+                wd.Cell(dr, 3).Value = l.Activity;
+                wd.Cell(dr, 4).Value = l.Project;
+                wd.Cell(dr, 5).Value = l.Item;
+                wd.Cell(dr, 6).Value = l.Description;
+                wd.Cell(dr, 7).Value = l.FromAmount;
+                wd.Cell(dr, 8).Value = l.ToAmount;
+                wd.Cell(dr, 9).Value = l.Delta;
+                wd.Range(dr, 7, dr, 9).Style.NumberFormat.Format = "#,##0.00";
+                dr++;
+            }
+            wd.Columns(1, cols.Length).AdjustToContents();
+
+            // ---- Sheet 3: approval trail ----
+            var wt = wb.Worksheets.Add("Approval trail");
+            wt.Cell(1, 1).Value = "Approval trail";
+            wt.Cell(2, 1).Value = $"Year: {vm.Year}    {vm.ScopeLabel}";
+            wt.Range(1, 1, 1, 5).Merge().Style.Font.Bold = true;
+            wt.Range(1, 1, 1, 5).Style.Font.FontSize = 14;
+            wt.Range(2, 1, 2, 5).Merge().Style.Font.Bold = true;
+
+            var tr = 4;
+            wt.Cell(tr, 1).Value = "Version";
+            wt.Cell(tr, 2).Value = "Action";
+            wt.Cell(tr, 3).Value = "When (UTC)";
+            wt.Cell(tr, 4).Value = "By";
+            wt.Cell(tr, 5).Value = "Note";
+            ApplyHeaderStyle(wt.Range(tr, 1, tr, 5));
+
+            tr++;
+            foreach (var t in vm.Trail)
+            {
+                wt.Cell(tr, 1).Value = "v" + t.VersionNo;
+                wt.Cell(tr, 2).Value = t.Action;
+                wt.Cell(tr, 3).Value = t.At?.ToString("yyyy-MM-dd HH:mm") ?? "";
+                wt.Cell(tr, 4).Value = t.By ?? "";
+                wt.Cell(tr, 5).Value = t.Note ?? "";
+                tr++;
+            }
+            wt.Columns(1, 5).AdjustToContents();
+            wt.Column(5).Width = Math.Min(wt.Column(5).Width, 70);
+        }
+
         private static void BuildHrHourlyRateWorksheet(XLWorkbook wb, HrHourlyRateVm vm, int year, string entityLabel)
         {
             const int LastCol = 14;
@@ -3598,6 +3997,88 @@ namespace GovBudget.Controllers
         public string Category { get; set; } = "";
         public decimal AllocationPct { get; set; }
         public decimal Amount { get; set; }
+    }
+
+    // ---------- Submission review: what changed between two versions ----------
+    //
+    // A returned budget is never edited in place - a Return spawns a new Draft as the
+    // next version and keeps the old one. That makes "what did our review actually
+    // change" answerable, but only if you can line two versions up against each other,
+    // which is what this report does.
+
+    public class SubmissionReviewVm
+    {
+        public int Year { get; set; }
+        public bool IsAdmin { get; set; }
+        public int? EntityId { get; set; }
+        public int? DepartmentId { get; set; }
+        public int? CategoryId { get; set; }
+        public long? FromSubmissionId { get; set; }
+        public long? ToSubmissionId { get; set; }
+
+        public List<SelectListItem> YearOptions { get; set; } = new();
+        public List<SelectListItem> EntityOptions { get; set; } = new();
+        public List<SelectListItem> DepartmentOptions { get; set; } = new();
+        public List<SelectListItem> CategoryOptions { get; set; } = new();
+        public List<SelectListItem> VersionOptions { get; set; } = new();
+
+        /// <summary>False until a scope is chosen and two versions exist to compare.</summary>
+        public bool HasResult { get; set; }
+
+        /// <summary>Why there is no result, when there isn't one. Shown to the user.</summary>
+        public string? Message { get; set; }
+
+        public string ScopeLabel { get; set; } = "";
+        public BudgetSubmissions? From { get; set; }
+        public BudgetSubmissions? To { get; set; }
+
+        public decimal TotalFrom { get; set; }
+        public decimal TotalTo { get; set; }
+        public decimal Delta => TotalTo - TotalFrom;
+        public decimal? DeltaPct => TotalFrom == 0m ? null : Math.Round(Delta / TotalFrom * 100m, 2);
+
+        public int AddedCount { get; set; }
+        public int RemovedCount { get; set; }
+        public int ChangedCount { get; set; }
+        public int UnchangedCount { get; set; }
+
+        public List<SubmissionReviewGroupVm> Programmes { get; set; } = new();
+        public List<SubmissionReviewLineVm> Lines { get; set; } = new();
+        public List<SubmissionTrailVm> Trail { get; set; } = new();
+    }
+
+    public class SubmissionReviewGroupVm
+    {
+        public string Programme { get; set; } = "";
+        public decimal FromAmount { get; set; }
+        public decimal ToAmount { get; set; }
+        public decimal Delta => ToAmount - FromAmount;
+        public decimal? DeltaPct => FromAmount == 0m ? null : Math.Round(Delta / FromAmount * 100m, 2);
+    }
+
+    public class SubmissionReviewLineVm
+    {
+        /// <summary>Added, Removed or Changed - decided by whether the line key exists on each side.</summary>
+        public string Status { get; set; } = "";
+        public string Programme { get; set; } = "";
+        public string Activity { get; set; } = "";
+        public string Project { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal FromAmount { get; set; }
+        public decimal ToAmount { get; set; }
+        public decimal Delta => ToAmount - FromAmount;
+        public decimal? DeltaPct => FromAmount == 0m ? null : Math.Round(Delta / FromAmount * 100m, 2);
+    }
+
+    /// <summary>One dated action in the approval history - the evidence of who decided what.</summary>
+    public class SubmissionTrailVm
+    {
+        public int VersionNo { get; set; }
+        public string Action { get; set; } = "";
+        public DateTime? At { get; set; }
+        public string? By { get; set; }
+        public string? Note { get; set; }
     }
 
     // Employee cost per hour. Rows come straight from core.vw_HrEmployeeHourlyRates,

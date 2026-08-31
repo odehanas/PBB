@@ -1,0 +1,222 @@
+@model GovBudget.Controllers.SubmissionReviewVm
+
+@{
+    ViewData["Title"] = "Submission Review";
+
+    string DeltaClass(decimal d) => d > 0 ? "text-danger" : d < 0 ? "text-success" : "text-muted";
+    string StatusBadge(string s) => s switch
+    {
+        "Added" => "bg-success",
+        "Removed" => "bg-danger",
+        _ => "bg-secondary"
+    };
+}
+
+<div class="container-fluid py-3 report-dense">
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h3 class="mb-0">Submission Review</h3>
+            <div class="text-muted small">
+                What changed between two versions of a budget submission, and the record of who
+                decided what. Use it to evidence a review or approval.
+            </div>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary d-print-none" asp-action="Index" asp-route-year="@Model.Year">Back to Reports</a>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-warning d-print-none">@TempData["Error"]</div>
+    }
+
+    <form method="get" class="row g-2 align-items-end mb-3 d-print-none">
+        <div class="col-auto">
+            <label class="form-label">Year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="Model.YearOptions"></select>
+        </div>
+        @if (Model.IsAdmin && Model.EntityOptions.Count > 1)
+        {
+            <div class="col-md-3">
+                <label class="form-label">Entity</label>
+                <select name="entityId" class="form-select form-select-sm" asp-items="Model.EntityOptions"></select>
+            </div>
+        }
+        <div class="col-md-3">
+            <label class="form-label">Cost centre</label>
+            <select name="deptId" class="form-select form-select-sm" asp-items="Model.DepartmentOptions"></select>
+        </div>
+        <div class="col-auto">
+            <label class="form-label">Category</label>
+            <select name="categoryId" class="form-select form-select-sm" asp-items="Model.CategoryOptions"></select>
+        </div>
+        @if (Model.VersionOptions.Count > 1)
+        {
+            <div class="col-auto">
+                <label class="form-label">Compare</label>
+                <select name="fromId" class="form-select form-select-sm"
+                        asp-items="@(new SelectList(Model.VersionOptions, "Value", "Text", Model.FromSubmissionId))"></select>
+            </div>
+            <div class="col-auto">
+                <label class="form-label">with</label>
+                <select name="toId" class="form-select form-select-sm"
+                        asp-items="@(new SelectList(Model.VersionOptions, "Value", "Text", Model.ToSubmissionId))"></select>
+            </div>
+        }
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-primary">Compare</button>
+        </div>
+        @if (Model.HasResult)
+        {
+            <div class="col-auto">
+                <a class="btn btn-sm btn-outline-success"
+                   asp-action="SubmissionReviewExport"
+                   asp-route-year="@Model.Year" asp-route-entityId="@Model.EntityId"
+                   asp-route-deptId="@Model.DepartmentId" asp-route-categoryId="@Model.CategoryId"
+                   asp-route-fromId="@Model.FromSubmissionId" asp-route-toId="@Model.ToSubmissionId">
+                    Download Excel
+                </a>
+            </div>
+            <div class="col-auto">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">Print</button>
+            </div>
+        }
+    </form>
+
+    @if (!Model.HasResult)
+    {
+        <div class="alert alert-info">@(Model.Message ?? "Choose a submission to compare.")</div>
+
+        @if (Model.Trail.Count > 0)
+        {
+            <partial name="_SubmissionTrail" model="Model.Trail" />
+        }
+    }
+    else
+    {
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold">
+                @Model.ScopeLabel
+                <span class="text-muted fw-normal">
+                    &nbsp;v@(Model.From!.VersionNo) (@Model.From!.Status)
+                    &rarr; v@(Model.To!.VersionNo) (@Model.To!.Status)
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="text-muted small">Total before</div>
+                        <div class="fw-bold fs-5">@Model.TotalFrom.ToString("N2")</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Total after</div>
+                        <div class="fw-bold fs-5">@Model.TotalTo.ToString("N2")</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Change</div>
+                        <div class="fw-bold fs-5 @DeltaClass(Model.Delta)">
+                            @(Model.Delta > 0 ? "+" : "")@Model.Delta.ToString("N2")
+                            @if (Model.DeltaPct.HasValue)
+                            {
+                                <span class="fs-6">(@Model.DeltaPct.Value.ToString("0.##")%)</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Lines</div>
+                        <div class="mt-1">
+                            <span class="badge bg-success">@Model.AddedCount added</span>
+                            <span class="badge bg-danger">@Model.RemovedCount removed</span>
+                            <span class="badge bg-secondary">@Model.ChangedCount changed</span>
+                        </div>
+                        <div class="text-muted" style="font-size:.72rem;">@Model.UnchangedCount unchanged (not listed)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (Model.Programmes.Count > 0)
+        {
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white fw-bold">Movement by programme</div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Programme</th>
+                                    <th class="text-end">Before</th>
+                                    <th class="text-end">After</th>
+                                    <th class="text-end">Change</th>
+                                    <th class="text-end">Change %</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var g in Model.Programmes)
+                            {
+                                <tr>
+                                    <td>@ReportLabel.SplitCodeName(g.Programme)</td>
+                                    <td class="text-end">@g.FromAmount.ToString("N2")</td>
+                                    <td class="text-end">@g.ToAmount.ToString("N2")</td>
+                                    <td class="text-end fw-bold @DeltaClass(g.Delta)">@(g.Delta > 0 ? "+" : "")@g.Delta.ToString("N2")</td>
+                                    <td class="text-end @DeltaClass(g.Delta)">@(g.DeltaPct.HasValue ? g.DeltaPct.Value.ToString("0.##") + "%" : "-")</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold">Changed lines</div>
+            <div class="card-body p-0">
+                @if (Model.Lines.Count == 0)
+                {
+                    <div class="p-3 text-muted">
+                        The two versions contain identical figures &mdash; nothing changed between them.
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Programme</th>
+                                    <th>Activity</th>
+                                    <th>Project</th>
+                                    <th>Item</th>
+                                    <th>Description</th>
+                                    <th class="text-end">Before</th>
+                                    <th class="text-end">After</th>
+                                    <th class="text-end">Change</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var l in Model.Lines)
+                            {
+                                <tr>
+                                    <td><span class="badge @StatusBadge(l.Status)">@l.Status</span></td>
+                                    <td>@ReportLabel.SplitCodeName(l.Programme)</td>
+                                    <td>@ReportLabel.SplitCodeName(l.Activity)</td>
+                                    <td>@ReportLabel.SplitCodeName(l.Project)</td>
+                                    <td>@ReportLabel.SplitCodeName(l.Item)</td>
+                                    <td>@l.Description</td>
+                                    <td class="text-end">@l.FromAmount.ToString("N2")</td>
+                                    <td class="text-end">@l.ToAmount.ToString("N2")</td>
+                                    <td class="text-end fw-bold @DeltaClass(l.Delta)">@(l.Delta > 0 ? "+" : "")@l.Delta.ToString("N2")</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <partial name="_SubmissionTrail" model="Model.Trail" />
+    }
+</div>
