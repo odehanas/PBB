@@ -62,6 +62,36 @@ namespace GovBudget.Utils
         }
 
         /// <summary>
+        /// The reference code alone, for chart axis labels.
+        ///
+        /// Charts have no room for "DAM-04 - Archaeological Sites and Collections
+        /// Protection, Conservation and Management ..." - Chart.js tilts labels that long
+        /// to 45 degrees and they consume half the plot area. The code identifies the
+        /// programme perfectly well; the full name belongs in the tooltip.
+        ///
+        /// A value with no " - " separator (a category, a GL type) has nothing to strip,
+        /// so it is returned as-is, trimmed only if it is genuinely long.
+        /// </summary>
+        public static string CodeOnly(string? combined, int maxLengthWhenNoCode = 28)
+        {
+            var value = (combined ?? "").Trim();
+            if (value.Length == 0)
+            {
+                return "";
+            }
+
+            var sep = value.IndexOf(" - ", StringComparison.Ordinal);
+            if (sep > 0)
+            {
+                return value[..sep];
+            }
+
+            return value.Length <= maxLengthWhenNoCode
+                ? value
+                : value[..(maxLengthWhenNoCode - 1)].TrimEnd() + "…";
+        }
+
+        /// <summary>
         /// True when the text contains a character from the Arabic block. Used only to
         /// tag the element for styling - direction is handled by dir="auto".
         /// </summary>

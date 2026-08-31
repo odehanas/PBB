@@ -841,7 +841,13 @@ namespace GovBudget.Controllers
         {
             // Cap to top 25 rows for readable charts.
             var rows = result.Rows.Take(25).ToList();
-            var labels = rows.Select(r => r.Key).ToList();
+
+            // Axis labels are the reference code only. A full "CODE - Name" label on a
+            // programme or activity chart is long enough that Chart.js tilts it and the
+            // labels eat half the plot area. The full text is carried alongside and shown
+            // in the tooltip, so nothing is actually lost.
+            var labels = rows.Select(r => ReportLabel.CodeOnly(r.Key)).ToList();
+            var fullLabels = rows.Select(r => r.Key).ToList();
             var palette = new[] { "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac" };
 
             object data;
@@ -871,7 +877,7 @@ namespace GovBudget.Controllers
                     }
                 };
             }
-            return JsonSerializer.Serialize(new { type = chartType, data });
+            return JsonSerializer.Serialize(new { type = chartType, data, fullLabels });
         }
 
         private static string NormalizeReport(string? report)

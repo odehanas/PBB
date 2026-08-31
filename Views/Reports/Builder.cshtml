@@ -335,10 +335,24 @@
                 const cfg = @Html.Raw(Model.ChartJson);
                 const ctx = document.getElementById('reportChart');
                 if (ctx && cfg) {
+                    // Axis labels carry the reference code only, so the tooltip restores
+                    // the full "CODE - Name" on hover; nothing is hidden, just moved.
+                    const full = cfg.fullLabels || [];
                     cfg.options = {
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: cfg.type === 'pie' || (cfg.data.datasets && cfg.data.datasets.length > 1) } }
+                        plugins: {
+                            legend: { display: cfg.type === 'pie' || (cfg.data.datasets && cfg.data.datasets.length > 1) },
+                            tooltip: {
+                                callbacks: {
+                                    title: function (items) {
+                                        if (!items.length) return '';
+                                        const i = items[0].dataIndex;
+                                        return full[i] || items[0].label || '';
+                                    }
+                                }
+                            }
+                        }
                     };
                     new Chart(ctx, cfg);
                 }
