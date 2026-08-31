@@ -10,8 +10,12 @@ html {
   --app-bg: #f5f7fb;
   --app-card: #ffffff;
   --app-border: rgba(0, 0, 0, 0.08);
-  /* Sidebar uses the brand green so it stays within the app theme. */
-  --app-sidebar-bg: #0a5b43;
+
+  /* Sidebar: navy blue fading into slate grey. Deliberately independent of the
+     DOF green, which stays on table headers, badges and the Excel exports so the
+     department's brand identity is unchanged where it carries meaning. */
+  --app-sidebar-bg: #16233d;
+  --app-sidebar-bg-2: #3c4655;
 
   /* DOF brand palette used for section / table headers and Excel exports.
      Keep in sync with the C# BrandColors constants used by ClosedXML. */
@@ -50,7 +54,8 @@ html {
   --app-card: #12263d;
   --app-card-2: #17304b;
   --app-border: rgba(255, 255, 255, 0.14);
-  --app-sidebar-bg: #0a5b43;
+  --app-sidebar-bg: #101a2e;
+  --app-sidebar-bg-2: #2b3340;
 
   --bs-body-bg: var(--app-bg);
   --bs-body-color: rgba(255, 255, 255, 0.92);
@@ -148,8 +153,8 @@ body {
 
 .app-sidebar {
   background-color: var(--app-sidebar-bg);
-  background-image: linear-gradient(180deg, var(--app-primary-dark) 0%, var(--app-sidebar-bg) 100%);
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  background-image: linear-gradient(180deg, var(--app-sidebar-bg) 0%, var(--app-sidebar-bg-2) 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.10);
   position: fixed;
   top: 0;
   bottom: 0;
@@ -161,21 +166,33 @@ body {
 
 [data-bs-theme="dark"] .app-sidebar {
   background-color: var(--app-sidebar-bg);
-  background-image: linear-gradient(180deg, #0a5b43 0%, #062c3f 100%);
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  background-image: linear-gradient(180deg, #101a2e 0%, #2b3340 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.10);
 }
 
+/* The logo artwork is multi-coloured, so it loses definition when it sits
+   straight on a dark panel. Giving it its own light plate keeps it legible and
+   correctly coloured regardless of what the sidebar behind it is doing. */
 .app-brand {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 6px 2px;
+  padding: 10px 12px;
+  margin: 4px 0 2px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+[data-bs-theme="dark"] .app-brand {
+  /* Very slightly warm off-white: pure white glares against a dark UI. */
+  background: #f2f4f7;
 }
 
 .app-brand-logo {
-  max-width: 220px;
-  height: 42px;
+  max-width: 100%;
+  height: 46px;
   object-fit: contain;
 }
 
@@ -539,6 +556,17 @@ body.app-loading .app-progress {
   }
 }
 
+/* ==========================================================================
+   Print
+   Reports are wide (employee -> programme -> activity -> GL, with bilingual
+   labels), so landscape is the default rather than something to remember in
+   the browser dialog every time.
+   ========================================================================== */
+@page {
+  size: A4 landscape;
+  margin: 10mm;
+}
+
 @media print {
   body {
     background: #fff !important;
@@ -546,19 +574,27 @@ body.app-loading .app-progress {
   }
 
   .app-sidebar,
+  .app-topbar,
   footer,
   .footer {
     display: none !important;
   }
 
+  /* The sidebar is hidden above, but .app-page still carries the 280px left
+     margin that makes room for it on screen. Left in place it wastes roughly a
+     third of every printed page - which is the blank band down the left of the
+     old print preview. */
   .app-page {
     background: #fff !important;
+    margin-left: 0 !important;
   }
 
   .container-fluid,
   .container {
     max-width: 100% !important;
+    width: 100% !important;
     padding: 0 !important;
+    margin: 0 !important;
   }
 
   .card {
@@ -566,7 +602,57 @@ body.app-loading .app-progress {
     box-shadow: none !important;
   }
 
+  /* A scroll container is meaningless on paper and clips the overflow instead
+     of letting it wrap onto the page. */
+  .table-responsive {
+    overflow: visible !important;
+  }
+
   .table {
-    font-size: 11px;
+    font-size: 9.5px;
+    width: 100% !important;
+    table-layout: fixed;
+  }
+
+  .table th,
+  .table td {
+    padding: 2px 4px !important;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  /* Repeat the header row at the top of every page. On a 23-page allocation
+     report, pages 2-23 are otherwise unlabelled columns of numbers. */
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* Never split a row - a figure landing on a different page from its label is
+     worse than a slightly short page. */
+  tr,
+  img {
+    page-break-inside: avoid;
+  }
+
+  h1, h2, h3, h4, h5 {
+    page-break-after: avoid;
+  }
+
+  /* Colour-printing a heavy header band wastes toner and reads poorly in
+     greyscale; keep the structure, drop the fill. */
+  .dof-thead th,
+  .dof-head,
+  .table-light th {
+    background: #f1f1f1 !important;
+    color: #000 !important;
+    border-color: #999 !important;
+  }
+
+  a[href]::after {
+    content: none !important;
   }
 }
