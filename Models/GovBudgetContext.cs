@@ -77,6 +77,10 @@ public partial class GovBudgetContext : DbContext
 
     public virtual DbSet<vw_GL_CashBasis> vw_GL_CashBasis { get; set; }
 
+    public virtual DbSet<vw_HrEmployeeHourlyRates> vw_HrEmployeeHourlyRates { get; set; }
+
+    public virtual DbSet<WorkCalendars> WorkCalendars { get; set; }
+
     public virtual DbSet<Kpis> Kpis { get; set; }
 
     public virtual DbSet<KpiCostLinks> KpiCostLinks { get; set; }
@@ -691,6 +695,62 @@ public partial class GovBudgetContext : DbContext
                 .HasForeignKey(d => d.ProjectId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_WhatIfScenarioProjectRates_Project");
+        });
+
+        modelBuilder.Entity<WorkCalendars>(entity =>
+        {
+            entity.HasKey(e => e.CalendarId);
+
+            entity.ToTable("WorkCalendars", "core");
+
+            // One calendar per entity per year. SQL Server treats NULLs as equal in a
+            // unique constraint, which conveniently allows exactly one default row
+            // (EntityId NULL) per year.
+            entity.HasIndex(e => new { e.BudgetYear, e.EntityId }, "UQ_WorkCalendars_YearEntity").IsUnique();
+
+            entity.Property(e => e.CalendarName).HasMaxLength(100);
+            entity.Property(e => e.HoursPerDay).HasColumnType("decimal(5, 2)");
+            entity.Property(e => e.WorkDaysPerWeek).HasColumnType("decimal(4, 2)");
+            entity.Property(e => e.WeeksPerYear).HasColumnType("decimal(5, 2)");
+            entity.Property(e => e.PublicHolidayDays).HasColumnType("decimal(5, 2)");
+            entity.Property(e => e.AnnualLeaveDays).HasColumnType("decimal(5, 2)");
+            entity.Property(e => e.OtherPaidAbsenceDays).HasColumnType("decimal(5, 2)");
+            entity.Property(e => e.UtilisationPct).HasColumnType("decimal(5, 2)");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedBy).HasMaxLength(100);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(100);
+
+            entity.HasOne(d => d.Entity).WithMany()
+                .HasForeignKey(d => d.EntityId)
+                .HasConstraintName("FK_WorkCalendars_Entity");
+        });
+
+        // Employee cost per hour. Read-only: the view derives every figure below
+        // AnnualCost from core.WorkCalendars, so nothing here is ever written.
+        modelBuilder.Entity<vw_HrEmployeeHourlyRates>(entity =>
+        {
+            entity
+                .HasNoKey()
+                .ToView("vw_HrEmployeeHourlyRates", "core");
+
+            entity.Property(e => e.EmployeeId).HasMaxLength(50);
+            entity.Property(e => e.EmployeeName).HasMaxLength(200);
+            entity.Property(e => e.Occupation).HasMaxLength(150);
+            entity.Property(e => e.EntityName).HasMaxLength(200);
+            entity.Property(e => e.DepartmentName).HasMaxLength(200);
+            entity.Property(e => e.CalendarName).HasMaxLength(100);
+            entity.Property(e => e.AnnualCost).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.HoursPerDay).HasColumnType("decimal(5, 2)");
+            entity.Property(e => e.WorkDaysPerWeek).HasColumnType("decimal(4, 2)");
+            entity.Property(e => e.GrossPaidHours).HasColumnType("decimal(9, 2)");
+            entity.Property(e => e.HolidayHours).HasColumnType("decimal(9, 2)");
+            entity.Property(e => e.LeaveHours).HasColumnType("decimal(9, 2)");
+            entity.Property(e => e.OtherAbsenceHours).HasColumnType("decimal(9, 2)");
+            entity.Property(e => e.ProductiveHours).HasColumnType("decimal(9, 2)");
+            entity.Property(e => e.OverrideHours).HasColumnType("decimal(9, 2)");
+            entity.Property(e => e.EffectiveHours).HasColumnType("decimal(9, 2)");
+            entity.Property(e => e.StandardRatePerHour).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.NominalRatePerHour).HasColumnType("decimal(18, 4)");
         });
 
         modelBuilder.Entity<vw_GL_CashBasis>(entity =>

@@ -46,6 +46,7 @@ namespace GovBudget.Utils
         public const string Activities = "ACTIVITIES";
         public const string Projects = "PROJECTS";
         public const string HrCosts = "HR_COSTS";
+        public const string WorkCalendar = "WORK_CALENDAR";
         public const string Actuals = "ACTUALS";
         public const string Allocation = "ALLOCATION";
         public const string AuditLog = "AUDIT";
@@ -75,6 +76,7 @@ namespace GovBudget.Utils
             new() { Key = Users,     Group = GroupAdmin, Display = "Users",            Description = "Create and maintain application users." },
             new() { Key = Roles,     Group = GroupAdmin, Display = "Roles & Rights",   Description = "This screen. Only grant to trusted system admins." },
             new() { Key = HrCosts,   Group = GroupAdmin, Display = "HR Costs",         Description = "Import and review imported employee costs." },
+            new() { Key = WorkCalendar, Group = GroupAdmin, Display = "Work Calendars", Description = "Working hours, holidays and leave used for the employee cost per hour." },
             new() { Key = Actuals,   Group = GroupAdmin, Display = "Actuals",          Description = "Import SAP GL / MM and HR actuals." },
             new() { Key = Allocation, Group = GroupAdmin, Display = "Cost Allocation", Description = "Allocation drivers, rules and runs." },
             new() { Key = AuditLog,  Group = GroupAdmin, Display = "Audit Log",        Description = "System audit trail.", ViewOnlyByNature = true },

@@ -147,6 +147,16 @@
                     </div>
                 </div>
 
+                <div class="col">
+                    <div class="card h-100 border-info">
+                        <div class="card-body">
+                            <h5 class="card-title">Work Calendars</h5>
+                            <p class="card-text">Working hours, holidays and leave behind the employee cost per hour.</p>
+                            <a asp-controller="WorkCalendar" asp-action="Index" class="btn btn-info">Open</a>
+                        </div>
+                    </div>
+                </div>
+
                 @if (canManageHistorical)
                 {
                     <div class="col">
@@ -307,6 +317,13 @@
                             <td>Import employee annual costs and allocate to activities.</td>
                             <td class="text-end">
                                 <a asp-controller="HrCosts" asp-action="Index" class="btn btn-sm btn-info">Open</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Work Calendars</td>
+                            <td>Working hours, holidays and leave behind the employee cost per hour.</td>
+                            <td class="text-end">
+                                <a asp-controller="WorkCalendar" asp-action="Index" class="btn btn-sm btn-info">Open</a>
                             </td>
                         </tr>
                         @if (canManageHistorical)

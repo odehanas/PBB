@@ -30,6 +30,15 @@
 
 		<!-- Internal security material stays in the repository; it is never deployed. -->
 		<Content Remove="docs\Security_Review.md" />
+		<!-- Infrastructure documents describe the hosting environment; no reason to serve them. -->
+		<Content Remove="docs\Hosting_Requirements_EGA.md" />
+		<Content Remove="docs\EGA_Hosting_Summary.md" />
+		<Content Remove="docs\Sandbox_Provisioning.md" />
+		<Content Remove="docs\Azure_Migration.md" />
+		<Content Remove="docs\DEPLOY.md" />
+		<Content Remove="docs\GovBudget_Architecture_Deployment_Sandbox.html" />
+		<Content Remove="docs\GovBudget_EGA_Technical_Requirements.html" />
+		<Content Remove="docs\EGA_Onboarding_Questionnaire_Answers.html" />
 	</ItemGroup>
 
 	<!--

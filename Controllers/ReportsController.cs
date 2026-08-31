@@ -195,6 +195,10 @@ namespace GovBudget.Controllers
                 ViewBag.HrAllocatedTotal = allocatedTotal;
                 ViewBag.HrUnallocatedTotal = importedTotal - allocatedTotal;
             }
+            else if (report == "hrrate")
+            {
+                vm.HrHourlyRates = await BuildHrHourlyRates(selectedYear, effectiveEntityId);
+            }
             else if (report == "entitysummary")
             {
                 vm.EntitySummary = await BuildEntityBudgetSummary(selectedYear, effectiveEntityId);
@@ -358,6 +362,11 @@ namespace GovBudget.Controllers
             {
                 var hr = await BuildHrAllocations(selectedYear, effectiveEntityId);
                 BuildHrAllocationsWorksheet(wb, hr, selectedYear, entityLabel);
+            }
+            else if (report == "hrrate")
+            {
+                var rates = await BuildHrHourlyRates(selectedYear, effectiveEntityId);
+                BuildHrHourlyRateWorksheet(wb, rates, selectedYear, entityLabel);
             }
             else if (report == "entitysummary")
             {
@@ -876,6 +885,7 @@ namespace GovBudget.Controllers
                 "activities" => "activities",
                 "activitiesalloc" => "activitiesalloc",
                 "hralloc" => "hralloc",
+                "hrrate" => "hrrate",
                 "entitysummary" => "entitysummary",
                 "trend" => "trend",
                 _ => "income"
@@ -2013,6 +2023,100 @@ namespace GovBudget.Controllers
             ws.Columns(1, 8).AdjustToContents();
         }
 
+        private static void BuildHrHourlyRateWorksheet(XLWorkbook wb, HrHourlyRateVm vm, int year, string entityLabel)
+        {
+            const int LastCol = 14;
+            var ws = wb.Worksheets.Add("Employee Cost per Hour");
+            ws.Cell(1, 1).Value = "Employee Cost per Hour (standard / fully loaded)";
+            ws.Cell(2, 1).Value = $"Year: {year}    Entity: {entityLabel}";
+            ws.Range(1, 1, 1, LastCol).Merge().Style.Font.Bold = true;
+            ws.Range(1, 1, 1, LastCol).Style.Font.FontSize = 14;
+            ws.Range(2, 1, 2, LastCol).Merge().Style.Font.Bold = true;
+
+            // The basis has to travel with the file: an hourly rate with no stated
+            // divisor is the kind of number that gets quoted out of context.
+            ws.Cell(3, 1).Value =
+                "Standard rate = annual cost / productive hours (contracted hours less paid public holidays and annual leave). " +
+                "Paid leave sits inside annual cost, so it is absorbed into the rate - this is the rate to use for costing. " +
+                "Nominal rate divides by contracted hours and is shown for reference only.";
+            ws.Range(3, 1, 3, LastCol).Merge();
+            ws.Cell(3, 1).Style.Font.Italic = true;
+            ws.Cell(3, 1).Style.Font.FontColor = XLColor.Gray;
+
+            var row = 5;
+            ws.Cell(row, 1).Value = "Blended rate / hour";
+            ws.Cell(row, 2).Value = vm.BlendedRatePerHour ?? 0m;
+            ws.Cell(row, 2).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 3).Value = "Employees";
+            ws.Cell(row, 4).Value = vm.EmployeeCount - vm.VacancyCount;
+            ws.Cell(row, 5).Value = "Vacant posts (excluded)";
+            ws.Cell(row, 6).Value = vm.VacancyCount;
+            ws.Cell(row, 7).Value = "No calendar";
+            ws.Cell(row, 8).Value = vm.MissingCalendarCount;
+            ws.Range(row, 1, row, 8).Style.Font.Bold = true;
+
+            row += 2;
+            ws.Cell(row, 1).Value = "Employee ID";
+            ws.Cell(row, 2).Value = "Employee Name";
+            ws.Cell(row, 3).Value = "Occupation";
+            ws.Cell(row, 4).Value = "Entity";
+            ws.Cell(row, 5).Value = "Cost Center";
+            ws.Cell(row, 6).Value = "Annual Cost";
+            ws.Cell(row, 7).Value = "Gross Paid Hours";
+            ws.Cell(row, 8).Value = "Holiday Hours";
+            ws.Cell(row, 9).Value = "Leave Hours";
+            ws.Cell(row, 10).Value = "Productive Hours";
+            ws.Cell(row, 11).Value = "Effective Hours";
+            ws.Cell(row, 12).Value = "Standard Rate / Hour";
+            ws.Cell(row, 13).Value = "Nominal Rate / Hour";
+            ws.Cell(row, 14).Value = "Note";
+            ApplyHeaderStyle(ws.Range(row, 1, row, LastCol));
+
+            row++;
+            foreach (var r in vm.Rows)
+            {
+                ws.Cell(row, 1).Value = r.EmployeeId;
+                ws.Cell(row, 2).Value = r.EmployeeName;
+                ws.Cell(row, 3).Value = r.Occupation ?? "";
+                ws.Cell(row, 4).Value = r.EntityName;
+                ws.Cell(row, 5).Value = r.DepartmentName;
+                ws.Cell(row, 6).Value = r.AnnualCost;
+                ws.Cell(row, 7).Value = r.GrossPaidHours ?? 0m;
+                ws.Cell(row, 8).Value = r.HolidayHours ?? 0m;
+                ws.Cell(row, 9).Value = r.LeaveHours ?? 0m;
+                ws.Cell(row, 10).Value = r.ProductiveHours ?? 0m;
+                ws.Cell(row, 11).Value = r.EffectiveHours ?? 0m;
+
+                if (r.StandardRatePerHour.HasValue)
+                {
+                    ws.Cell(row, 12).Value = r.StandardRatePerHour.Value;
+                }
+
+                if (r.NominalRatePerHour.HasValue)
+                {
+                    ws.Cell(row, 13).Value = r.NominalRatePerHour.Value;
+                }
+
+                ws.Cell(row, 14).Value =
+                    r.IsVacancy == true ? "Vacant post - part-year cost, rate not meaningful"
+                    : r.IsRateAvailable != true ? "No work calendar for this year"
+                    : r.OverrideHours.HasValue ? "Hours overridden for this employee"
+                    : "";
+
+                ws.Range(row, 6, row, 11).Style.NumberFormat.Format = "#,##0.00";
+                ws.Range(row, 12, row, 13).Style.NumberFormat.Format = "#,##0.0000";
+
+                if (r.IsVacancy == true || r.IsRateAvailable != true)
+                {
+                    ws.Range(row, 1, row, LastCol).Style.Font.FontColor = XLColor.Gray;
+                }
+
+                row++;
+            }
+
+            ws.Columns(1, LastCol).AdjustToContents();
+        }
+
         private static void BuildEntitySummaryWorksheet(XLWorkbook wb, List<EntityBudgetSummaryRowVm> rows, int year, string entityLabel)
         {
             var ws = wb.Worksheets.Add("Entity Summary");
@@ -2718,6 +2822,59 @@ namespace GovBudget.Controllers
             return PartialView("_GlDetail", vm);
         }
 
+        // Employee cost per hour, read from core.vw_HrEmployeeHourlyRates.
+        // Purely derived and read-only: this touches no table the budget entry,
+        // HR import or allocation paths write to.
+        private async Task<HrHourlyRateVm> BuildHrHourlyRates(int year, int? entityId)
+        {
+            var query = _db.vw_HrEmployeeHourlyRates
+                .AsNoTracking()
+                .Where(x => x.BudgetYear == year);
+
+            if (entityId.HasValue)
+            {
+                query = query.Where(x => x.EntityId == entityId.Value);
+            }
+
+            var rows = await query
+                .OrderBy(x => x.EntityName)
+                .ThenBy(x => x.DepartmentName)
+                .ThenByDescending(x => x.AnnualCost)
+                .Take(5000)
+                .ToListAsync();
+
+            var vm = new HrHourlyRateVm
+            {
+                Rows = rows,
+                EmployeeCount = rows.Count,
+                VacancyCount = rows.Count(r => r.IsVacancy == true),
+                MissingCalendarCount = rows.Count(r => r.IsRateAvailable != true)
+            };
+
+            // Blended figures exclude vacant posts: their cost is budgeted for a
+            // part year, so including them would drag the organisational rate down
+            // against hours nobody is going to work.
+            var rated = rows
+                .Where(r => r.IsVacancy != true && r.IsRateAvailable == true && r.EffectiveHours > 0m)
+                .ToList();
+
+            vm.TotalAnnualCost = rated.Sum(r => r.AnnualCost);
+            vm.TotalEffectiveHours = rated.Sum(r => r.EffectiveHours ?? 0m);
+
+            if (vm.TotalEffectiveHours > 0m)
+            {
+                vm.BlendedRatePerHour = Math.Round(vm.TotalAnnualCost / vm.TotalEffectiveHours, 2);
+            }
+
+            var grossHours = rated.Sum(r => r.GrossPaidHours ?? 0m);
+            if (grossHours > 0m)
+            {
+                vm.BlendedNominalRatePerHour = Math.Round(vm.TotalAnnualCost / grossHours, 2);
+            }
+
+            return vm;
+        }
+
         private async Task<List<HrAllocationRowVm>> BuildHrAllocations(int year, int? entityId)
         {
             if (entityId.HasValue && entityId.Value <= 0)
@@ -3012,6 +3169,7 @@ namespace GovBudget.Controllers
         // True when ActivityCosts reflect the step-down cost allocation (after-allocation tab).
         public bool AfterAllocation { get; set; }
         public List<HrAllocationRowVm>? HrAllocations { get; set; }
+        public HrHourlyRateVm? HrHourlyRates { get; set; }
         public List<EntityBudgetSummaryRowVm>? EntitySummary { get; set; }
         public List<TrendRowVm>? TrendSummary { get; set; }
     }
@@ -3363,6 +3521,31 @@ namespace GovBudget.Controllers
         public string Category { get; set; } = "";
         public decimal AllocationPct { get; set; }
         public decimal Amount { get; set; }
+    }
+
+    // Employee cost per hour. Rows come straight from core.vw_HrEmployeeHourlyRates,
+    // which derives everything below AnnualCost from the work calendar.
+    public class HrHourlyRateVm
+    {
+        public List<vw_HrEmployeeHourlyRates> Rows { get; set; } = new();
+
+        public int EmployeeCount { get; set; }
+        public int VacancyCount { get; set; }
+
+        // Employees whose budget year has no work calendar, so no rate could be
+        // produced. Surfaced rather than hidden - a silent zero here would be
+        // read as "this person is free".
+        public int MissingCalendarCount { get; set; }
+
+        public decimal TotalAnnualCost { get; set; }
+        public decimal TotalEffectiveHours { get; set; }
+
+        // Total cost over total hours - NOT the average of the per-employee rates.
+        // Averaging ratios would weight a cleaner the same as a director and
+        // understate what an organisational hour actually costs.
+        public decimal? BlendedRatePerHour { get; set; }
+
+        public decimal? BlendedNominalRatePerHour { get; set; }
     }
 
     public class HrAllocationRowVm

@@ -1,0 +1,54 @@
+@model GovBudget.Models.WorkCalendars
+
+@{
+    ViewData["Title"] = "Edit Work Calendar";
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1 class="mb-0">Edit Work Calendar</h1>
+            <div class="text-muted">
+                Saving takes effect immediately &mdash; the cost per hour report recalculates on the next page load.
+            </div>
+        </div>
+        <a asp-action="Index" asp-route-year="@Model.BudgetYear" class="btn btn-secondary">&larr; Back to Calendars</a>
+    </div>
+
+    @if (!Model.EntityId.HasValue)
+    {
+        <div class="alert alert-warning py-2 small">
+            This is the <strong>default</strong> calendar. Every entity without its own calendar uses it, so a change
+            here moves the hourly rate for all of them at once.
+        </div>
+    }
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form asp-action="Edit" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="CalendarId" />
+                <input type="hidden" asp-for="CreatedAt" />
+                <input type="hidden" asp-for="CreatedBy" />
+
+                <partial name="_CalendarForm" model="Model" />
+
+                <div class="mt-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <a asp-action="Index" asp-route-year="@Model.BudgetYear" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    @if (Model.UpdatedAt.HasValue)
+    {
+        <div class="text-muted small mt-2">
+            Last updated @Model.UpdatedAt.Value.ToString("yyyy-MM-dd HH:mm") UTC by @(Model.UpdatedBy ?? "unknown").
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

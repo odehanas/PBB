@@ -1,0 +1,33 @@
+@model GovBudget.Models.WorkCalendars
+
+@{
+    ViewData["Title"] = "Add Work Calendar";
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1 class="mb-0">Add Work Calendar</h1>
+            <div class="text-muted">Set the working-time variables behind the employee cost per hour.</div>
+        </div>
+        <a asp-action="Index" asp-route-year="@Model.BudgetYear" class="btn btn-secondary">&larr; Back to Calendars</a>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form asp-action="Create" method="post">
+                @Html.AntiForgeryToken()
+                <partial name="_CalendarForm" model="Model" />
+
+                <div class="mt-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Save Calendar</button>
+                    <a asp-action="Index" asp-route-year="@Model.BudgetYear" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

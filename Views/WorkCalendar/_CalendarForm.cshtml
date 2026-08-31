@@ -1,0 +1,185 @@
+@model GovBudget.Models.WorkCalendars
+@{
+    var isGlobalAdmin = ViewBag.IsGlobalAdmin as bool? ?? false;
+    var entityOptions = ViewBag.EntityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+}
+
+<div asp-validation-summary="All" class="text-danger mb-3"></div>
+
+<div class="row g-3">
+    <div class="col-md-3">
+        <label asp-for="BudgetYear" class="form-label"></label>
+        <input asp-for="BudgetYear" class="form-control" id="calYear" />
+        <span asp-validation-for="BudgetYear" class="text-danger small"></span>
+    </div>
+
+    <div class="col-md-5">
+        <label asp-for="EntityId" class="form-label"></label>
+        @if (isGlobalAdmin && entityOptions != null)
+        {
+            <select asp-for="EntityId" class="form-select" asp-items="entityOptions"></select>
+            <div class="form-text">
+                Leave on <em>All entities</em> for the default that every entity falls back to.
+            </div>
+        }
+        else
+        {
+            <input type="hidden" asp-for="EntityId" />
+            <input class="form-control" value="@(Model.Entity != null ? Model.Entity.EntityCode + " - " + Model.Entity.EntityName : "Your entity")" disabled />
+            <div class="form-text">Only a global administrator can change the scope.</div>
+        }
+    </div>
+
+    <div class="col-md-4">
+        <label asp-for="CalendarName" class="form-label"></label>
+        <input asp-for="CalendarName" class="form-control" />
+        <span asp-validation-for="CalendarName" class="text-danger small"></span>
+    </div>
+</div>
+
+<hr class="my-4" />
+<h5 class="mb-3">Contracted pattern</h5>
+
+<div class="row g-3">
+    <div class="col-md-4">
+        <label asp-for="HoursPerDay" class="form-label"></label>
+        <input asp-for="HoursPerDay" class="form-control calc-input" type="number" step="0.25" id="calHoursPerDay" />
+        <span asp-validation-for="HoursPerDay" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4">
+        <label asp-for="WorkDaysPerWeek" class="form-label"></label>
+        <input asp-for="WorkDaysPerWeek" class="form-control calc-input" type="number" step="0.5" id="calDaysPerWeek" />
+        <span asp-validation-for="WorkDaysPerWeek" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4">
+        <label asp-for="WeeksPerYear" class="form-label"></label>
+        <input asp-for="WeeksPerYear" class="form-control calc-input" type="number" step="0.5" id="calWeeksPerYear" />
+        <span asp-validation-for="WeeksPerYear" class="text-danger small"></span>
+    </div>
+</div>
+
+<hr class="my-4" />
+<h5 class="mb-1">Paid time not worked</h5>
+<p class="text-muted small">
+    These days are paid, so their cost already sits inside the employee's annual salary. Deducting them here is
+    what makes the hourly rate reflect an hour actually worked rather than an hour merely paid for.
+</p>
+
+<div class="row g-3">
+    <div class="col-md-4">
+        <label asp-for="PublicHolidayDays" class="form-label"></label>
+        <input asp-for="PublicHolidayDays" class="form-control calc-input" type="number" step="0.5" id="calHolidays" />
+        <span asp-validation-for="PublicHolidayDays" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4">
+        <label asp-for="AnnualLeaveDays" class="form-label"></label>
+        <input asp-for="AnnualLeaveDays" class="form-control calc-input" type="number" step="0.5" id="calLeave" />
+        <span asp-validation-for="AnnualLeaveDays" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4">
+        <label asp-for="OtherPaidAbsenceDays" class="form-label"></label>
+        <input asp-for="OtherPaidAbsenceDays" class="form-control calc-input" type="number" step="0.5" id="calOther" />
+        <div class="form-text">Paid sick days, training days &mdash; leave at 0 if not tracked.</div>
+    </div>
+</div>
+
+<hr class="my-4" />
+
+<div class="row g-3">
+    <div class="col-md-4">
+        <label asp-for="UtilisationPct" class="form-label"></label>
+        <input asp-for="UtilisationPct" class="form-control calc-input" type="number" step="1" id="calUtilisation" />
+        <div class="form-text text-warning-emphasis">
+            Leave at 100. Anything lower means hours &times; rate no longer adds back to total salary cost,
+            which breaks the 100% allocation the system guarantees.
+        </div>
+    </div>
+    <div class="col-md-4 d-flex align-items-center">
+        <div class="form-check mt-4">
+            <input asp-for="IsActive" class="form-check-input" />
+            <label asp-for="IsActive" class="form-check-label"></label>
+            <div class="form-text">An inactive calendar is ignored; employees fall back to the default.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card bg-light border-primary mt-4">
+    <div class="card-body">
+        <h6 class="card-title mb-3">Resulting hours</h6>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="text-muted small">Gross paid hours</div>
+                <div class="fs-4 text-muted" id="outGross">-</div>
+                <div class="text-muted" style="font-size:.72rem;">weeks &times; days &times; hours</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Less paid absence</div>
+                <div class="fs-4 text-muted" id="outAbsence">-</div>
+                <div class="text-muted" style="font-size:.72rem;">holidays + leave + other</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Productive hours</div>
+                <div class="fs-4 fw-bold text-primary" id="outProductive">-</div>
+                <div class="text-muted" style="font-size:.72rem;">the rate divides by this</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">Rate on a 200,000 salary</div>
+                <div class="fs-4" id="outExample">-</div>
+                <div class="text-muted" style="font-size:.72rem;">worked example only</div>
+            </div>
+        </div>
+        <div class="text-danger small mt-2 d-none" id="outWarning"></div>
+    </div>
+</div>
+
+@* Plain inline script, not a Scripts section: Razor sections cannot be defined
+   inside a partial. The validation scripts are pulled in by the host view. *@
+<script>
+        (function () {
+            function num(id) {
+                var el = document.getElementById(id);
+                if (!el) return 0;
+                var v = parseFloat(el.value);
+                return isNaN(v) ? 0 : v;
+            }
+
+            function fmt(n) {
+                return n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+            }
+
+            function recalc() {
+                var hoursPerDay = num('calHoursPerDay');
+                var daysPerWeek = num('calDaysPerWeek');
+                var weeks = num('calWeeksPerYear');
+                var absenceDays = num('calHolidays') + num('calLeave') + num('calOther');
+                var utilisation = num('calUtilisation');
+
+                var contractedDays = weeks * daysPerWeek;
+                var gross = contractedDays * hoursPerDay;
+                var absenceHours = absenceDays * hoursPerDay;
+                var productive = (contractedDays - absenceDays) * hoursPerDay * (utilisation / 100);
+
+                document.getElementById('outGross').textContent = fmt(gross);
+                document.getElementById('outAbsence').textContent = fmt(absenceHours);
+                document.getElementById('outProductive').textContent = fmt(productive);
+
+                var warn = document.getElementById('outWarning');
+                if (productive > 0) {
+                    document.getElementById('outExample').textContent =
+                        (200000 / productive).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    warn.classList.add('d-none');
+                    warn.textContent = '';
+                } else {
+                    document.getElementById('outExample').textContent = '-';
+                    warn.textContent = 'Paid absence uses up the whole year, so there are no productive hours left to divide by. Reduce the absence days or increase the contracted pattern.';
+                    warn.classList.remove('d-none');
+                }
+            }
+
+            document.querySelectorAll('.calc-input').forEach(function (el) {
+                el.addEventListener('input', recalc);
+                el.addEventListener('change', recalc);
+            });
+            recalc();
+        })();
+</script>

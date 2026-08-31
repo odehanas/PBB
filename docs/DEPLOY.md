@@ -37,22 +37,34 @@ A full publish covers both. Never hand-pick files.
 
 ---
 
-## 3. One-time setup (about five minutes)
+## 3. One-time setup — **already done**
 
-1. SmarterASP control panel → your site → download the **`.PublishSettings`** file
-   (usually under *Websites → Manage → Publish Settings* or *Auto Deploy*).
-2. Open it in Notepad. Copy three attribute values out of the `publishProfile` element:
-   `publishUrl`, `msdeploySite`, `userName`.
-3. Paste them over the three `REPLACE_ME_*` placeholders in
-   `Properties/PublishProfiles/SmarterASP.pubxml`.
-4. Visual Studio → right-click the project → **Publish** → select the **SmarterASP**
-   profile → **Publish**. Enter the password when prompted and tick **Save password**.
+The server values are filled in. GovBudget is **site6** (`odehanas-001-site6`) on
+`win8222.site4now.net`; its FTP root is `/GovBudget`.
+
+Only the password is still needed, and it is asked for once:
+
+> Visual Studio → right-click the project → **Publish** → select the **SmarterASP**
+> profile → **Publish**. Enter the hosting password when prompted and tick
+> **Save password**.
 
 The password goes into `SmarterASP.pubxml.user`, which git ignores. **Never** type a
 password into the `.pubxml` itself — that file is committed.
 
-If the plan does not offer Web Deploy, use `SmarterASP-FTP.pubxml` instead and read the
-caveats in its header.
+If Web Deploy is ever unavailable, `SmarterASP-FTP.pubxml` is configured as a fallback;
+read the caveats in its header.
+
+If the host moves the site to a different `win####.site4now.net` server, re-download the
+`.PublishSettings` from the control panel and update `MSDeployServiceURL`,
+`DeployIisAppPath` and `UserName` in `SmarterASP.pubxml`.
+
+### What replaced the old zip loop
+
+The previous process — delete the site folder, upload a published zip — is what destroyed
+the server-only files listed in section 1 and forced `App_Data`, `App_Data/keys`, `logs`
+and `web.config` to be rebuilt by hand every time. It also wiped the data-protection key
+ring on every deploy, signing every logged-in user out. None of that happens now:
+`SkipExtraFilesOnServer=true` means a deploy never deletes anything on the server.
 
 ---
 
