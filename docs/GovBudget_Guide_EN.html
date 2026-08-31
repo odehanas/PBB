@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GovBudget — Complete Guide</title>
+<style>
+  :root {
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --brand: #16233d;
+    --brand-2: #3c4655;
+    --brand-light: #eaeef5;
+    --accent: #c8911e;
+    --line: #d8dee6;
+    --green: #0f7b5b;
+    --red: #b3261e;
+    --bg-soft: #f6f8fa;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; scroll-behavior: smooth; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    color: var(--ink); line-height: 1.55; margin: 0; background: #fff; font-size: 14px;
+  }
+  .page { max-width: 900px; margin: 0 auto; padding: 40px 56px 80px; }
+
+  h1, h2, h3, h4 { color: var(--brand); line-height: 1.25; }
+  h1 { font-size: 27px; margin: 0 0 6px; }
+  h2 { font-size: 20px; border-bottom: 2px solid var(--brand-light); padding-bottom: 6px; margin-top: 40px; }
+  h3 { font-size: 16px; margin-top: 24px; }
+  h4 { font-size: 14px; margin: 16px 0 4px; color: var(--ink); }
+  p { margin: 8px 0; }
+  ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+  li { margin: 4px 0; }
+  a { color: var(--green); }
+
+  code, .mono { font-family: "Cascadia Code", Consolas, monospace; background: var(--bg-soft);
+                padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 12.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--brand); color: #fff; font-weight: 600; }
+  tbody tr:nth-child(even) { background: var(--bg-soft); }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+
+  .yes { color: var(--green); font-weight: 600; }
+  .no  { color: var(--red); font-weight: 600; }
+  .scoped { color: var(--accent); font-weight: 600; }
+
+  .callout { border-left: 4px solid var(--accent); background: #fff8ec; padding: 10px 14px;
+             margin: 14px 0; border-radius: 0 6px 6px 0; }
+  .callout.note { border-left-color: var(--brand); background: var(--brand-light); }
+  .callout.warn { border-left-color: var(--red); background: #fdecea; }
+  .callout.tip  { border-left-color: var(--green); background: #eaf6f1; }
+  .callout strong { display: block; margin-bottom: 2px; }
+
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+           border-radius: 999px; color: #fff; vertical-align: middle; }
+  .b-sys { background: #5b21b6; }
+  .b-adm { background: var(--brand); }
+  .b-ent { background: var(--accent); color: #1b1b1b; }
+  .b-usr { background: var(--green); }
+  .b-new { background: var(--red); }
+
+  figure { margin: 16px 0; }
+  figure img { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; }
+  figcaption { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  /* Cover */
+  .cover { display: flex; flex-direction: column; justify-content: center; min-height: 84vh;
+           border-bottom: 3px solid var(--brand); }
+  .cover .kicker { letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
+                   font-weight: 700; font-size: 12px; }
+  .cover h1 { font-size: 46px; margin: 12px 0 6px; }
+  .cover .sub { font-size: 19px; color: var(--muted); max-width: 32em; }
+  .cover .meta { margin-top: 36px; font-size: 13px; color: var(--muted); }
+  .cover .meta div { margin: 3px 0; }
+
+  /* Contents */
+  .toc { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 8px;
+         padding: 18px 26px; margin: 22px 0 10px; }
+  .toc h2 { margin-top: 0; border: 0; }
+  .toc ol { margin-left: 18px; }
+  .toc ol ol { margin-left: 16px; font-size: 13px; color: var(--muted); }
+  .toc a { text-decoration: none; color: var(--ink); }
+  .toc a:hover { text-decoration: underline; }
+
+  .lede { font-size: 15px; color: var(--muted); margin-bottom: 4px; }
+  .roles-line { margin: 6px 0 12px; font-size: 12px; color: var(--muted); }
+
+  .steps { counter-reset: step; list-style: none; margin-left: 0; }
+  .steps > li { counter-increment: step; position: relative; padding-left: 34px; margin: 10px 0; }
+  .steps > li::before {
+    content: counter(step); position: absolute; left: 0; top: 1px;
+    width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff;
+    font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+
+  .flow { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 8px;
+          padding: 14px 16px; font-family: "Cascadia Code", Consolas, monospace;
+          font-size: 12px; white-space: pre; overflow-x: auto; line-height: 1.5; }
+
+  hr.sec { border: 0; border-top: 1px solid var(--line); margin: 44px 0 0; }
+
+  @media print {
+    .page { max-width: 100%; padding: 0; }
+    .toc { break-after: page; }
+    h2 { break-after: avoid; }
+    table, figure, .callout { break-inside: avoid; }
+    .cover { min-height: 92vh; break-after: page; }
+    a { color: var(--ink); text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ============================== COVER ============================== -->
+<section class="cover">
+  <div class="kicker">Ras Al Khaimah Government &middot; Department of Finance</div>
+  <h1>GovBudget</h1>
+  <div class="sub">The complete guide to performance-based budgeting: preparing, submitting,
+      costing and reporting an entity budget.</div>
+  <div class="meta">
+    <div><strong>Audience</strong> — budget preparers, entity administrators and system administrators</div>
+    <div><strong>Covers</strong> — every screen in the application, from sign-in to management review</div>
+    <div><strong>Version</strong> — 2.0 &middot; supersedes all earlier user, administrator, workflow and What-If guides</div>
+  </div>
+</section>
+
+<!-- ============================== CONTENTS ============================== -->
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#about">About this system</a></li>
+    <li><a href="#concepts">The budgeting model — concepts you need first</a></li>
+    <li><a href="#start">Getting started: signing in, context and navigation</a></li>
+    <li><a href="#roles">Roles and what each one can do</a></li>
+    <li><a href="#entry">Preparing a budget</a>
+      <ol>
+        <li><a href="#entry-setup">Budget Setup</a></li>
+        <li><a href="#entry-lines">Budget Entry — Revenue, OPEX, CAPEX</a></li>
+        <li><a href="#entry-hr">HR cost allocation</a></li>
+      </ol>
+    </li>
+    <li><a href="#workflow">Submission and approval workflow</a></li>
+    <li><a href="#midyear">Mid-year forecast</a></li>
+    <li><a href="#actuals">Actuals and Budget vs Actual</a></li>
+    <li><a href="#allocation">The cost allocation engine</a></li>
+    <li><a href="#cph">Employee cost per hour</a></li>
+    <li><a href="#reports">Reports</a>
+      <ol>
+        <li><a href="#reports-standard">The standard report tabs</a></li>
+        <li><a href="#reports-builder">Report Builder</a></li>
+        <li><a href="#reports-deck">Executive deck</a></li>
+        <li><a href="#reports-print">Printing and exporting</a></li>
+      </ol>
+    </li>
+    <li><a href="#performance">Performance data — KPIs, outputs and maturity</a></li>
+    <li><a href="#review">Management review</a></li>
+    <li><a href="#whatif">What-If scenarios</a></li>
+    <li><a href="#requests">Requests and internal messages</a></li>
+    <li><a href="#assistant">The budget assistant</a></li>
+    <li><a href="#admin">Administration</a></li>
+    <li><a href="#glossary">Appendix A — Glossary</a></li>
+    <li><a href="#matrix">Appendix B — Permission reference</a></li>
+    <li><a href="#faq">Appendix C — Troubleshooting</a></li>
+  </ol>
+</nav>
+
+<!-- ============================== 1. ABOUT ============================== -->
+<h2 id="about">1. About this system</h2>
+
+<p class="lede">GovBudget replaces input-based budgeting with performance-based budgeting (PBB).</p>
+
+<p>Traditional budgeting asks <em>what will we spend money on?</em> — salaries, supplies, equipment.
+Performance-based budgeting asks <em>what will we deliver, and what does delivering it cost?</em>
+The money is the same; the question is different, and so is the answer you can give.</p>
+
+<p>GovBudget answers the second question by attaching every cost to the <strong>activity</strong> it
+pays for. Three streams of cost converge on activities:</p>
+
+<ul>
+  <li><strong>HR</strong> — each employee's annual cost, spread across the activities they work on.</li>
+  <li><strong>OPEX</strong> — operating expenditure, entered against an activity.</li>
+  <li><strong>CAPEX</strong> — capital expenditure, entered against an activity or project.</li>
+</ul>
+
+<p>Once every dirham sits on an activity, the system can roll costs up into programmes, redistribute
+overhead onto the work it supports, and report cost per output. That chain — employee to activity to
+programme to output — is what this guide walks through.</p>
+
+<div class="callout note">
+  <strong>What this guide replaces</strong>
+  This document supersedes the separate User Guide, User Manual, Administrator Guide, Submission
+  Workflow Guide and What-If Guide. Everything they covered is here, brought up to date with the
+  current system.
+</div>
+
+<!-- ============================== 2. CONCEPTS ============================== -->
+<h2 id="concepts">2. The budgeting model — concepts you need first</h2>
+
+<p>Five terms carry most of the meaning in GovBudget. Reading the rest of this guide is much easier
+once these are clear.</p>
+
+<h3>Entity and cost centre</h3>
+<p>An <strong>entity</strong> is a government organisation or authority — for example the Customs
+Department or the Department of Antiquities and Museums. A <strong>cost centre</strong> (also called
+a department) is a unit inside an entity. Your account is normally tied to one entity, and everything
+you see is limited to it.</p>
+
+<h3>Programme</h3>
+<p>A <strong>programme</strong> is a block of work an entity delivers. Every programme is classified
+as one of two types, and the classification matters a great deal:</p>
+
+<table>
+  <thead><tr><th style="width:22%">Type</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Mandate</strong></td>
+      <td>Core mission work — the reason the entity exists. Excavating a site, clearing goods at a
+          border, running a museum. Mandate programmes <em>receive</em> allocated overhead.</td>
+    </tr>
+    <tr>
+      <td><strong>Support</strong></td>
+      <td>Overhead that enables the mandate work — finance, HR, IT, general administration. Support
+          programme cost can be pushed out onto the mandate activities it supports.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Activity</h3>
+<p>An <strong>activity</strong> is specific work inside a programme, and it is <strong>where costs are
+actually entered</strong>. If you remember one thing from this section, make it that: budget lines
+attach to activities, not to programmes. Programme figures are always the sum of their activities.</p>
+
+<h3>Project</h3>
+<p>A <strong>project</strong> is a defined, usually time-bound piece of work — typically capital.
+Costs can be tagged to a project as well as an activity, which lets you report by project without
+breaking the activity structure.</p>
+
+<h3>Direct cost and total cost</h3>
+<p>This distinction appears throughout the reports, and misreading it is the single most common source
+of confusion.</p>
+
+<table>
+  <thead><tr><th style="width:22%">Basis</th><th>What it shows</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Direct</strong></td>
+      <td>Every cost stays exactly where it was entered. This is the default and it is always
+          available. A support programme shows its own cost.</td>
+    </tr>
+    <tr>
+      <td><strong>Total</strong><br /><span class="mono">fully loaded</span></td>
+      <td>The latest posted allocation run is overlaid: support programme cost is added to the mandate
+          programmes it supports (<em>allocated-in</em>) and removed from the support programme
+          (<em>allocated-out</em>). A support programme therefore nets to <strong>zero</strong>.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <strong>A support programme showing zero is correct, not a fault</strong>
+  On the Total basis, a support programme has had all of its cost moved onto the mandate work it
+  supports. Showing it in both places would double-count the budget. To see the support programme's
+  own cost, switch the report to the <strong>Direct</strong> basis.
+</div>
+
+<!-- ============================== 3. GETTING STARTED ============================== -->
+<h2 id="start">3. Getting started: signing in, context and navigation</h2>
+
+<h3>Signing in</h3>
+<ol class="steps">
+  <li>Open the application address in your browser.</li>
+  <li>Enter your username and password and choose <strong>Sign in</strong>.</li>
+  <li>If this is your first sign-in, or an administrator has reset your password, you are asked to
+      choose a new one before you can continue.</li>
+</ol>
+
+<figure>
+  <img src="images/01-login.png" alt="The GovBudget sign-in screen" />
+  <figcaption>The sign-in screen.</figcaption>
+</figure>
+
+<div class="callout warn">
+  <strong>Account lockout</strong>
+  Five consecutive wrong passwords lock the account for fifteen minutes. Wait, or ask an
+  administrator to unlock it and issue a reset link — you do not need to create a new account.
+</div>
+
+<h3>Choosing your context</h3>
+<p>Almost every screen works within a <strong>context</strong>: a budget year, an entity and a cost
+centre. Set it once from <strong>Budget Setup</strong> and the system remembers it for your session.</p>
+
+<p>If a screen looks empty or refuses to save, the context is the first thing to check — you may be
+looking at a different year or cost centre than you think.</p>
+
+<figure>
+  <img src="images/03-budget-setup-context.png" alt="Choosing year, entity and cost centre" />
+  <figcaption>Budget Setup — the year, entity and cost centre you are working in.</figcaption>
+</figure>
+
+<h3>Finding your way around</h3>
+<p>The navy sidebar on the left is the main menu. You only see the items your role permits, so your
+menu may be shorter than a colleague's. The list below is the complete set.</p>
+
+<table>
+  <thead><tr><th style="width:26%">Menu item</th><th>What it is for</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Home</strong></td><td>Executive summary — headline totals, expense mix and the revenue-to-net waterfall.</td></tr>
+    <tr><td><strong>Budget Setup</strong></td><td>Choose the working year, entity and cost centre; entry point to budget preparation.</td></tr>
+    <tr><td><strong>Mid-Year Forecast</strong></td><td>Half-year actuals and the forecast for the remainder of the year.</td></tr>
+    <tr><td><strong>Reports</strong></td><td>All budget and costing reports, the Report Builder and the executive deck.</td></tr>
+    <tr><td><strong>Requests</strong></td><td>Internal messages between budget users and administrators.</td></tr>
+    <tr><td><strong>What-If</strong></td><td>Scenario modelling without touching the real budget.</td></tr>
+    <tr><td><strong>User Guides</strong></td><td>This documentation.</td></tr>
+    <tr><td><strong>Management Review</strong></td><td>Review, return and approve entity submissions; the management reporting pack.</td></tr>
+    <tr><td><strong>Performance Data</strong></td><td>KPIs, activity outputs and maturity assessments.</td></tr>
+    <tr><td><strong>Budget vs Actual</strong></td><td>Budget compared against posted actuals.</td></tr>
+    <tr><td><strong>Admin Room</strong></td><td>All administration: users, master data, imports and the allocation engine.</td></tr>
+  </tbody>
+</table>
+
+<p>Two controls sit in the top bar: the <strong>&#9776;</strong> button collapses the sidebar to give
+reports more width, and <strong>Dark</strong> switches to a dark colour scheme.</p>
+
+<!-- ============================== 4. ROLES ============================== -->
+<h2 id="roles">4. Roles and what each one can do</h2>
+
+<p>There are four roles. Which one you hold determines both what appears in your menu and what you can
+do on each screen.</p>
+
+<table>
+  <thead><tr><th style="width:20%">Role</th><th>Scope</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="badge b-sys">SYSADMIN</span></td>
+      <td>Full access to everything, across all entities. Deliberately unrestricted so that a mistake
+          in the permissions screen can never lock everyone out.</td>
+    </tr>
+    <tr>
+      <td><span class="badge b-adm">Global ADMIN</span></td>
+      <td>An administrator with <em>no</em> entity assigned. Sees and administers every entity.
+          Everything except the Roles &amp; Rights screen.</td>
+    </tr>
+    <tr>
+      <td><span class="badge b-ent">Entity ADMIN</span></td>
+      <td>An administrator <em>with</em> an entity assigned. Full administration inside that entity
+          only, and blocked from the cross-entity tools — the Cost Allocation engine and the
+          Management Review pack.</td>
+    </tr>
+    <tr>
+      <td><span class="badge b-usr">USER</span></td>
+      <td>Prepares budgets within an assigned entity and cost centre. Can submit for approval but not
+          approve. Read access to reports.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout note">
+  <strong>Global versus entity administrator</strong>
+  The difference is simply whether the account has an entity attached. An administrator with no entity
+  is global; attaching one immediately narrows them to it. This is set on the user record — see
+  <a href="#admin">Administration</a>.
+</div>
+
+<p>A <strong>VIEWER</strong> role also exists for review-only access: it can see the budget, reports
+and performance screens but change nothing.</p>
+
+<p>Appendix B carries the full permission matrix.</p>
+
+<!-- ============================== 5. BUDGET PREPARATION ============================== -->
+<h2 id="entry">5. Preparing a budget</h2>
+<p class="roles-line">Applies to <span class="badge b-usr">USER</span>
+  <span class="badge b-ent">Entity ADMIN</span>
+  <span class="badge b-adm">Global ADMIN</span>
+  <span class="badge b-sys">SYSADMIN</span></p>
+
+<h3 id="entry-setup">5.1 Budget Setup</h3>
+<p>Start here. Choose the <strong>year</strong>, <strong>entity</strong> and <strong>cost centre</strong>
+you are budgeting for. A USER normally has only one choice available; administrators can switch.</p>
+
+<p>The four budget categories are tabs across the top of the entry screen:</p>
+
+<table>
+  <thead><tr><th style="width:16%">Category</th><th>Contents</th></tr></thead>
+  <tbody>
+    <tr><td><strong>REVENUE</strong></td><td>Income the entity expects to collect.</td></tr>
+    <tr><td><strong>HR</strong></td><td>Employee costs — imported centrally, then allocated to activities (see 5.3).</td></tr>
+    <tr><td><strong>CAPEX</strong></td><td>Capital expenditure.</td></tr>
+    <tr><td><strong>OPEX</strong></td><td>Operating expenditure.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout note">
+  <strong>Each category is approved separately</strong>
+  REVENUE, HR, CAPEX and OPEX each have their own submission and their own status. Approving OPEX has
+  no effect on CAPEX. This lets a settled category move forward while another is still in discussion.
+</div>
+
+<h3 id="entry-lines">5.2 Budget Entry — Revenue, OPEX and CAPEX</h3>
+
+<ol class="steps">
+  <li>Open <strong>Budget Setup</strong> and choose the category tab you want to work on.</li>
+  <li>Add a line. You choose the <strong>activity</strong> the cost belongs to, the <strong>GL
+      account</strong>, and where relevant the <strong>item</strong> and <strong>project</strong>.</li>
+  <li>Enter quantity and unit price, or the amount directly, depending on how the line is set up.</li>
+  <li>Distribute the annual amount across the twelve months if you need a monthly profile. This
+      monthly distribution is what drives cash-basis reporting.</li>
+  <li>Save. The line is now part of the current draft.</li>
+</ol>
+
+<figure>
+  <img src="images/04-budget-entry.png" alt="The budget entry screen" />
+  <figcaption>Budget entry — lines attach to an activity and a GL account.</figcaption>
+</figure>
+
+<div class="callout warn">
+  <strong>If Save is disabled or you see a "locked" message</strong>
+  Budget lines can only be added, changed or deleted while the latest version of that category is in
+  <strong>Draft</strong>. Any other status locks entry. See section 6 for how to get an editable draft
+  back.
+</div>
+
+<h3 id="entry-hr">5.3 HR cost allocation</h3>
+<p>HR works differently from the other categories. You do not type salary figures. Each employee's
+annual cost is <strong>imported</strong> by an administrator, and the budget work is deciding
+<strong>which activities that person's cost belongs to</strong>.</p>
+
+<ol class="steps">
+  <li>Open <strong>Budget Setup</strong> and choose the <strong>HR</strong> tab. You see the employees
+      in your cost centre with their annual cost.</li>
+  <li>Choose <strong>Allocate</strong> on an employee.</li>
+  <li>Add an allocation: pick the activity (and project, if relevant) and give either a
+      <strong>percentage</strong> of the employee's cost or an <strong>amount</strong>.</li>
+  <li>Repeat until the employee is fully allocated. The screen shows allocated and remaining
+      amounts as you go.</li>
+</ol>
+
+<div class="callout tip">
+  <strong>Aim for 100%</strong>
+  The system prevents you allocating <em>more</em> than an employee's annual cost, but it does not
+  force you to allocate all of it. Anything unallocated is real salary cost attached to no activity,
+  so it disappears from activity and programme reporting. The
+  <strong>Allocation Variances</strong> screen lists everyone who is not fully allocated — check it
+  before you submit.
+</div>
+
+<!-- ============================== 6. WORKFLOW ============================== -->
+<h2 id="workflow">6. Submission and approval workflow</h2>
+
+<p>A submission is one category, for one year, entity and cost centre. It moves through a fixed
+sequence of statuses.</p>
+
+<h3>The lifecycle</h3>
+
+<div class="flow">Draft ──Submit──▶ Submitted ──Entity approve──▶ EntityApproved ──Send to central──▶ SentToCentral ──Approve──▶ SysApproved
+  ▲                  │                        │                          │
+  │                  └── Return / Unlock ─────┴──────────────────────────┘
+  │                                    │
+  └────── a Return always creates a NEW Draft (next version); the old version is kept as history</div>
+
+<h3>What each status means</h3>
+
+<table>
+  <thead><tr><th style="width:20%">Status</th><th>Meaning</th><th style="width:16%">Editable?</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Draft</strong></td><td>Work in progress. Lines are being entered.</td><td class="yes">Yes</td></tr>
+    <tr><td><strong>Submitted</strong></td><td>Sent for approval by the budget preparer; awaiting entity review.</td><td class="no">No</td></tr>
+    <tr><td><strong>EntityApproved</strong></td><td>Approved at entity level; ready to go to the central department.</td><td class="no">No</td></tr>
+    <tr><td><strong>SentToCentral</strong></td><td>With the central finance department for final review.</td><td class="no">No</td></tr>
+    <tr><td><strong>SysApproved</strong></td><td>Finally approved. This is the settled budget.</td><td class="no">No</td></tr>
+    <tr><td><strong>Returned</strong></td><td>Sent back for changes. A new editable draft is created alongside it.</td><td class="no">No — but its successor draft is</td></tr>
+  </tbody>
+</table>
+
+<h3>Versions, and why nothing is ever overwritten</h3>
+<p>Every submission stream keeps numbered versions. When work is returned or unlocked, the system does
+<strong>not</strong> reopen the locked version. It creates a fresh <strong>Draft</strong> as the next
+version number and leaves the earlier one intact, marked <em>Returned</em>.</p>
+
+<p>This matters for two reasons. You can always see what was submitted at each stage and compare
+versions to show exactly what changed; and an approved budget can never be quietly edited after the
+fact.</p>
+
+<h3>Step by step — budget preparer</h3>
+<ol class="steps">
+  <li>Enter your lines while the category is in <strong>Draft</strong>.</li>
+  <li>Check the totals, and for HR check the Allocation Variances screen.</li>
+  <li>Choose <strong>Submit</strong> on the category. It locks and moves to <strong>Submitted</strong>.</li>
+  <li>If it comes back as <strong>Returned</strong>, read the return note, open the new draft that was
+      created for you, make the changes and submit again.</li>
+</ol>
+
+<h3>Step by step — administrator</h3>
+<ol class="steps">
+  <li>Open <strong>Management Review</strong> and filter to the submissions awaiting you.</li>
+  <li>Review the figures, using the version comparison if this is a resubmission.</li>
+  <li><strong>Approve</strong> to move it forward, or <strong>Return</strong> with a note explaining
+      what needs to change.</li>
+  <li>Approved entity submissions are then <strong>sent to central</strong> for final approval.</li>
+</ol>
+
+<div class="callout">
+  <strong>Returning is not destructive</strong>
+  A return never deletes anyone's work. It preserves the submitted version as history and hands the
+  preparer a fresh copy to edit. Use it freely rather than asking someone to rebuild a budget.
+</div>
+
+<!-- ============================== 7. MID-YEAR ============================== -->
+<h2 id="midyear">7. Mid-year forecast</h2>
+
+<p>Half way through the year, entities record what has actually been spent in the first six months and
+forecast the second half. <strong>Mid-Year Forecast</strong> captures both against the same GL and
+activity structure as the budget, so the comparison is like for like.</p>
+
+<p>The result feeds the variance reporting: budget for the half year, actual for the half year, and
+the variance between them, alongside a revised full-year expectation.</p>
+
+<!-- ============================== 8. ACTUALS ============================== -->
+<h2 id="actuals">8. Actuals and Budget vs Actual</h2>
+<p class="roles-line">Import: <span class="badge b-adm">Global ADMIN</span>
+  <span class="badge b-ent">Entity ADMIN</span> &middot;
+  Reporting: all roles</p>
+
+<p>Actual expenditure is imported rather than typed. There are two streams:</p>
+
+<table>
+  <thead><tr><th style="width:26%">Source</th><th>Grain</th><th>Why it matters</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>GL / MM actuals</strong></td>
+      <td>Account and period</td>
+      <td>General expenditure as posted in the finance system.</td>
+    </tr>
+    <tr>
+      <td><strong>HR actuals</strong></td>
+      <td>Employee and month</td>
+      <td>Per-employee payroll cost. Because it is per employee, it can be attributed to activities
+          using the same allocation percentages as the budget — giving actual cost by activity, not
+          just by account.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>Budget vs Actual</strong> then compares the two on the same structure. Where an imported
+employee code does not match a budgeted employee, the amount still counts toward HR totals but cannot
+be attributed to an activity; the import reports how many rows were affected.</p>
+
+<!-- ============================== 9. ALLOCATION ============================== -->
+<h2 id="allocation">9. The cost allocation engine</h2>
+<p class="roles-line"><span class="badge b-sys">SYSADMIN</span>
+  <span class="badge b-adm">Global ADMIN</span> only</p>
+
+<p>This is the step that turns direct cost into fully loaded cost. It takes the cost sitting on
+<strong>support</strong> programmes and pushes it onto the <strong>mandate</strong> activities that
+support enables, using a driver such as headcount.</p>
+
+<h3>How to run one</h3>
+<ol class="steps">
+  <li>Open <strong>Admin Room → Cost Allocation</strong> and select the budget year.</li>
+  <li>Confirm the programme classification — which programmes are Support, and the sequence in which
+      they step down.</li>
+  <li>Define the <strong>drivers</strong> (for example headcount) and enter their values per target.</li>
+  <li>Create <strong>rules</strong> mapping each support programme to its target mandate activities
+      through a driver.</li>
+  <li>Run the allocation and review the resulting transactions.</li>
+  <li><strong>Post</strong> the run. Reports on the Total basis then use it.</li>
+</ol>
+
+<div class="callout note">
+  <strong>Two guarantees worth knowing</strong>
+  <p style="margin:6px 0 0"><strong>Your original budget is never modified.</strong> Allocation results
+  are written to their own tables. Budget lines and HR allocations are left exactly as entered — the
+  Direct basis always shows what you actually budgeted.</p>
+  <p style="margin:6px 0 0"><strong>Every posting nets to zero.</strong> Each transaction credits the
+  target activity (allocated-in) and debits the source programme (allocated-out) by the same amount,
+  so total cost across the entity is unchanged. Cost moves; it is never created or destroyed.</p>
+</div>
+
+<p>Runs are versioned. Posting a new run supersedes the previous one, which is retained. Reports on
+the Total basis always use the latest posted run; if none is posted, they fall back to Direct.</p>
+
+<!-- ============================== 10. COST PER HOUR ============================== -->
+<h2 id="cph">10. Employee cost per hour <span class="badge b-new">New</span></h2>
+
+<p>Cost per hour expresses an employee's annual cost as the cost of one hour of their work. It is used
+for costing services and outputs — for example, what an inspection or a permit actually costs when
+the staff time it consumes is priced properly.</p>
+
+<h3>The two rates, and which to use</h3>
+
+<p>Annual leave and public holidays are <strong>paid</strong>. Their cost is already inside the
+employee's annual cost. That leaves a choice of divisor, and the choice matters:</p>
+
+<table>
+  <thead><tr><th style="width:26%">Rate</th><th>Divided by</th><th>Use it for</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Standard rate</strong><br /><span class="mono">the costing rate</span></td>
+      <td><strong>Productive</strong> hours — contracted hours less paid public holidays and annual
+          leave</td>
+      <td>Costing services, outputs and KPIs. <strong>This is the one to use.</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Nominal rate</strong></td>
+      <td><strong>Contracted</strong> hours — the full paid year</td>
+      <td>Reference and comparison only.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The standard rate is higher, and that is the point. Dividing by contracted hours spreads salary
+over hours that include paid absence, so multiplying activity hours back by that rate recovers only
+part of the salary — the paid leave becomes cost that belongs to activities but appears nowhere.
+Dividing by productive hours absorbs the paid leave into the rate, so hours &times; rate reconciles
+back to the full annual cost. Both rates are shown side by side so the treatment is visible rather
+than hidden in a formula.</p>
+
+<h3>The work calendar</h3>
+<p class="roles-line"><span class="badge b-sys">SYSADMIN</span>
+  <span class="badge b-adm">Global ADMIN</span>
+  <span class="badge b-ent">Entity ADMIN</span> (own entity)</p>
+
+<p>Hours come from a work calendar, maintained under <strong>Admin Room → Work Calendars</strong>. It
+is a short list of numbers:</p>
+
+<table>
+  <thead><tr><th style="width:32%">Setting</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Hours per day / Work days per week / Weeks per year</td><td>The contracted pattern. Multiplied together they give gross paid hours.</td></tr>
+    <tr><td>Public holidays (days)</td><td>Paid days not worked.</td></tr>
+    <tr><td>Annual leave (days)</td><td>Paid leave entitlement.</td></tr>
+    <tr><td>Other paid absence (days)</td><td>Paid sick or training days, if you track them. Leave at 0 otherwise.</td></tr>
+    <tr><td>Utilisation %</td><td>Leave at 100. Lowering it breaks the reconciliation back to total salary cost.</td></tr>
+  </tbody>
+</table>
+
+<p>One calendar marked <strong>All entities</strong> serves as the default. An entity only needs its
+own row if its working pattern genuinely differs. The screen shows how many employees each calendar
+drives, so you can see the effect of a change before making it.</p>
+
+<div class="callout tip">
+  <strong>Changes take effect immediately</strong>
+  The rate is calculated when the report is read, not stored. Edit a calendar and the cost per hour
+  report is correct on the next page load — there is nothing to recalculate and no deployment needed.
+</div>
+
+<h3>Reading the report</h3>
+<p><strong>Reports → Employee Cost per Hour</strong> shows every employee with the full hour build-up
+— gross paid hours, holiday, leave, productive hours — and both rates, so any figure can be traced.</p>
+
+<p>The summary shows a <strong>blended rate</strong>: total cost divided by total productive hours.
+That is deliberately not the average of the individual rates, which would weight a cleaner the same as
+a director and understate what an organisational hour costs.</p>
+
+<p>Two kinds of row are flagged and excluded from the blended rate:</p>
+<ul>
+  <li><span class="badge b-adm">Vacant</span> — a budgeted but unfilled post. Its cost is usually
+      part-year, so an hourly rate would be misleading.</li>
+  <li><span class="badge b-ent">No calendar</span> — no work calendar exists for that year, so no rate
+      could be produced. Add one to bring these employees in.</li>
+</ul>
+
+<p>Where an individual genuinely does not follow the entity calendar — a part-timer, a shift worker, a
+mid-year joiner — their hours can be overridden individually without disturbing anyone else.</p>
+
+<!-- ============================== 11. REPORTS ============================== -->
+<h2 id="reports">11. Reports</h2>
+
+<h3 id="reports-standard">11.1 The standard report tabs</h3>
+
+<table>
+  <thead><tr><th style="width:28%">Report</th><th>What it shows</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Income Statement</strong></td><td>Revenue and expenditure by programme, activity and GL account.</td></tr>
+    <tr><td><strong>GL View</strong></td><td>The same figures organised by general ledger account.</td></tr>
+    <tr><td><strong>Project Costs</strong></td><td>Cost by project, with revenue, HR, CAPEX and OPEX split out.</td></tr>
+    <tr><td><strong>Activity Costs</strong></td><td>Cost by activity, grouped under its programme — the Direct basis.</td></tr>
+    <tr><td><strong>Activity Costs (after allocation)</strong></td><td>The same view on the Total basis, with support cost stepped down onto mandate activities.</td></tr>
+    <tr><td><strong>HR Allocations</strong></td><td>Employee → programme → activity → GL, showing how each salary was spread, with imported, allocated and unallocated totals.</td></tr>
+    <tr><td><strong>Employee Cost per Hour</strong></td><td>Standard and nominal hourly rates per employee — see section 10.</td></tr>
+    <tr><td><strong>Entity Budget Summary</strong></td><td>Totals by entity, for comparison across organisations.</td></tr>
+    <tr><td><strong>Trend Summary</strong></td><td>Movement across years.</td></tr>
+  </tbody>
+</table>
+
+<p>On the cost reports, clicking a figure opens the underlying transactions inline, so you can go from
+a total to the lines behind it without leaving the page.</p>
+
+<h3 id="reports-builder">11.2 Report Builder</h3>
+
+<p>The Builder is for questions the standard reports do not answer. You choose what to group by, what
+to measure, and how to display it.</p>
+
+<table>
+  <thead><tr><th style="width:24%">Control</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Group rows by</strong></td><td>The row dimension — entity, category, GL type, GL account, programme, programme type, activity, project or item.</td></tr>
+    <tr><td><strong>Split columns by</strong></td><td>An optional second dimension across the columns, producing a cross-tab. Choose <em>Month</em> for a Jan–Dec profile, or <em>(none)</em> for a simple list.</td></tr>
+    <tr><td><strong>Measure</strong></td><td>Budget amount, forecast 1 or 2, quantity, half-year budget, half-year actual, or half-year variance.</td></tr>
+    <tr><td><strong>Cost basis</strong></td><td>Direct or Total (fully loaded) — see section 2.</td></tr>
+    <tr><td><strong>Category filter</strong></td><td>Include or exclude particular categories.</td></tr>
+    <tr><td><strong>Include HR</strong></td><td>Whether allocated HR cost joins the figures.</td></tr>
+    <tr><td><strong>Output</strong></td><td>Table, Bar, Bar (horizontal), Waterfall, Pie or Line.</td></tr>
+  </tbody>
+</table>
+
+<h4>Choosing a chart</h4>
+<ul>
+  <li><strong>Bar</strong> — comparing values across a handful of categories.</li>
+  <li><strong>Bar (horizontal)</strong> — the same comparison when the names are long. Labels run down
+      the side where there is room for them, instead of being tilted along the bottom.</li>
+  <li><strong>Waterfall</strong> — how each row builds toward the total, closing with a TOTAL bar.
+      Contributions rise in green, reductions step down in red. This is the clearest way to show how
+      individual programmes make up an entity's budget.</li>
+  <li><strong>Pie</strong> — proportions of a whole, when there are only a few slices.</li>
+  <li><strong>Line</strong> — movement across an ordered dimension such as month.</li>
+</ul>
+
+<div class="callout note">
+  <strong>Chart labels</strong>
+  Vertical charts label the axis with the reference code alone, because a full code-and-name label is
+  long enough to crowd out the chart itself. Hover any bar to see the full name. Horizontal bars have
+  room for the name and show it.
+</div>
+
+<p>A configuration you expect to reuse can be <strong>saved</strong> by name and reopened later. Saved
+reports remember their cost basis as well — worth knowing if a saved report keeps returning on the
+Total basis when you expected Direct.</p>
+
+<h3 id="reports-deck">11.3 Executive deck</h3>
+<p>The executive deck is a presentation, populated with real figures for the selected year and entity,
+that contrasts traditional input budgeting with the performance-based view. It opens in a new tab and
+is intended for briefing management rather than day-to-day analysis.</p>
+
+<h3 id="reports-print">11.4 Printing and exporting</h3>
+<ul>
+  <li><strong>Download Excel</strong> exports the report you are looking at, with the transaction
+      detail on additional sheets where relevant.</li>
+  <li><strong>Print</strong> is set up for these reports: it defaults to landscape, drops the menus,
+      uses the full page width, and repeats the column headers at the top of every page so a long
+      report stays readable past page one.</li>
+</ul>
+
+<!-- ============================== 12. PERFORMANCE ============================== -->
+<h2 id="performance">12. Performance data — KPIs, outputs and maturity</h2>
+
+<p>Cost is only half of performance-based budgeting; the other half is what the money produced.</p>
+
+<ul>
+  <li><strong>KPIs</strong> — indicators with targets and actuals, classified and linked to the
+      activities that deliver them. Where a KPI is linked to cost, the system can express cost per
+      unit of result.</li>
+  <li><strong>Activity outputs</strong> — the countable things an activity produces (permits issued,
+      visitors received). Combined with activity cost these give unit cost per output.</li>
+  <li><strong>Maturity assessments</strong> — a structured self-assessment of how far the entity has
+      progressed in performance budgeting practice.</li>
+</ul>
+
+<p>Output and KPI data is entered by the entity. The quality of unit-cost reporting depends directly
+on it, so it is worth keeping current.</p>
+
+<!-- ============================== 13. MANAGEMENT REVIEW ============================== -->
+<h2 id="review">13. Management review</h2>
+<p class="roles-line"><span class="badge b-sys">SYSADMIN</span>
+  <span class="badge b-adm">Global ADMIN</span> only</p>
+
+<p>Management Review is where submissions are approved or returned, and it also carries the management
+reporting pack:</p>
+
+<ul>
+  <li>Cost structure and capital discipline.</li>
+  <li>Manpower cost per FTE, measured against a reference band.</li>
+  <li>Programme cost, direct and after allocation, with scenarios side by side.</li>
+  <li>Activity cost after allocation, and cost per output.</li>
+  <li>KPI scorecard and the maturity ladder.</li>
+  <li>An entity profile combining headline figures with review narrative.</li>
+</ul>
+
+<p>The whole pack exports to Excel as a multi-sheet workbook.</p>
+
+<!-- ============================== 14. WHAT-IF ============================== -->
+<h2 id="whatif">14. What-If scenarios</h2>
+
+<p>What-If answers questions like <em>what happens if the budget is cut by 10%?</em> without touching
+the real budget. You create a named scenario, apply adjustments, and view reports through it.</p>
+
+<p>When a scenario is active, a clear <strong>What-If Active</strong> badge appears on the reports so
+nobody mistakes modelled figures for the real budget. Deactivate the scenario to return to normal
+reporting. Scenarios never modify budget lines.</p>
+
+<!-- ============================== 15. REQUESTS ============================== -->
+<h2 id="requests">15. Requests and internal messages</h2>
+
+<p><strong>Requests</strong> is a simple message channel inside the system. A budget user can raise a
+question or ask for something to be unlocked, and an administrator can respond, without the
+conversation moving to email where it is detached from the budget it concerns.</p>
+
+<!-- ============================== 16. ASSISTANT ============================== -->
+<h2 id="assistant">16. The budget assistant</h2>
+
+<p>The assistant is a chat panel that answers questions about your own budget and performance data,
+and about OECD performance-budgeting practice. It is <strong>read-only</strong> — it can explain and
+summarise figures but cannot change anything — and it answers only within the data your account is
+allowed to see.</p>
+
+<div class="callout note">
+  <strong>It may be switched off</strong>
+  The assistant can be disabled by configuration, for example where the hosting environment does not
+  permit external services. When it is off, the panel reports that it is not configured. Nothing else
+  in the system depends on it.
+</div>
+
+<!-- ============================== 17. ADMINISTRATION ============================== -->
+<h2 id="admin">17. Administration</h2>
+<p class="roles-line"><span class="badge b-sys">SYSADMIN</span>
+  <span class="badge b-adm">Global ADMIN</span>
+  <span class="badge b-ent">Entity ADMIN</span> (own entity)</p>
+
+<p>Everything administrative lives in the <strong>Admin Room</strong>.</p>
+
+<figure>
+  <img src="images/05-admin-room.png" alt="The Admin Room" />
+  <figcaption>Admin Room — master data, imports and system tools.</figcaption>
+</figure>
+
+<h3>Set-up order</h3>
+<p>Reference data has dependencies. Setting it up in this order avoids rework:</p>
+
+<ol class="steps">
+  <li><strong>Entities</strong> — the organisations.</li>
+  <li><strong>Cost Centres</strong> — units within each entity.</li>
+  <li><strong>GL Accounts</strong> — the chart of accounts, typed as revenue, OPEX or CAPEX.</li>
+  <li><strong>Items</strong> — mapped to GL accounts, for detailed entry.</li>
+  <li><strong>Programmes</strong> — with their Mandate/Support classification and allocation sequence.</li>
+  <li><strong>Activities</strong> — under programmes and mapped to cost centres. Costs land here.</li>
+  <li><strong>Projects</strong> — where project-level reporting is needed.</li>
+  <li><strong>Work Calendars</strong> — if cost per hour will be used.</li>
+  <li><strong>Users</strong> — once the structure exists to assign them to.</li>
+</ol>
+
+<h3>Users</h3>
+<p>Create the account, then assign its <strong>role</strong>, <strong>entity</strong> and
+<strong>cost centre</strong>. Remember that an administrator with no entity is a global administrator;
+assigning an entity narrows them to it.</p>
+
+<p>Administrators can reset a password by issuing a reset link, and unlock an account locked by failed
+sign-in attempts.</p>
+
+<figure>
+  <img src="images/06-edit-user.png" alt="Editing a user" />
+  <figcaption>User administration — role, entity and cost centre.</figcaption>
+</figure>
+
+<h3>Roles &amp; Rights</h3>
+<p class="roles-line"><span class="badge b-sys">SYSADMIN</span> only</p>
+<p>Every screen in the application is listed here, and each role can be granted view, add, edit and
+delete rights on it. Read-only screens such as reports only offer <em>view</em>.</p>
+
+<p>Changes here take effect for users on their next page load. SYSADMIN always retains full access
+regardless of what is set, which is the safeguard that prevents an accidental save from locking
+everybody out of the system.</p>
+
+<h3>HR Costs</h3>
+<p>Employee annual costs are imported from Excel. Download the template, fill it in, and import.
+The importer validates entity, cost centre and GL account, reports any row it could not accept, and
+leaves the rest of the file to load. Existing employees for the same year are updated rather than
+duplicated.</p>
+
+<h3>Actuals</h3>
+<p>GL/MM and HR actuals are imported here — see section 8.</p>
+
+<h3>Audit log</h3>
+<p>Key actions are recorded with the user, timestamp and details: user administration, allocations,
+imports, approvals and calendar changes. Entity administrators see their own entity's entries.</p>
+
+<!-- ============================== APPENDIX A ============================== -->
+<hr class="sec" />
+<h2 id="glossary">Appendix A — Glossary</h2>
+
+<table>
+  <thead><tr><th style="width:26%">Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Activity</td><td>Specific work inside a programme. Costs are entered here.</td></tr>
+    <tr><td>Allocated-in / allocated-out</td><td>The credit to a receiving activity and the matching debit to the source programme in an allocation run.</td></tr>
+    <tr><td>Allocation sequence</td><td>The order in which support programmes are stepped down.</td></tr>
+    <tr><td>Blended rate</td><td>Total cost divided by total hours — not the average of individual rates.</td></tr>
+    <tr><td>Cost centre</td><td>A unit within an entity. Also called a department.</td></tr>
+    <tr><td>Direct basis</td><td>Costs stay where they were entered. The default.</td></tr>
+    <tr><td>Driver</td><td>The basis used to spread support cost, such as headcount.</td></tr>
+    <tr><td>Entity</td><td>A government organisation or authority.</td></tr>
+    <tr><td>Gross paid hours</td><td>Contracted hours in a year, before deducting paid absence.</td></tr>
+    <tr><td>Mandate programme</td><td>Core mission work. Receives allocated overhead.</td></tr>
+    <tr><td>Nominal rate</td><td>Annual cost divided by contracted hours. Reference only.</td></tr>
+    <tr><td>Productive hours</td><td>Contracted hours less paid holidays and leave — the hours available for activity work.</td></tr>
+    <tr><td>Programme</td><td>A block of work, typed Mandate or Support.</td></tr>
+    <tr><td>Standard rate</td><td>Annual cost divided by productive hours. The costing rate.</td></tr>
+    <tr><td>Support programme</td><td>Overhead work whose cost can be allocated to mandate activities.</td></tr>
+    <tr><td>Total basis</td><td>Costs including the latest posted allocation overlay. Fully loaded.</td></tr>
+    <tr><td>Version</td><td>A numbered generation of a submission. Returns create new versions; nothing is overwritten.</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================== APPENDIX B ============================== -->
+<h2 id="matrix">Appendix B — Permission reference</h2>
+
+<p>This is the default arrangement. Rights are configurable per role on the Roles &amp; Rights screen,
+so your installation may differ.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:34%">Area</th>
+      <th>SYSADMIN</th><th>Global ADMIN</th><th>Entity ADMIN</th><th>USER</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Reference data (entities, cost centres, GL, items)</td><td class="yes">Full</td><td class="yes">Full</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+    <tr><td>Programmes &amp; classification</td><td class="yes">Full</td><td class="yes">Full</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+    <tr><td>Activities &amp; projects</td><td class="yes">Full</td><td class="yes">Full</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+    <tr><td>Users</td><td class="yes">All, incl. SYSADMIN</td><td class="yes">All non-SYSADMIN</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+    <tr><td>Roles &amp; Rights</td><td class="yes">Yes</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+    <tr><td>Budget entry</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="scoped">Own entity</td><td class="yes">Own scope</td></tr>
+    <tr><td>HR cost import</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+    <tr><td>HR allocation to activities</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="scoped">Own entity</td><td class="yes">Own scope</td></tr>
+    <tr><td>Work calendars</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+    <tr><td>Submit a budget</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+    <tr><td>Approve / return submissions</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+    <tr><td>Cost allocation engine</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td><td class="no">No</td></tr>
+    <tr><td>Management review pack</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td><td class="no">No</td></tr>
+    <tr><td>Reports</td><td class="yes">All</td><td class="yes">All</td><td class="scoped">Own entity</td><td class="scoped">Own scope</td></tr>
+    <tr><td>Actuals import</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+    <tr><td>Audit log</td><td class="yes">All</td><td class="yes">All</td><td class="scoped">Own entity</td><td class="no">No</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================== APPENDIX C ============================== -->
+<h2 id="faq">Appendix C — Troubleshooting</h2>
+
+<h4>I cannot find a programme in the dropdown.</h4>
+<p>Programmes are filtered to your entity and must be active. Check your context is on the right
+entity and year, and ask an administrator whether the programme exists and is active.</p>
+
+<h4>Save is disabled, or I see a "locked" message.</h4>
+<p>That category is not in Draft. Once submitted it is locked. Ask an administrator to return or
+unlock it — you will get a fresh draft to edit, and your previous submission is kept as history.</p>
+
+<h4>I do not see the admin menus.</h4>
+<p>They are limited to administrator roles. If you should have access, ask a system administrator to
+check your role and entity assignment.</p>
+
+<h4>A programme shows zero on a report.</h4>
+<p>If it is a <em>support</em> programme and the report is on the <strong>Total</strong> basis, zero is
+correct — its cost has been allocated onto the mandate programmes. Switch to <strong>Direct</strong>
+to see its own cost. Note that saved reports remember their cost basis.</p>
+
+<h4>An employee has no cost per hour.</h4>
+<p>Either no work calendar exists for that budget year — add one under Admin Room → Work Calendars —
+or the row is a vacant post, which is excluded on purpose.</p>
+
+<h4>HR totals look short.</h4>
+<p>Check <strong>Allocation Variances</strong>. Salary that has not been allocated to any activity
+counts in the HR total but appears against no activity or programme.</p>
+
+<h4>My changes to a report are not showing.</h4>
+<p>Refresh with <strong>Ctrl+F5</strong>. If figures still look stale, confirm the year, entity and
+cost basis at the top of the report.</p>
+
+<hr class="sec" />
+<p style="margin-top:22px; font-size:12px; color:var(--muted);">
+  GovBudget — Complete Guide, version 2.0. To produce a PDF, open this page and choose Print, then
+  save as PDF. Ras Al Khaimah Government, Department of Finance.
+</p>
+
+</div>
+</body>
+</html>
