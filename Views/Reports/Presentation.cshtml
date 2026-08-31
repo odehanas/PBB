@@ -35,9 +35,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
     <title>Performance-Based Budgeting — @scopeLabel — FY @m.Year</title>
 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    @* Served locally: the deployment environment has no outbound internet access. *@
+    <link rel="stylesheet" href="~/lib/reveal.js/reveal.min.css" />
+    <script src="~/lib/reveal.js/reveal.min.js"></script>
+    <script src="~/lib/chartjs/chart.umd.min.js"></script>
 
     <style>
         :root {
@@ -469,16 +470,12 @@
     </div>
 
     <script>
-        // Inject print/PDF stylesheet when the deck is opened with ?print-pdf.
-        (function () {
-            var isPdf = /print-pdf/gi.test(window.location.search);
-            var link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = isPdf
-                ? 'https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/print/pdf.min.css'
-                : 'https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/print/paper.min.css';
-            document.head.appendChild(link);
-        })();
+        // The print/PDF stylesheets that used to be injected here pointed at
+        // cdnjs .../reveal.js/4.6.1/print/pdf.min.css and paper.min.css. Those paths only
+        // ever existed for reveal.js 3.x - version 4.x ships print styles as .scss sources
+        // and folds the compiled rules into reveal.css itself. Both URLs returned 404 on
+        // every load, so the injection did nothing but add two failed requests. Removed:
+        // reveal.css already carries the @@media print rules.
 
         var HAS_DATA = @(hasData ? "true" : "false");
         var CHART = {
