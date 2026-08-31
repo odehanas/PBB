@@ -1,27 +1,61 @@
-GovBudget manual screenshots
-============================
+GovBudget guide screenshots
+===========================
 
-Save the 6 screenshots you provided into THIS folder using these EXACT names
-(PNG). The HTML guides reference them via src="images/<name>".
+Referenced by the two guides in ../ :
+  GovBudget_Guide_EN.html   (English)
+  GovBudget_Guide_AR.html   (Arabic — same figures, same filenames)
 
-  01-login.png                 -> Image 1: GovBudget "Please Sign In" page
-  02-executive-summary.png     -> Image 2: Executive Summary dashboard (Home)
-  03-budget-setup-context.png  -> Image 3: Budget Setup - Select Entity and Cost Center
-  04-budget-entry.png          -> Image 4: Budget Entry form (REVENUE/HR/CAPEX/OPEX tabs)
-  05-admin-room.png            -> Image 5: Admin Room (cards hub)
-  06-edit-user.png             -> Image 6: Edit User form (Role dropdown)
+Both guides use src="images/<name>", so a file only has to be dropped into this
+folder with the exact name below and it appears in both languages at once.
 
-Where they appear:
-  Admin guide (EN + AR):
-    Fig 1 = 01-login          (Section 1 - Roles)
-    Fig 2 = 03-budget-setup   (Section 2 - Getting Started / Context)
-    Fig 3 = 05-admin-room     (Section 3 - Reference Data)
-    Fig 4 = 06-edit-user      (Section 6 - User Administration)
-  User guide (EN + AR):
-    Fig 1 = 01-login          (Section 1)
-    Fig 2 = 03-budget-setup   (Section 1)
-    Fig 3 = 04-budget-entry   (Section 3 - Entering a Budget)
-    Fig 4 = 04-budget-entry   (Section 4 - Submitting; shows "Submit for Approval")
-    Fig 5 = 02-executive-summary (Section 5 - Reports)
+CAPTURE SETTINGS
+  - Browser at roughly 1400px wide, 100% zoom, light theme (not Dark).
+  - Sign in as an ADMIN account so the full sidebar is visible.
+  - Include the sidebar in every screen capture except 01-login.
+  - Year 2026, entity RDAM (Antiquities and Museums) keeps the figures
+    consistent between images and small enough to read.
+  - PNG. Crop to the browser content area; no OS title bar or bookmarks.
 
-After saving the files, open each guide in a browser and use Print -> Save as PDF.
+
+CURRENT SET
+-----------
+  01-login.png                 Sign-in page.  STILL CURRENT — do not retake.
+                               (No sidebar on this screen, so the navy change
+                               did not affect it.)
+
+  02-executive-summary.png     Home — Executive Summary.               RETAKE
+  03-budget-setup-context.png  Budget Setup — year / entity / cost centre. RETAKE
+  04-budget-entry.png          Budget Entry with the category tabs.    RETAKE
+  05-admin-room.png            Admin Room card hub.                    RETAKE
+                               (Must be retaken: it now also has to show the
+                               new Work Calendars tile.)
+  06-edit-user.png             Edit User — role, entity, cost centre.  RETAKE
+
+  Everything above except 01 predates the navy sidebar and shows the old green
+  theme.
+
+
+TO BE ADDED
+-----------
+  07-hr-allocate.png           Budget Setup -> HR tab -> Allocate on an employee.
+                               Show the allocation rows and the allocated /
+                               remaining figures.
+
+  08-submissions.png           Budget Submissions list with the status tabs
+                               (All / Draft / Submitted / Returned ...) visible.
+
+  09-work-calendars.png        Admin Room -> Work Calendars, showing the default
+                               calendar row with gross and productive hours and
+                               the Employees column.
+
+  10-cost-per-hour.png         Reports -> Employee Cost per Hour. Include the
+                               summary cards (blended standard and nominal rate)
+                               and the first few employee rows.
+
+  11-report-builder.png        Reports -> Report Builder with a chart rendered.
+                               Waterfall or Bar (horizontal) shows the new
+                               output types best.
+
+The figure markup for 07-11 is deliberately NOT in the guides yet — an <img>
+pointing at a missing file renders as a broken image, which looks worse than no
+figure at all. Add the files, then the figures get wired in.
