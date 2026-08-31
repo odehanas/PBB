@@ -261,7 +261,7 @@
                         @foreach (var row in result.Rows)
                         {
                             <tr>
-                                <td>@row.Key</td>
+                                <td>@ReportLabel.SplitCodeName(row.Key)</td>
                                 @if (result.Pivoted)
                                 {
                                     for (var i = 0; i < row.Cells.Count; i++)

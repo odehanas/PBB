@@ -347,7 +347,7 @@
                         {
                             <tr>
                                 <td>@x.EntityCode</td>
-                                <td>@x.ProgramCode - @x.ProgramName</td>
+                                <td>@ReportLabel.CodeName(x.ProgramCode, x.ProgramName)</td>
                                 <td class="text-end">@x.Direct.ToString("N2")</td>
                                 <td class="text-end">@x.Allocated.ToString("N2")</td>
                                 <td class="text-end fw-bold">@x.Total.ToString("N2")</td>
@@ -450,7 +450,7 @@
                             {
                                 <tr>
                                     <td>@r.EntityCode</td>
-                                    <td>@r.ProgramCode - @r.ProgramName</td>
+                                    <td>@ReportLabel.CodeName(r.ProgramCode, r.ProgramName)</td>
                                     <td><span class="badge @(r.ProgramType == "Support" ? "bg-warning text-dark" : "bg-light text-dark")">@r.ProgramType</span></td>
                                     <td class="text-end">@r.Direct.ToString("N2")</td>
                                     @foreach (var k in scKeys)
@@ -699,7 +699,7 @@
                             <tr>
                                 <td>@x.EntityCode</td>
                                 <td>@x.ProgramCode</td>
-                                <td>@x.ActivityCode - @x.ActivityName</td>
+                                <td>@ReportLabel.CodeName(x.ActivityCode, x.ActivityName)</td>
                                 <td class="text-end">@x.AnnualCost.ToString("N2")</td>
                                 <td class="text-end @(x.AllocatedCost < 0 ? "text-danger" : (x.AllocatedCost > 0 ? "text-success" : "text-muted"))">
                                     @(x.AllocatedCost != 0 ? x.AllocatedCost.ToString("N2") : "—")

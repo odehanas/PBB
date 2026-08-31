@@ -72,7 +72,7 @@ else if (TempData["Error"] != null)
                 @(item.Department.DeptCode + " - " + item.Department.DeptName)
             </td>
             <td>
-                @(item.Program.ProgramCode + " - " + item.Program.ProgramName)
+                @ReportLabel.CodeName(item.Program.ProgramCode, item.Program.ProgramName)
             </td>
             <td>
                 <a asp-action="Edit" asp-route-id="@item.ActivityId">Edit</a> |

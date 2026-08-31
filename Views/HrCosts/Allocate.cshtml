@@ -169,8 +169,8 @@
                         var amountStr = a.AllocatedAmount.ToString(System.Globalization.CultureInfo.InvariantCulture);
                         var pctStr = pct.ToString(System.Globalization.CultureInfo.InvariantCulture);
                         <tr>
-                            <td>@(a.Activity.ActivityCode + " - " + a.Activity.ActivityName)</td>
-                            <td>@(a.Project != null ? (a.Project.ProjectCode + " - " + a.Project.ProjectName) : "")</td>
+                            <td>@ReportLabel.CodeName(a.Activity.ActivityCode, a.Activity.ActivityName)</td>
+                            <td>@(a.Project != null ? ReportLabel.CodeName(a.Project.ProjectCode, a.Project.ProjectName) : null)</td>
                             <td class="text-end">@a.AllocatedAmount.ToString("N2")</td>
                             <td class="text-end">@pct.ToString("0.##")%</td>
                             <td class="text-end">@a.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>

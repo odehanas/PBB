@@ -321,8 +321,8 @@
                                     @foreach (var r in Model.Income.Lines)
                                     {
                                         <tr data-cat="@r.CategoryCode">
-                                            <td>@(string.IsNullOrWhiteSpace(r.ProgramCode) ? "" : (r.ProgramCode + " - " + r.ProgramName))</td>
-                                            <td>@(string.IsNullOrWhiteSpace(r.ActivityCode) ? "" : (r.ActivityCode + " - " + r.ActivityName))</td>
+                                            <td>@ReportLabel.CodeName(r.ProgramCode, r.ProgramName)</td>
+                                            <td>@ReportLabel.CodeName(r.ActivityCode, r.ActivityName)</td>
                                             <td>@r.GLCode</td>
                                             <td>@r.GLName</td>
                                             <td>@r.CategoryCode</td>
@@ -474,7 +474,7 @@
                                     @foreach (var r in Model.ProjectCosts)
                                     {
                                         <tr class="project-row" style="cursor: pointer;" data-project-id="@r.ProjectId" data-loaded="false" title="Click to view underlying transactions">
-                                            <td><span class="cost-caret text-muted me-1">&#9656;</span>@(r.ProjectCode + " - " + r.ProjectName)</td>
+                                            <td><span class="cost-caret text-muted me-1">&#9656;</span>@ReportLabel.CodeName(r.ProjectCode, r.ProjectName)</td>
                                             <td class="text-end cost-cell" data-section="revenue" title="View revenue transactions">@r.Revenue.ToString("N2")</td>
                                             <td class="text-end cost-cell" data-section="hr" title="View HR allocations">@r.Hr.ToString("N2")</td>
                                             <td class="text-end cost-cell" data-section="capex" title="View CAPEX transactions">@r.Capex.ToString("N2")</td>
@@ -552,7 +552,7 @@
                                     }
                                     @foreach (var g in programGroups)
                                     {
-                                        var programLabel = string.IsNullOrWhiteSpace(g.Key.ProgramCode) ? "No Program" : (g.Key.ProgramCode + " - " + g.Key.ProgramName);
+                                        var programLabel = ReportLabel.CodeName(g.Key.ProgramCode, g.Key.ProgramName, "No Program");
                                         var totalRevenue = g.Sum(x => x.Revenue);
                                         var totalHr = g.Sum(x => x.Hr);
                                         var totalCapex = g.Sum(x => x.Capex);
@@ -584,7 +584,7 @@
                                             var clickable = r.ActivityId > 0;
                                             <tr class="@(clickable ? "activity-row" : "")" style="@(clickable ? "cursor: pointer;" : "")" data-activity-id="@r.ActivityId" data-loaded="false" title="@(clickable ? "Click to view underlying transactions" : "")">
                                                 <td></td>
-                                                <td>@if (clickable) { <span class="cost-caret text-muted me-1">&#9656;</span> }@(r.ActivityCode + " - " + r.ActivityName)</td>
+                                                <td>@if (clickable) { <span class="cost-caret text-muted me-1">&#9656;</span> }@ReportLabel.CodeName(r.ActivityCode, r.ActivityName)</td>
                                                 <td class="text-end @(clickable ? "cost-cell" : "")" data-section="revenue">@r.Revenue.ToString("N2")</td>
                                                 <td class="text-end @(clickable ? "cost-cell" : "")" data-section="hr">@r.Hr.ToString("N2")</td>
                                                 <td class="text-end @(clickable ? "cost-cell" : "")" data-section="capex">@r.Capex.ToString("N2")</td>
@@ -678,8 +678,8 @@
                                             <td>@(r.EmployeeId + " - " + r.EmployeeName)</td>
                                             <td>@r.EntityName</td>
                                             <td>@r.DepartmentName</td>
-                                            <td>@(string.IsNullOrWhiteSpace(r.ProgramCode) ? "" : (r.ProgramCode + " - " + r.ProgramName))</td>
-                                            <td>@(r.ActivityCode + " - " + r.ActivityName)</td>
+                                            <td>@ReportLabel.CodeName(r.ProgramCode, r.ProgramName)</td>
+                                            <td>@ReportLabel.CodeName(r.ActivityCode, r.ActivityName)</td>
                                             <td>@(string.IsNullOrWhiteSpace(r.GLName) ? r.GLCode : (r.GLCode + " - " + r.GLName))</td>
                                             <td class="text-end">@r.Amount.ToString("N2")</td>
                                         </tr>
