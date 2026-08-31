@@ -62,6 +62,22 @@ namespace GovBudget.Utils
         }
 
         /// <summary>
+        /// Shortens text to fit a chart axis, appending an ellipsis when it had to cut.
+        /// Chart.js does not bound tick-label width, so an uncapped 90-character name on a
+        /// horizontal bar takes the whole canvas and leaves the bars a few pixels wide.
+        /// </summary>
+        public static string Shorten(string? text, int maxLength)
+        {
+            var value = (text ?? "").Trim();
+            if (maxLength < 4 || value.Length <= maxLength)
+            {
+                return value;
+            }
+
+            return value[..(maxLength - 1)].TrimEnd() + "…";
+        }
+
+        /// <summary>
         /// The reference code alone, for chart axis labels.
         ///
         /// Charts have no room for "DAM-04 - Archaeological Sites and Collections

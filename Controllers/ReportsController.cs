@@ -842,15 +842,85 @@ namespace GovBudget.Controllers
             // Cap to top 25 rows for readable charts.
             var rows = result.Rows.Take(25).ToList();
 
-            // Axis labels are the reference code only. A full "CODE - Name" label on a
-            // programme or activity chart is long enough that Chart.js tilts it and the
-            // labels eat half the plot area. The full text is carried alongside and shown
-            // in the tooltip, so nothing is actually lost.
-            var labels = rows.Select(r => ReportLabel.CodeOnly(r.Key)).ToList();
+            var horizontal = string.Equals(chartType, "hbar", StringComparison.OrdinalIgnoreCase);
+            var waterfall = string.Equals(chartType, "waterfall", StringComparison.OrdinalIgnoreCase);
+
+            // "hbar" and "waterfall" are our own names for layouts Chart.js draws as a
+            // bar; it only understands bar/line/pie, so map before serialising.
+            var jsType = (horizontal || waterfall) ? "bar" : chartType;
+
             var fullLabels = rows.Select(r => r.Key).ToList();
+
+            // A horizontal bar puts labels down the y-axis, which has room for the name as
+            // well as the code - but not unlimited room: Chart.js does not bound tick
+            // width, so a full 90-character name leaves the bars a few pixels wide. Cap it
+            // and let the tooltip carry the rest.
+            // Every other type labels a cramped x-axis, where such a label gets tilted and
+            // swallows the plot area, so those show the code alone.
+            var labels = horizontal
+                ? rows.Select(r => ReportLabel.Shorten(r.Key, 46)).ToList()
+                : rows.Select(r => ReportLabel.CodeOnly(r.Key)).ToList();
+
             var palette = new[] { "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac" };
 
+            const string PositiveFill = "rgba(15, 123, 91, 0.45)";
+            const string PositiveLine = "rgba(15, 123, 91, 0.85)";
+            const string NegativeFill = "rgba(220, 53, 69, 0.35)";
+            const string NegativeLine = "rgba(220, 53, 69, 0.75)";
+            const string TotalFill = "rgba(22, 35, 61, 0.35)";
+            const string TotalLine = "rgba(22, 35, 61, 0.80)";
+
             object data;
+
+            if (waterfall)
+            {
+                // Floating bars: each point is [start, end], so a bar hangs between the
+                // running total before and after that row. This is Chart.js's own feature
+                // rather than the invisible-base-plus-stack trick, which means a negative
+                // step draws downward correctly instead of needing special casing.
+                var steps = new List<decimal[]>(rows.Count + 1);
+                var deltas = new List<decimal>(rows.Count + 1);
+                var fills = new List<string>(rows.Count + 1);
+                var lines = new List<string>(rows.Count + 1);
+
+                var running = 0m;
+                foreach (var r in rows)
+                {
+                    var start = running;
+                    running += r.Total;
+                    steps.Add(new[] { start, running });
+                    deltas.Add(r.Total);
+                    fills.Add(r.Total >= 0m ? PositiveFill : NegativeFill);
+                    lines.Add(r.Total >= 0m ? PositiveLine : NegativeLine);
+                }
+
+                // Closing bar: the accumulated total, measured from zero.
+                labels.Add("TOTAL");
+                fullLabels.Add("Total");
+                steps.Add(new[] { 0m, running });
+                deltas.Add(running);
+                fills.Add(TotalFill);
+                lines.Add(TotalLine);
+
+                data = new
+                {
+                    labels,
+                    datasets = new[]
+                    {
+                        new
+                        {
+                            label = result.MeasureLabel,
+                            data = steps,
+                            backgroundColor = fills,
+                            borderColor = lines,
+                            borderWidth = 1
+                        }
+                    }
+                };
+
+                return JsonSerializer.Serialize(new { type = jsType, data, fullLabels, deltas, waterfall = true, horizontal = false });
+            }
+
             if (result.Pivoted && result.ColumnKeys.Count > 0)
             {
                 var datasets = result.ColumnKeys.Select((ck, i) => (object)new
@@ -877,7 +947,8 @@ namespace GovBudget.Controllers
                     }
                 };
             }
-            return JsonSerializer.Serialize(new { type = chartType, data, fullLabels });
+
+            return JsonSerializer.Serialize(new { type = jsType, data, fullLabels, waterfall = false, horizontal });
         }
 
         private static string NormalizeReport(string? report)

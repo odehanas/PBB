@@ -2,7 +2,15 @@
 @{
     ViewData["Title"] = "Report Builder";
     var result = Model.Result;
-    var chartTypes = new[] { ("table", "Table"), ("bar", "Bar"), ("pie", "Pie"), ("line", "Line") };
+    var chartTypes = new[]
+    {
+        ("table", "Table"),
+        ("bar", "Bar"),
+        ("hbar", "Bar (horizontal)"),
+        ("waterfall", "Waterfall"),
+        ("pie", "Pie"),
+        ("line", "Line")
+    };
     var catQuery = string.Concat(Model.SelectedCategories.Select(c => "&categories=" + Uri.EscapeDataString(c)));
 }
 
@@ -335,25 +343,56 @@
                 const cfg = @Html.Raw(Model.ChartJson);
                 const ctx = document.getElementById('reportChart');
                 if (ctx && cfg) {
-                    // Axis labels carry the reference code only, so the tooltip restores
-                    // the full "CODE - Name" on hover; nothing is hidden, just moved.
+                    // Vertical charts label a cramped x-axis, so they show the code only
+                    // and the tooltip restores the full "CODE - Name". A horizontal bar
+                    // already shows the whole name, so its tooltip title is the same text.
                     const full = cfg.fullLabels || [];
+                    const deltas = cfg.deltas || [];
+                    const nf = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
                     cfg.options = {
                         responsive: true,
                         maintainAspectRatio: false,
+                        indexAxis: cfg.horizontal ? 'y' : 'x',
                         plugins: {
-                            legend: { display: cfg.type === 'pie' || (cfg.data.datasets && cfg.data.datasets.length > 1) },
+                            legend: {
+                                display: !cfg.waterfall &&
+                                         (cfg.type === 'pie' || (cfg.data.datasets && cfg.data.datasets.length > 1))
+                            },
                             tooltip: {
                                 callbacks: {
                                     title: function (items) {
                                         if (!items.length) return '';
                                         const i = items[0].dataIndex;
                                         return full[i] || items[0].label || '';
+                                    },
+                                    label: function (item) {
+                                        // A waterfall point is [start, end]; showing that
+                                        // raw pair is meaningless, so report the step
+                                        // itself and where it lands.
+                                        if (cfg.waterfall) {
+                                            const d = deltas[item.dataIndex];
+                                            const v = item.raw;
+                                            const end = Array.isArray(v) ? v[1] : v;
+                                            const sign = (d > 0 ? '+' : '');
+                                            return sign + nf.format(d) + '  (running: ' + nf.format(end) + ')';
+                                        }
+                                        const val = (item.raw && item.raw.length === 2) ? item.raw[1] : item.raw;
+                                        return (item.dataset.label ? item.dataset.label + ': ' : '') + nf.format(val);
                                     }
                                 }
                             }
                         }
                     };
+
+                    // A horizontal bar needs height per row or the bars are hairlines.
+                    if (cfg.horizontal && cfg.data.labels) {
+                        const wrap = ctx.parentElement;
+                        if (wrap) {
+                            wrap.style.height = Math.max(260, cfg.data.labels.length * 34 + 60) + 'px';
+                        }
+                    }
+
                     new Chart(ctx, cfg);
                 }
             })();
