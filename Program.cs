@@ -84,9 +84,20 @@ builder.Services.AddRateLimiter(options =>
         }));
 });
 
-// DbContext from appsettings.json
-var cs = builder.Configuration.GetConnectionString("DefaultConnection")
-         ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+// The connection string is deliberately NOT in appsettings.json - that file is committed.
+// It comes from user secrets locally, and from appsettings.Production.json on the server.
+// Checked for empty as well as null: appsettings.json ships an empty placeholder, which
+// would otherwise sail past a null check and fail later as an obscure SQL login error.
+var cs = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(cs))
+{
+    throw new InvalidOperationException(
+        "Connection string 'DefaultConnection' is not configured. " +
+        "On the server: add it to appsettings.Production.json in the site root, next to " +
+        "GovBudget.dll, then restart the app pool. Locally: run " +
+        "dotnet user-secrets set \"ConnectionStrings:DefaultConnection\" \"<value>\". " +
+        "See docs/DEPLOY.md section 8.");
+}
 builder.Services.AddDbContext<GovBudgetContext>(options =>
     options.UseSqlServer(cs, sql =>
     {

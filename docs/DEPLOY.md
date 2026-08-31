@@ -131,7 +131,45 @@ deletion is what used to break the live site.
 
 ---
 
-## 7. `deploy-update.cmd`
+## 7. Where the connection string lives
+
+`appsettings.json` is committed to git, so **the live connection string is not in it**. It
+ships with an empty `DefaultConnection` placeholder and the app refuses to start if nothing
+supplies a real one — deliberately, with a message naming both options.
+
+| Environment | Source | Notes |
+|-------------|--------|-------|
+| Local development | **User secrets** | `%APPDATA%\Microsoft\UserSecrets\govbudget-9c2e-4f7a-connectionstrings\secrets.json` — outside the repo, so it cannot be committed. Loaded automatically because `ASPNETCORE_ENVIRONMENT=Development`. |
+| Server | **`appsettings.Production.json`** | Site root, next to `GovBudget.dll`. Never deployed (skip rule + exclusion), never in git. |
+
+Setting it locally:
+
+```
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Data Source=...;Password=...;"
+```
+
+The server file holds both the connection string and the assistant key:
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Data Source=SQL5110.site4now.net;Initial Catalog=db_ac6910_govbudget;User Id=db_ac6910_govbudget_admin;Password=THE_PASSWORD;Encrypt=True;TrustServerCertificate=True;"
+  },
+  "Assistant": { "ApiKey": "sk-..." }
+}
+```
+
+Configuration is read once at start-up, so the app pool must recycle after editing it —
+see section 6.
+
+> **Order matters.** `appsettings.Production.json` must exist on the server *before* the
+> first deploy that carries the empty placeholder, or the site returns HTTP 500.30 on
+> start-up. Production config overrides `appsettings.json`, so adding the server file
+> early is harmless and can be done at any time beforehand.
+
+---
+
+## 8. `deploy-update.cmd`
 
 A robocopy-based incremental deploy for a site folder reachable as a **local or UNC path**
 (on-premise IIS, or a mapped drive). It is not usable against SmarterASP, which exposes
