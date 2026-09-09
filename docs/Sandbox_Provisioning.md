@@ -16,7 +16,7 @@ question to settle before testing can start.
 
 | # | Step | Script / action |
 |---|---|---|
-| 1 | Create an empty database **with the production collation** | `CREATE DATABASE GovBudget_SBX COLLATE Latin1_General_CI_AS_KS_WS;` — the live database does **not** use the server default `SQL_Latin1_General_CP1_CI_AS`, so omitting this produces a sandbox that sorts and compares text differently from production. Confirm the exact value with section 7d of `docs/Schema_Inventory.sql`. |
+| 1 | Create an empty database | `CREATE DATABASE GovBudget_SBX;` — **corrected 9 Sep 2026.** This step previously specified `COLLATE Latin1_General_CI_AS_KS_WS` on the belief that production used a non-default collation. Verified against the live database, it does not: the database and all 208 text columns in schema `core` use `SQL_Latin1_General_CP1_CI_AS`, the server default. Adding the old `COLLATE` clause would have created a sandbox that differs from production. Leave it at the default. |
 | 2 | Create all tables, views and the 3 budget categories | `docs/LocalDatabase_FullSchema.sql` |
 | 3 | Apply the security columns | `docs/SecurityHardening_Schema.sql` |
 | 4 | Apply the remaining incremental scripts | `docs/AddKpiClassification.sql`, `docs/ActualsComparison_Schema.sql`, `docs/AddBudgetLineEntrySource.sql`, `docs/AddHrOccupation.sql` |

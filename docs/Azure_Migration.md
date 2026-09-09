@@ -100,24 +100,32 @@ by four hours relative to existing rows. Decide whether to normalise those
 defaults to `SYSUTCDATETIME()` or set `WEBSITE_TIME_ZONE` on App Service to keep
 current behaviour.
 
-### 3.7 Database collation — confirmed non-default
+### 3.7 Database collation — default, verified
 
-The live database uses **`Latin1_General_CI_AS_KS_WS`**, not the
-`SQL_Latin1_General_CP1_CI_AS` that Azure SQL and a fresh SQL Server install
-create by default. This surfaced as a collation-conflict error while running
-`docs/Schema_Inventory.sql` against production.
+**Corrected 9 September 2026.** An earlier version of this section stated that the
+live database used `Latin1_General_CI_AS_KS_WS` and instructed creating the target
+with that collation. **That was wrong**, and following it would have produced a
+sandbox that did *not* match production — the opposite of the intent.
 
-Consequence: **a target database created by hand will not match production.**
-Sort order, uniqueness of text keys and comparisons of Arabic text can all behave
-differently. Two ways to get it right:
+Verified directly against the live database:
 
-- Import a `.bacpac` — the collation is carried inside the package. Preferred.
-- Or create the database explicitly:
-  `CREATE DATABASE GovBudget COLLATE Latin1_General_CI_AS_KS_WS;` before running
-  any schema script.
+| Scope | Collation |
+|---|---|
+| Database | `SQL_Latin1_General_CP1_CI_AS` |
+| All 208 text columns in schema `core` | `SQL_Latin1_General_CP1_CI_AS` |
 
-Confirm the exact value from section 7d of `docs/Schema_Inventory.sql` and record
-it in the environment definition given to EGA.
+The collation is therefore **uniform across the application schema and is the
+default** that Azure SQL and a fresh SQL Server install create. No special
+`COLLATE` clause is needed.
+
+The earlier confusion came from querying `sys.columns` without excluding system
+objects: SQL Server's own catalog views carry `Latin1_General_CI_AS_KS_WS`,
+`Latin1_General_BIN` and others. Those belong to the engine, not to this
+application, and do not travel with the data.
+
+Still prefer a `.bacpac` — it carries collation, schema and data together and
+removes the question entirely. But a hand-created database is now also safe,
+provided it is left at the server default.
 
 ### 3.8 Azure SQL differences
 
