@@ -4,6 +4,7 @@ using GovBudget.Utils;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -28,15 +29,38 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.SameSite = SameSiteMode.Lax;
 });
 
+// Behind a reverse proxy (Azure Application Gateway) the connection comes from the proxy, so
+// every user would share one IP for rate limiting and audit. Trust X-Forwarded-For/-Proto only
+// from the proxy subnets listed in ForwardedHeaders:KnownNetworks (e.g. "10.92.0.0/24").
+// With nothing configured only loopback is trusted, which leaves direct hosting unchanged.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    var networks = builder.Configuration["ForwardedHeaders:KnownNetworks"] ?? "";
+    foreach (var cidr in networks.Split(';', ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(cidr));
+    }
+});
+
 // Data-protection keys back the auth cookie and antiforgery tokens. Persisting them keeps
 // sessions valid across restarts and across instances instead of regenerating on each boot.
+// DataProtection:KeyPath should point outside the site folder so a deploy cannot remove the
+// keys; on Windows the key ring is encrypted at rest with machine-level DPAPI.
 try
 {
-    var keyRing = new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "App_Data", "keys"));
+    var keyPath = builder.Configuration["DataProtection:KeyPath"];
+    var keyRing = new DirectoryInfo(string.IsNullOrWhiteSpace(keyPath)
+        ? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "keys")
+        : keyPath);
     keyRing.Create();
-    builder.Services.AddDataProtection()
+    var dataProtection = builder.Services.AddDataProtection()
         .SetApplicationName("GovBudget")
         .PersistKeysToFileSystem(keyRing);
+    if (OperatingSystem.IsWindows())
+    {
+        dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
+    }
 }
 catch (Exception ex)
 {
@@ -59,9 +83,14 @@ builder.Services.AddRateLimiter(options =>
         }));
 });
 
-// DbContext from appsettings.json
-var cs = builder.Configuration.GetConnectionString("DefaultConnection")
-         ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+// The connection string is never kept in appsettings.json: it comes from user-secrets in
+// development and from the ConnectionStrings__DefaultConnection environment variable on a server.
+var cs = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(cs))
+{
+    throw new InvalidOperationException(
+        "Connection string 'DefaultConnection' not configured. Set it with user-secrets or the ConnectionStrings__DefaultConnection environment variable.");
+}
 builder.Services.AddDbContext<GovBudgetContext>(options =>
     options.UseSqlServer(cs, sql =>
     {
@@ -153,6 +182,9 @@ builder.Services.AddScoped<GovBudget.Services.Assistant.IChatAssistantService, G
 builder.Services.AddScoped<GovBudget.Services.IPasswordResetNotifier, GovBudget.Services.NoOpPasswordResetNotifier>();
 
 var app = builder.Build();
+
+// First in the pipeline so rate limiting, HTTPS redirection and audit all see the real client.
+app.UseForwardedHeaders();
 
 // Credential hardening: add the hash/lockout columns when missing and convert any
 // remaining clear-text password into a PBKDF2 hash. Runs before anything else touches
