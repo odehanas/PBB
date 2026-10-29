@@ -99,3 +99,51 @@ A simple `app_offline.htm` example:
 
 **Recommendation:** set up **Web Deploy** once; afterwards every change is a single
 **Publish** click that ships both the recompiled views and the `wwwroot` assets.
+
+---
+
+## Azure (IDO sandbox) — required server configuration
+
+`appsettings.json` deliberately holds **no secrets and no environment-specific values**.
+On the VM (`vm-govbudget-app`), set these as **environment variables on the IIS app pool**
+(IIS Manager → Configuration Editor → `system.applicationHost/applicationPools` →
+`environmentVariables`) or in the published `web.config` under
+`<aspNetCore><environmentVariables>`. ASP.NET Core maps `__` to `:`.
+
+| Variable | Example value | Why |
+|---|---|---|
+| `ConnectionStrings__DefaultConnection` | `Server=tcp:sql-govbudget-sandbox.database.windows.net,1433;Database=govbudget-sandbox-db;Authentication=Active Directory Managed Identity;Encrypt=True;TrustServerCertificate=False;` | Database. Use the VM's managed identity (no password). Never `TrustServerCertificate=True` on Azure SQL. |
+| `AllowedHosts` | `govbudget.finance.rak.ae` | Requests with any other `Host` header get HTTP 400. Must match the DNS name users type. |
+| `ForwardedHeaders__KnownNetworks` | `10.92.0.0/24` | The `subnet-appgw` range. Without it every user shares the App Gateway's IP, so the sign-in rate limit (10/min) is shared by everyone and the audit log records the gateway, not the user. |
+| `DataProtection__KeyPath` | `D:\GovBudget\keys` | Outside the site folder so a Web Deploy cannot delete the keys. Grant the app pool identity **Modify** on this folder. |
+| `Assistant__Enabled` | `false` | The assistant calls `api.openai.com` (data leaves the UAE) and the VNet has no outbound internet. Keep off until an approved endpoint (e.g. Azure OpenAI, UAE North) is agreed. |
+| `Assistant__OecdLiveEnabled` | `false` | Calls `sdmx.oecd.org`; same outbound restriction. |
+
+### Managed identity for Azure SQL
+1. Enable the **system-assigned managed identity** on `vm-govbudget-app`.
+2. Set a Microsoft Entra admin on `sql-govbudget-sandbox`, connect as that admin and run:
+   ```sql
+   CREATE USER [vm-govbudget-app] FROM EXTERNAL PROVIDER;
+   ALTER ROLE db_datareader ADD MEMBER [vm-govbudget-app];
+   ALTER ROLE db_datawriter ADD MEMBER [vm-govbudget-app];
+   -- Temporary: the app adds missing columns/tables at startup. Remove once the
+   -- schema scripts in docs/ are run by a separate migration account at release.
+   ALTER ROLE db_ddladmin  ADD MEMBER [vm-govbudget-app];
+   ```
+
+### Application Gateway
+- **Backend setting:** HTTPS 443, host name override = `govbudget.finance.rak.ae`
+  (must match the certificate installed on IIS and the `AllowedHosts` value).
+- **Health probe:** path `/Account/Login`, host = `govbudget.finance.rak.ae`, accepted
+  status `200-399`. A probe sent with the backend IP as host gets HTTP 400 and the backend
+  is marked unhealthy.
+
+### IIS on the VM
+- Install the **.NET 10 ASP.NET Core Hosting Bundle**, then restart IIS.
+- Bind the `*.finance.rak.ae` certificate to the site on 443.
+- Web Deploy (port 8172) from the admin workstation over the VPN works the same way as
+  Option A above, using a publish profile pointed at the VM.
+
+### Database migration from SmarterASP
+Export a `.bacpac` of the current database (SSMS → Tasks → Export Data-tier Application)
+and import it into `govbudget-sandbox-db`.

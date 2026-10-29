@@ -96,14 +96,33 @@ namespace GovBudget.Controllers
             }
 
             var token = GovBudget.Utils.ResetTokens.Generate();
-            var expires = DateTime.UtcNow.AddDays(7);
+            var expires = DateTime.UtcNow.Add(AccountController.ResetTokenLifetime);
 
-            req.Token = token;
+            // Only the digest is stored, so the row cannot be replayed as a link.
+            req.Token = null;
+            req.TokenHash = GovBudget.Services.PasswordHasher.HashToken(token);
             req.TokenExpiresAt = expires;
             req.TokenUsedAt = null;
             req.Status = "LinkIssued";
             req.IssuedAt = DateTime.UtcNow;
             req.IssuedBy = User.Identity?.Name ?? "Unknown";
+
+            // Any earlier link for the same user stops working.
+            var superseded = await _db.PasswordResetRequests
+                .Where(r => r.ResetRequestId != req.ResetRequestId
+                            && r.TokenUsedAt == null
+                            && r.TokenHash != null
+                            && (r.UserName == req.UserName || (req.UserId != null && r.UserId == req.UserId)))
+                .ToListAsync();
+
+            foreach (var old in superseded)
+            {
+                old.TokenHash = null;
+                old.Token = null;
+                old.TokenExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+                old.Status = "Rejected";
+                old.AdminNote = "Superseded by a newer reset link.";
+            }
 
             _db.AuditLogs.Add(new AuditLogs
             {
@@ -129,7 +148,7 @@ namespace GovBudget.Controllers
 
             TempData["ResetLink"] = resetUrl;
             TempData["ResetLinkUser"] = req.UserName;
-            TempData["Success"] = $"Reset link generated for '{req.UserName}'. Copy it below and send it to the user.";
+            TempData["Success"] = $"Reset link generated for '{req.UserName}'. It is valid for {AccountController.ResetTokenLifetime.TotalMinutes:0} minutes and can be used once - send it to the user now.";
             return RedirectToAction(nameof(PasswordResets));
         }
 
@@ -154,6 +173,7 @@ namespace GovBudget.Controllers
             req.RejectedBy = User.Identity?.Name ?? "Unknown";
             req.AdminNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
             req.Token = null;
+            req.TokenHash = null;
             req.TokenExpiresAt = null;
 
             _db.AuditLogs.Add(new AuditLogs

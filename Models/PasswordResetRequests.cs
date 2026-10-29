@@ -24,7 +24,12 @@ public partial class PasswordResetRequests
 
     public DateTime RequestedAt { get; set; }
 
+    // Legacy clear-text token column. No longer written; kept for existing rows.
     public string? Token { get; set; }
+
+    // SHA-256 digest of the issued token. The clear-text token only ever exists in the
+    // link handed to the user.
+    public string? TokenHash { get; set; }
 
     public DateTime? TokenExpiresAt { get; set; }
 

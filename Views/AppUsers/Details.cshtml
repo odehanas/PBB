@@ -36,6 +36,34 @@
 
     <dt class="col-sm-3">Status</dt>
     <dd class="col-sm-9">@((Model.IsActive) ? "Active" : "Inactive")</dd>
+
+    <dt class="col-sm-3">Password</dt>
+    <dd class="col-sm-9">
+        Stored as a salted PBKDF2 hash (never readable).
+        @if (Model.PasswordUpdatedAt.HasValue)
+        {
+            <span class="text-muted">Last changed @Model.PasswordUpdatedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm").</span>
+        }
+        @if (Model.MustChangePassword)
+        {
+            <span class="badge bg-warning text-dark">Change required at next sign-in</span>
+        }
+    </dd>
+
+    <dt class="col-sm-3">Last sign-in</dt>
+    <dd class="col-sm-9">@(Model.LastLoginAt.HasValue ? Model.LastLoginAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "Never")</dd>
+
+    <dt class="col-sm-3">Lockout</dt>
+    <dd class="col-sm-9">
+        @if (Model.LockoutEndUtc.HasValue && Model.LockoutEndUtc.Value > DateTime.UtcNow)
+        {
+            <span class="badge bg-danger">Locked until @Model.LockoutEndUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+        }
+        else
+        {
+            <span class="text-muted">Not locked (@Model.FailedLoginCount failed attempt(s) recorded)</span>
+        }
+    </dd>
 </dl>
 
 <div class="mt-3">

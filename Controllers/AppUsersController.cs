@@ -102,7 +102,11 @@ namespace GovBudget.Controllers
             var user = new AppUsers
             {
                 UserName = vm.UserName,
-                Password = vm.Password,
+                // Never stored in clear text; the user must replace it at first sign-in.
+                PasswordHash = PasswordHasher.Hash(vm.Password),
+                PasswordUpdatedAt = DateTime.UtcNow,
+                MustChangePassword = true,
+                SecurityStamp = PasswordHasher.NewSecurityStamp(),
                 Role = vm.Role,
                 IsActive = vm.IsActive,
                 EntityId = vm.EntityId,
@@ -110,7 +114,20 @@ namespace GovBudget.Controllers
             };
 
             _context.Add(user);
+
+            _context.AuditLogs.Add(new AuditLogs
+            {
+                UserName = User.Identity?.Name ?? "Unknown",
+                Action = "INSERT",
+                EntityName = "AppUsers",
+                RecordId = "",
+                Timestamp = DateTime.UtcNow,
+                Details = $"Created user '{vm.UserName}' with role '{vm.Role}'. Password change required at first sign-in."
+            });
+
             await _context.SaveChangesAsync();
+
+            TempData["Success"] = $"User '{vm.UserName}' created. They must change the password at first sign-in.";
             return RedirectToAction(nameof(Index));
         }
 
@@ -161,6 +178,11 @@ namespace GovBudget.Controllers
                 return View(vm);
             }
 
+            var roleOrScopeChanged = !string.Equals(user.Role, vm.Role, StringComparison.OrdinalIgnoreCase)
+                || user.EntityId != vm.EntityId
+                || user.DepartmentId != vm.DepartmentId
+                || (user.IsActive && !vm.IsActive);
+
             user.UserName = vm.UserName;
             user.Role = vm.Role;
             user.IsActive = vm.IsActive;
@@ -169,7 +191,29 @@ namespace GovBudget.Controllers
 
             if (!string.IsNullOrWhiteSpace(vm.Password))
             {
-                user.Password = vm.Password;
+                // Administrator-issued password: hashed, and only usable to set a new one.
+                user.PasswordHash = PasswordHasher.Hash(vm.Password);
+                user.Password = null;
+                user.PasswordUpdatedAt = DateTime.UtcNow;
+                user.MustChangePassword = true;
+                user.FailedLoginCount = 0;
+                user.LockoutEndUtc = null;
+                user.SecurityStamp = PasswordHasher.NewSecurityStamp();
+
+                _context.AuditLogs.Add(new AuditLogs
+                {
+                    UserName = User.Identity?.Name ?? "Unknown",
+                    Action = "UPDATE",
+                    EntityName = "AppUsers",
+                    RecordId = user.UserId.ToString(),
+                    Timestamp = DateTime.UtcNow,
+                    Details = $"Administrator set a new password for '{user.UserName}'. Change required at next sign-in."
+                });
+            }
+            else if (roleOrScopeChanged)
+            {
+                // Rights changed: drop the user's live session so the new scope applies.
+                user.SecurityStamp = PasswordHasher.NewSecurityStamp();
             }
 
             try
@@ -204,9 +248,49 @@ namespace GovBudget.Controllers
             if (user != null)
             {
                 user.IsActive = false;
+                // Rotating the stamp signs the account out of any live session immediately.
+                user.SecurityStamp = PasswordHasher.NewSecurityStamp();
                 _context.Update(user);
+
+                _context.AuditLogs.Add(new AuditLogs
+                {
+                    UserName = User.Identity?.Name ?? "Unknown",
+                    Action = "UPDATE",
+                    EntityName = "AppUsers",
+                    RecordId = user.UserId.ToString(),
+                    Timestamp = DateTime.UtcNow,
+                    Details = $"Deactivated user '{user.UserName}' and revoked active sessions."
+                });
+
                 await _context.SaveChangesAsync();
             }
+            return RedirectToAction(nameof(Index));
+        }
+
+        // POST: AppUsers/Unlock/5 - clears a lockout after too many failed sign-ins.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Unlock(int id)
+        {
+            var user = await ScopedUsersQuery().FirstOrDefaultAsync(u => u.UserId == id);
+            if (user == null) return NotFound();
+
+            user.LockoutEndUtc = null;
+            user.FailedLoginCount = 0;
+
+            _context.AuditLogs.Add(new AuditLogs
+            {
+                UserName = User.Identity?.Name ?? "Unknown",
+                Action = "UPDATE",
+                EntityName = "AppUsers",
+                RecordId = user.UserId.ToString(),
+                Timestamp = DateTime.UtcNow,
+                Details = $"Cleared sign-in lockout for '{user.UserName}'."
+            });
+
+            await _context.SaveChangesAsync();
+
+            TempData["Success"] = $"'{user.UserName}' can sign in again.";
             return RedirectToAction(nameof(Index));
         }
 
@@ -221,7 +305,22 @@ namespace GovBudget.Controllers
             var entityId = user.EntityId ?? user.Department?.EntityId;
 
             var token = ResetTokens.Generate();
-            var expires = DateTime.UtcNow.AddDays(7);
+            var expires = DateTime.UtcNow.Add(AccountController.ResetTokenLifetime);
+
+            // Only one link can be live at a time.
+            var superseded = await _context.PasswordResetRequests
+                .Where(r => r.TokenUsedAt == null && r.TokenHash != null
+                            && (r.UserId == user.UserId || r.UserName == user.UserName))
+                .ToListAsync();
+
+            foreach (var old in superseded)
+            {
+                old.TokenHash = null;
+                old.Token = null;
+                old.TokenExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+                old.Status = "Rejected";
+                old.AdminNote = "Superseded by a newer reset link.";
+            }
 
             _context.PasswordResetRequests.Add(new PasswordResetRequests
             {
@@ -231,7 +330,8 @@ namespace GovBudget.Controllers
                 Status = "LinkIssued",
                 RequestSource = "Admin",
                 RequestedAt = DateTime.UtcNow,
-                Token = token,
+                // Only the digest is stored; the clear-text token lives in the link only.
+                TokenHash = PasswordHasher.HashToken(token),
                 TokenExpiresAt = expires,
                 IssuedAt = DateTime.UtcNow,
                 IssuedBy = User.Identity?.Name ?? "Unknown"
@@ -260,7 +360,7 @@ namespace GovBudget.Controllers
 
             TempData["ResetLink"] = resetUrl;
             TempData["ResetLinkUser"] = user.UserName;
-            TempData["Success"] = $"Reset link generated for '{user.UserName}'. Copy it below and send it to the user.";
+            TempData["Success"] = $"Reset link generated for '{user.UserName}'. It is valid for {AccountController.ResetTokenLifetime.TotalMinutes:0} minutes and can be used once - send it to the user now.";
             return RedirectToAction(nameof(Index));
         }
 
@@ -386,6 +486,13 @@ namespace GovBudget.Controllers
             if (!userIdBeingEdited.HasValue && string.IsNullOrWhiteSpace(vm.Password))
             {
                 ModelState.AddModelError(nameof(vm.Password), "Password is required.");
+            }
+
+            // Any password set here must satisfy the same policy as a self-service change.
+            if (!string.IsNullOrWhiteSpace(vm.Password)
+                && !PasswordPolicy.Validate(vm.Password, vm.UserName, out var passwordError))
+            {
+                ModelState.AddModelError(nameof(vm.Password), passwordError);
             }
 
             var existingUser = await _context.AppUsers

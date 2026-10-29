@@ -156,6 +156,9 @@
                     <div class="mb-2 text-center text-muted small">
                         Logged in as: <strong>@User.Identity.Name</strong>
                     </div>
+                    <a asp-controller="Account" asp-action="ChangePassword" class="btn btn-sm btn-outline-secondary w-100 mb-2">
+                        <i class="bi bi-key"></i>Change my password
+                    </a>
                 }
                 <form asp-controller="Account" asp-action="Logout" method="post" hx-boost="false">
                     <button type="submit" class="btn btn-danger w-100"><i class="bi bi-box-arrow-right"></i>Exit / Logout</button>
