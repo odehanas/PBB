@@ -4,7 +4,7 @@
     var tokens = Antiforgery.GetAndStoreTokens(Context);
 }
 <div id="assistantWidget" class="assistant-widget d-print-none"
-     data-ask-url="@Url.Action("Ask", "Chat")"
+     data-stream-url="@Url.Action("AskStream", "Chat")"
      data-reset-url="@Url.Action("Reset", "Chat")"
      data-token="@tokens.RequestToken">
     <button type="button" class="assistant-launcher btn btn-primary" id="assistantLauncher"
