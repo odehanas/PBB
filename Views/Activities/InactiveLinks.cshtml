@@ -1,0 +1,182 @@
+@model GovBudget.Controllers.InactiveActivityReportVm
+@{
+    ViewData["Title"] = "Inactive activity links";
+    var yearRoute = Model.Year?.ToString() ?? "";
+}
+
+<style>
+    .ial .table { font-size: .82rem; }
+    .ial .table th, .ial .table td { padding: .35rem .5rem; vertical-align: middle; }
+    .ial .table thead th { font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; }
+    .ial .num { font-variant-numeric: tabular-nums; }
+    .ial .zero { color: #cbd5e1; }
+    .ial .sub { font-size: .7rem; color: #94a3b8; }
+    .ial .kpi-box { border: 1px solid #e2e8f0; border-radius: .5rem; padding: .6rem .9rem; }
+    .ial .kpi-box .v { font-size: 1.25rem; font-weight: 600; }
+    .ial .kpi-box .l { font-size: .7rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; }
+</style>
+
+<div class="container-fluid py-3 ial">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h4 class="mb-0">Transactions linked to inactive activities</h4>
+            <div class="text-muted small">
+                Technical report &middot; every row that still points at an activity marked inactive
+                &middot; @(Model.Year?.ToString() ?? "all years")
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" asp-action="Index">&larr; Activities</a>
+            <a class="btn btn-sm btn-outline-success" asp-action="InactiveLinksExport" asp-route-year="@yearRoute">&#8681; Export Excel</a>
+        </div>
+    </div>
+
+    <form method="get" class="row g-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label class="form-label small mb-1">Budget year</label>
+            <select name="year" class="form-select form-select-sm" asp-items="Model.YearOptions"></select>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-sm btn-primary">Apply</button>
+        </div>
+    </form>
+
+    @if (Model.TotalInactive == 0)
+    {
+        <div class="alert alert-success">
+            No inactive activities in your scope. Nothing is being hidden and nothing is orphaned.
+        </div>
+    }
+    else
+    {
+        <div class="row g-2 mb-3">
+            <div class="col-6 col-lg-3">
+                <div class="kpi-box">
+                    <div class="l">Inactive activities</div>
+                    <div class="v">@Model.TotalInactive</div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="kpi-box">
+                    <div class="l">Still carrying data</div>
+                    <div class="v text-danger">@Model.WithLinks</div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="kpi-box">
+                    <div class="l">Clean (safe to hide)</div>
+                    <div class="v text-success">@Model.Clean</div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="kpi-box">
+                    <div class="l">Value at risk</div>
+                    <div class="v">@Model.TotalValueAtRisk.ToString("N2")</div>
+                    <div class="sub">budget + HR on hidden activities</div>
+                </div>
+            </div>
+        </div>
+
+        @if (Model.WithLinks > 0)
+        {
+            <div class="alert alert-warning py-2 small">
+                <strong>Read this before hiding anything.</strong>
+                The @Model.WithLinks activity(ies) below still carry
+                <strong>@Model.TotalValueAtRisk.ToString("N2")</strong> of budget and HR cost.
+                Dropping them from the reports would remove that cost from the totals and the
+                reports would no longer reconcile to the budget. Reassign those lines to a live
+                activity first, then the activity becomes "clean" and can be hidden safely.
+            </div>
+        }
+
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Entity</th>
+                                <th>Programme</th>
+                                <th>Cost center</th>
+                                <th>Activity</th>
+                                <th class="text-end num">Budget lines</th>
+                                <th class="text-end num">Budget amount</th>
+                                <th class="text-end num">HR alloc.</th>
+                                <th class="text-end num">HR amount</th>
+                                <th class="text-end num">Submitted</th>
+                                <th class="text-end num">KPIs</th>
+                                <th class="text-end num">Outputs</th>
+                                <th class="text-end num">Alloc. postings</th>
+                                <th class="text-end num">Alloc. rules</th>
+                                <th class="text-end num">Value at risk</th>
+                                <th>Verdict</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var r in Model.Rows)
+                        {
+                            <tr>
+                                <td>@r.EntityLabel</td>
+                                <td>@r.ProgramLabel</td>
+                                <td>@r.DepartmentLabel</td>
+                                <td>
+                                    <span class="fw-bold">@r.ActivityCode</span>
+                                    <div class="sub">@r.ActivityName</div>
+                                </td>
+                                <td class="text-end num @(r.BudgetLineCount == 0 ? "zero" : "")">@r.BudgetLineCount</td>
+                                <td class="text-end num @(r.BudgetLineAmount == 0 ? "zero" : "")">@r.BudgetLineAmount.ToString("N2")</td>
+                                <td class="text-end num @(r.HrAllocationCount == 0 ? "zero" : "")">@r.HrAllocationCount</td>
+                                <td class="text-end num @(r.HrAllocationAmount == 0 ? "zero" : "")">@r.HrAllocationAmount.ToString("N2")</td>
+                                <td class="text-end num @(r.SubmissionLineCount == 0 ? "zero" : "")">@r.SubmissionLineCount</td>
+                                <td class="text-end num @(r.KpiCount == 0 ? "zero" : "")">@r.KpiCount</td>
+                                <td class="text-end num @(r.OutputCount == 0 ? "zero" : "")">@r.OutputCount</td>
+                                <td class="text-end num @(r.AllocationTxnCount == 0 ? "zero" : "")">@r.AllocationTxnCount</td>
+                                <td class="text-end num @(r.AllocationRuleCount == 0 ? "zero" : "")">@r.AllocationRuleCount</td>
+                                <td class="text-end num fw-bold @(r.ValueAtRisk == 0 ? "zero" : "")">@r.ValueAtRisk.ToString("N2")</td>
+                                <td>
+                                    @if (!r.HasLinks)
+                                    {
+                                        <span class="badge bg-success">Clean - safe to hide</span>
+                                    }
+                                    else if (r.CarriesCost)
+                                    {
+                                        <span class="badge bg-danger">Carries cost - reassign first</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-warning text-dark">Definitions only</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                        <tfoot>
+                            <tr class="table-light fw-bold">
+                                <td colspan="4" class="text-end">Total</td>
+                                <td class="text-end num">@Model.Rows.Sum(r => r.BudgetLineCount)</td>
+                                <td class="text-end num">@Model.Rows.Sum(r => r.BudgetLineAmount).ToString("N2")</td>
+                                <td class="text-end num">@Model.Rows.Sum(r => r.HrAllocationCount)</td>
+                                <td class="text-end num">@Model.Rows.Sum(r => r.HrAllocationAmount).ToString("N2")</td>
+                                <td class="text-end num">@Model.Rows.Sum(r => r.SubmissionLineCount)</td>
+                                <td class="text-end num">@Model.Rows.Sum(r => r.KpiCount)</td>
+                                <td class="text-end num">@Model.Rows.Sum(r => r.OutputCount)</td>
+                                <td class="text-end num">@Model.Rows.Sum(r => r.AllocationTxnCount)</td>
+                                <td class="text-end num">@Model.Rows.Sum(r => r.AllocationRuleCount)</td>
+                                <td class="text-end num">@Model.TotalValueAtRisk.ToString("N2")</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-muted small mt-2">
+            <strong>Definitions only</strong> means the activity carries KPIs, outputs or allocation
+            configuration but no money: hiding it changes no financial figure, though the KPIs
+            attached to it disappear with it.
+            <strong>Submitted</strong> counts snapshot lines inside budget submissions; they are
+            historical copies and are not included in the value at risk.
+        </div>
+    }
+</div>

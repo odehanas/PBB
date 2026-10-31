@@ -372,9 +372,12 @@ namespace GovBudget.Controllers
         }
 
         // ---- Execute the step-down allocation ----
+        // scenarioName: optional management label for the run ("Headcount basis").
+        // scenarioOnly: post the run as a comparison Scenario, leaving the official (Posted) run
+        //               in place, so the standard reports keep using the official allocation.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Run(int year, int? entityId)
+        public async Task<IActionResult> Run(int year, int? entityId, string? scenarioName = null, bool scenarioOnly = false)
         {
             // Entity admins can only run the allocation for their own entity.
             if (!IsGlobalAdmin())
@@ -383,7 +386,7 @@ namespace GovBudget.Controllers
                 if (!myId.HasValue) return Forbid();
                 entityId = myId.Value;
             }
-            var result = await RunAllocation(year, entityId);
+            var result = await RunAllocation(year, entityId, scenarioName, scenarioOnly);
             TempData["AllocMsg"] = result;
             return RedirectToAction(nameof(Runs), new { year, entityId });
         }
@@ -400,8 +403,11 @@ namespace GovBudget.Controllers
         // =====================================================================
         // Step-down allocation engine
         // =====================================================================
-        private async Task<string> RunAllocation(int year, int? entityId)
+        private async Task<string> RunAllocation(int year, int? entityId, string? scenarioName = null, bool scenarioOnly = false)
         {
+            var label = string.IsNullOrWhiteSpace(scenarioName) ? null : scenarioName.Trim();
+            if (label != null && label.Length > 120) label = label.Substring(0, 120);
+
             var programs = await _db.Programs.AsNoTracking()
                 .Where(p => !entityId.HasValue || p.EntityId == entityId.Value)
                 .ToListAsync();
@@ -436,6 +442,7 @@ namespace GovBudget.Controllers
                 EntityId = entityId,
                 Period = "Annual",
                 Status = "Draft",
+                ScenarioName = label,
                 Method = "StepDown",
                 RunAt = DateTime.UtcNow,
                 RunBy = User.Identity?.Name
@@ -542,17 +549,28 @@ namespace GovBudget.Controllers
                 + $"Support residual (unallocated)={residual:N2}. "
                 + (skipped > 0 ? skipped + " support program(s) skipped (no mandate target available)." : "");
 
-            // Supersede prior posted runs for the same scope.
-            var priorPosted = await _db.AllocationRuns
-                .Where(r => r.RunId != run.RunId && r.BudgetYear == year && r.Status == "Posted"
-                    && ((r.EntityId == null && entityId == null) || r.EntityId == entityId))
-                .ToListAsync();
-            foreach (var p in priorPosted) p.Status = "Superseded";
+            if (scenarioOnly)
+            {
+                // A comparison scenario: kept alongside the official run, which stays Posted so
+                // every standard report is unaffected.
+                run.Status = "Scenario";
+            }
+            else
+            {
+                // Supersede prior posted runs for the same scope (Scenario runs are left alone).
+                var priorPosted = await _db.AllocationRuns
+                    .Where(r => r.RunId != run.RunId && r.BudgetYear == year && r.Status == "Posted"
+                        && ((r.EntityId == null && entityId == null) || r.EntityId == entityId))
+                    .ToListAsync();
+                foreach (var p in priorPosted) p.Status = "Superseded";
 
-            run.Status = "Posted";
+                run.Status = "Posted";
+            }
             await _db.SaveChangesAsync();
 
-            return $"Allocation posted: {txns.Count} transaction(s), {(run.ReconciledOk ? "reconciled OK" : "RECONCILIATION MISMATCH")}. In={totalIn:N2} Out={totalOut:N2}.";
+            var what = scenarioOnly ? "Scenario saved" : "Allocation posted";
+            var named = label == null ? "" : $" \"{label}\"";
+            return $"{what}{named}: {txns.Count} transaction(s), {(run.ReconciledOk ? "reconciled OK" : "RECONCILIATION MISMATCH")}. In={totalIn:N2} Out={totalOut:N2}.";
         }
 
         private struct TargetBasis { public int ProgramId; public decimal Basis; }

@@ -56,9 +56,9 @@ else
             @foreach (var a in allocations)
             {
                 var prog = a.Activity?.Program;
-                var progText = prog != null ? $"{prog.ProgramCode} - {prog.ProgramName}" : "";
-                var act = a.Activity != null ? $"{a.Activity.ActivityCode} - {a.Activity.ActivityName}" : "";
-                var proj = a.Project != null ? $"{a.Project.ProjectCode} - {a.Project.ProjectName}" : "";
+                var progText = prog != null ? ReportLabel.CodeName(prog.ProgramCode, prog.ProgramName) : null;
+                var act = a.Activity != null ? ReportLabel.CodeName(a.Activity.ActivityCode, a.Activity.ActivityName) : null;
+                var proj = a.Project != null ? ReportLabel.CodeName(a.Project.ProjectCode, a.Project.ProjectName) : null;
                 var pct = Model.AnnualCost <= 0m ? 0m : Math.Round((a.AllocatedAmount / Model.AnnualCost) * 100m, 2);
                 <tr>
                     <td>@progText</td>

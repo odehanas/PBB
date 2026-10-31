@@ -44,6 +44,25 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     }
 });
 
+// Runtime folders the deployment deliberately does not ship (App_Data holds the key ring;
+// logs holds server diagnostics - overwriting either from a deploy would be destructive).
+// Creating them here means a fresh site never needs folders made by hand.
+//
+// Note on logs: this only runs once the app has started, so it cannot help diagnose a
+// start-up crash. That is why logs\.keep also ships with the publish output - between the
+// two, the folder is there whichever way the site was deployed.
+foreach (var relative in new[] { Path.Combine("App_Data", "keys"), "logs" })
+{
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(builder.Environment.ContentRootPath, relative));
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Could not create '{relative}': {ex.Message}");
+    }
+}
+
 // Data-protection keys back the auth cookie and antiforgery tokens. Persisting them keeps
 // sessions valid across restarts and across instances instead of regenerating on each boot.
 // DataProtection:KeyPath should point outside the site folder so a deploy cannot remove the
@@ -65,7 +84,13 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"Data protection key persistence unavailable: {ex.Message}");
+    // Worth shouting about: without a persisted key ring the app still runs, but every
+    // app-pool recycle invalidates all auth cookies and signs every user out. That looks
+    // like a random logout bug rather than a permissions problem, so name it plainly.
+    Console.Error.WriteLine(
+        "WARNING: data-protection keys cannot be persisted to App_Data\\keys " +
+        $"({ex.Message}). Users will be signed out whenever the app pool recycles. " +
+        "Grant the application pool identity write access to the App_Data folder.");
 }
 
 // Brute-force / credential-stuffing brake on the sign-in and reset endpoints, keyed by
@@ -84,13 +109,21 @@ builder.Services.AddRateLimiter(options =>
         }));
 });
 
-// The connection string is never kept in appsettings.json: it comes from user-secrets in
-// development and from the ConnectionStrings__DefaultConnection environment variable on a server.
+// The connection string is deliberately NOT in appsettings.json - that file is committed.
+// It comes from user secrets locally, and on a server from appsettings.Production.json or the
+// ConnectionStrings__DefaultConnection environment variable.
+// Checked for empty as well as null: appsettings.json ships an empty placeholder, which
+// would otherwise sail past a null check and fail later as an obscure SQL login error.
 var cs = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(cs))
 {
     throw new InvalidOperationException(
-        "Connection string 'DefaultConnection' not configured. Set it with user-secrets or the ConnectionStrings__DefaultConnection environment variable.");
+        "Connection string 'DefaultConnection' is not configured. " +
+        "On the server: add it to appsettings.Production.json in the site root, next to " +
+        "GovBudget.dll, or set the ConnectionStrings__DefaultConnection environment variable, " +
+        "then restart the app pool. Locally: run " +
+        "dotnet user-secrets set \"ConnectionStrings:DefaultConnection\" \"<value>\". " +
+        "See docs/DEPLOY.md section 8.");
 }
 builder.Services.AddDbContext<GovBudgetContext>(options =>
     options.UseSqlServer(cs, sql =>
@@ -206,6 +239,22 @@ try
 catch (Exception ex)
 {
     app.Logger.LogError(ex, "Security upgrade failed at startup.");
+}
+
+// Allocation scenarios: add the optional run label when the column is missing, so several
+// named allocation scenarios can be compared in Management Review.
+try
+{
+    using var allocScope = app.Services.CreateScope();
+    var allocDb = allocScope.ServiceProvider.GetRequiredService<GovBudgetContext>();
+    if (allocDb.Database.CanConnect())
+    {
+        GovBudget.Services.AllocationScenarioUpgrade.Run(allocDb, app.Logger);
+    }
+}
+catch (Exception ex)
+{
+    app.Logger.LogError(ex, "Allocation scenario upgrade failed at startup.");
 }
 
 // Ensure the core budget categories always exist (Budget Entry relies on these codes).

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GovBudget — Architecture, Deployment &amp; Sandbox Requirements (EGA)</title>
+<style>
+  :root{--ink:#1f2937;--muted:#6b7280;--brand:#0f4c81;--brand-light:#e8f0f7;--accent:#c8911e;--line:#d8dee6;--green:#1b7a45;--red:#b3261e;--bg-soft:#f6f8fa;}
+  *{box-sizing:border-box;}
+  html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{font-family:"Segoe UI",Calibri,Arial,sans-serif;color:var(--ink);line-height:1.55;margin:0;background:#fff;font-size:14px;}
+  .page{max-width:860px;margin:0 auto;padding:44px 52px;}
+  h1,h2,h3,h4{color:var(--brand);line-height:1.25;}
+  h1{font-size:28px;margin:0 0 6px;}
+  h2{font-size:20px;border-bottom:2px solid var(--brand-light);padding-bottom:6px;margin-top:32px;}
+  h3{font-size:15px;margin-top:20px;}
+  h4{font-size:13.5px;margin:14px 0 4px;color:var(--ink);}
+  p{margin:8px 0;}
+  ul,ol{margin:8px 0 8px 22px;padding:0;}
+  li{margin:4px 0;}
+  .callout{border-left:4px solid var(--accent);background:#fff8ec;padding:10px 14px;margin:14px 0;border-radius:0 6px 6px 0;}
+  .callout.note{border-left-color:var(--brand);background:var(--brand-light);}
+  .callout.warn{border-left-color:var(--red);background:#fdecea;}
+  .callout.ok{border-left-color:var(--green);background:#eaf6ef;}
+  .callout strong{display:block;margin-bottom:2px;}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px;}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}
+  th{background:var(--brand-light);color:var(--brand);font-weight:700;}
+  tr:nth-child(even) td{background:var(--bg-soft);}
+  code{background:var(--bg-soft);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-family:Consolas,"Courier New",monospace;font-size:12.5px;}
+  .fig{margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:10px;background:#fff;}
+  .fig svg{width:100%;height:auto;display:block;}
+  .fig .cap{font-size:12.5px;color:var(--muted);margin-top:10px;text-align:center;}
+  .cover{display:flex;flex-direction:column;justify-content:center;min-height:84vh;}
+  .cover .kicker{letter-spacing:3px;text-transform:uppercase;color:var(--accent);font-weight:700;font-size:12px;}
+  .cover h1{font-size:40px;margin:10px 0;}
+  .cover .sub{font-size:18px;color:var(--muted);}
+  .cover .rule{width:90px;height:4px;background:var(--accent);margin:22px 0;}
+  .cover .meta{margin-top:auto;color:var(--muted);font-size:12.5px;}
+  .toc ol{list-style:none;margin-left:0;}
+  .toc li{padding:4px 0;border-bottom:1px dotted var(--line);}
+  .pagebreak{page-break-before:always;}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--brand-light);color:var(--brand);}
+  .tag.act{background:#fdecea;color:var(--red);}
+  .tag.opt{background:#eaf6ef;color:var(--green);}
+  @media print{.page{padding:0;max-width:100%;}.no-print{display:none!important;}body{font-size:11pt;}h2{page-break-after:avoid;}.callout,table,.fig{page-break-inside:avoid;}@page{margin:16mm 14mm;}}
+  .print-bar{position:sticky;top:0;background:var(--brand);color:#fff;padding:10px 18px;display:flex;justify-content:space-between;align-items:center;font-size:13px;z-index:5;}
+  .print-bar button{background:var(--accent);color:#fff;border:0;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer;}
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  <span>GovBudget — Architecture, Deployment &amp; Sandbox Requirements. Use <strong>Print &rarr; Save as PDF</strong> before sending to EGA.</span>
+  <button onclick="window.print()">Save as PDF</button>
+</div>
+
+<div class="page cover">
+  <div class="kicker">Ras Al Khaimah — Department of Finance</div>
+  <h1>GovBudget</h1>
+  <div class="sub">Architecture, Deployment &amp; Sandbox Requirements</div>
+  <div class="rule"></div>
+  <p style="max-width:620px;color:var(--muted)">Prepared for the Electronic Government Authority (EGA) in support of the current evaluation phase: solution architecture, deployment topology, and the specific requirements for the proposed sandbox environment.</p>
+  <div class="meta">
+    Version 1.0 &nbsp;&bull;&nbsp; August 2026 &nbsp;&bull;&nbsp; Document owner: Department of Finance<br />
+    Prepared for: EGA — Hosting / Infrastructure &nbsp;&bull;&nbsp; Classification: Internal / For EGA review
+  </div>
+</div>
+
+<div class="page pagebreak">
+  <h2>1. Purpose and scope</h2>
+  <p>This document responds to three of the items requested by EGA for the evaluation phase:</p>
+  <table>
+    <tr><th>EGA request</th><th>Where it is answered</th></tr>
+    <tr><td>Architecture diagram</td><td>Section 3 (logical architecture) and Section 4 (technology inventory)</td></tr>
+    <tr><td>Deployment diagram</td><td>Section 5 (current production and proposed EGA topology)</td></tr>
+    <tr><td>Sandbox requirements</td><td>Sections 6 to 11</td></tr>
+  </table>
+  <p>The remaining items — the AI application onboarding form, the source code, and functional validation evidence — are provided separately, as described in the covering e-mail.</p>
+
+  <div class="toc">
+    <h3>Contents</h3>
+    <ol>
+      <li>2. System overview</li>
+      <li>3. Logical architecture</li>
+      <li>4. Technology inventory</li>
+      <li>5. Deployment topology</li>
+      <li>6. Sandbox: application server</li>
+      <li>7. Sandbox: database</li>
+      <li>8. Sandbox: network, DNS and TLS</li>
+      <li>9. Sandbox: configuration and data set</li>
+      <li>10. Security posture</li>
+      <li>11. Acceptance checklist</li>
+      <li>12. Decisions requested from EGA</li>
+    </ol>
+  </div>
+
+  <h2>2. System overview</h2>
+  <p><strong>GovBudget</strong> is a web-based Programme and Performance-Based Budgeting (PBB) system used by the Department of Finance and government entities to prepare, submit, review and consolidate annual budgets, capture actuals, allocate shared cost to programmes and activities, track KPIs, and publish management-review and Power BI reporting.</p>
+  <p>Architecturally it is deliberately simple: <strong>one server-rendered ASP.NET Core MVC application and one Microsoft SQL Server database</strong>. There is no desktop client, no message broker, no cache server, no background worker service, no scheduled job and no file share. Uploaded supporting documents are stored inside the database, so the application server holds no business data.</p>
+</div>
+
+<div class="page pagebreak">
+  <h2>3. Logical architecture</h2>
+
+  <div class="fig">
+    <svg viewBox="0 0 820 640" role="img" aria-label="GovBudget logical architecture diagram">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f4c81"></path>
+        </marker>
+        <style>
+          .zone{fill:#f6f8fa;stroke:#d8dee6;stroke-width:1}
+          .zl{font:700 11px "Segoe UI",Arial;fill:#6b7280;letter-spacing:1px}
+          .box{fill:#fff;stroke:#0f4c81;stroke-width:1.4}
+          .boxa{fill:#e8f0f7;stroke:#0f4c81;stroke-width:1.4}
+          .boxo{fill:#fff8ec;stroke:#c8911e;stroke-width:1.4;stroke-dasharray:4 3}
+          .db{fill:#eaf6ef;stroke:#1b7a45;stroke-width:1.4}
+          .t{font:600 12px "Segoe UI",Arial;fill:#1f2937}
+          .s{font:11px "Segoe UI",Arial;fill:#6b7280}
+          .chip{fill:#fff;stroke:#9fb6cc;stroke-width:1}
+          .ct{font:10.5px "Segoe UI",Arial;fill:#1f2937}
+          .fl{stroke:#0f4c81;stroke-width:1.6;fill:none;marker-end:url(#ar)}
+          .flo{stroke:#c8911e;stroke-width:1.4;fill:none;stroke-dasharray:5 3;marker-end:url(#ar)}
+          .ll{font:10.5px "Segoe UI",Arial;fill:#6b7280}
+        </style>
+      </defs>
+
+      <!-- Client zone -->
+      <rect class="zone" x="10" y="10" width="800" height="72" rx="8"></rect>
+      <text class="zl" x="24" y="30">CLIENT</text>
+      <rect class="box" x="250" y="34" width="320" height="38" rx="8"></rect>
+      <text class="t" x="410" y="52" text-anchor="middle">Web browser — Chrome / Edge</text>
+      <text class="s" x="410" y="66" text-anchor="middle">Arabic and English UI, no plug-ins, no desktop client</text>
+
+      <line class="fl" x1="410" y1="82" x2="410" y2="106"></line>
+      <text class="ll" x="420" y="99">HTTPS 443</text>
+
+      <!-- Web tier -->
+      <rect class="zone" x="10" y="110" width="800" height="150" rx="8"></rect>
+      <text class="zl" x="24" y="130">WEB TIER — IIS + ASP.NET Core Module (in-process)</text>
+      <rect class="boxa" x="30" y="140" width="760" height="52" rx="8"></rect>
+      <text class="t" x="410" y="160" text-anchor="middle">Request pipeline (middleware, executed in order)</text>
+      <rect class="chip" x="44" y="168" width="104" height="18" rx="9"></rect><text class="ct" x="96" y="181" text-anchor="middle">HTTPS + HSTS</text>
+      <rect class="chip" x="154" y="168" width="112" height="18" rx="9"></rect><text class="ct" x="210" y="181" text-anchor="middle">Security headers</text>
+      <rect class="chip" x="272" y="168" width="86" height="18" rx="9"></rect><text class="ct" x="315" y="181" text-anchor="middle">Rate limiter</text>
+      <rect class="chip" x="364" y="168" width="118" height="18" rx="9"></rect><text class="ct" x="423" y="181" text-anchor="middle">Cookie authn</text>
+      <rect class="chip" x="488" y="168" width="150" height="18" rx="9"></rect><text class="ct" x="563" y="181" text-anchor="middle">Role + form permissions</text>
+      <rect class="chip" x="644" y="168" width="132" height="18" rx="9"></rect><text class="ct" x="710" y="181" text-anchor="middle">Antiforgery / session</text>
+
+      <rect class="box" x="30" y="200" width="760" height="48" rx="8"></rect>
+      <text class="t" x="410" y="219" text-anchor="middle">MVC controllers + compiled Razor views</text>
+      <text class="s" x="410" y="236" text-anchor="middle">Views are compiled into the application assemblies — no runtime view compilation</text>
+
+      <line class="fl" x1="410" y1="260" x2="410" y2="284"></line>
+
+      <!-- Application services -->
+      <rect class="zone" x="10" y="288" width="800" height="116" rx="8"></rect>
+      <text class="zl" x="24" y="308">APPLICATION SERVICES</text>
+      <rect class="box" x="30" y="318" width="118" height="34" rx="6"></rect><text class="ct" x="89" y="339" text-anchor="middle">Budget entry</text>
+      <rect class="box" x="156" y="318" width="132" height="34" rx="6"></rect><text class="ct" x="222" y="339" text-anchor="middle">Submission workflow</text>
+      <rect class="box" x="296" y="318" width="128" height="34" rx="6"></rect><text class="ct" x="360" y="339" text-anchor="middle">Cost allocation</text>
+      <rect class="box" x="432" y="318" width="118" height="34" rx="6"></rect><text class="ct" x="491" y="339" text-anchor="middle">KPI / PBB</text>
+      <rect class="box" x="558" y="318" width="110" height="34" rx="6"></rect><text class="ct" x="613" y="339" text-anchor="middle">Actuals import</text>
+      <rect class="box" x="676" y="318" width="114" height="34" rx="6"></rect><text class="ct" x="733" y="339" text-anchor="middle">Excel reporting</text>
+      <rect class="boxo" x="296" y="360" width="128" height="34" rx="6"></rect><text class="ct" x="360" y="381" text-anchor="middle">AI assistant</text>
+      <text class="s" x="440" y="381">optional — can be disabled by configuration</text>
+
+      <line class="fl" x1="410" y1="404" x2="410" y2="428"></line>
+      <text class="ll" x="420" y="421">EF Core 10</text>
+
+      <!-- Data tier -->
+      <rect class="zone" x="10" y="432" width="800" height="126" rx="8"></rect>
+      <text class="zl" x="24" y="452">DATA TIER — Microsoft SQL Server, schema [core]</text>
+      <rect class="db" x="30" y="462" width="150" height="40" rx="6"></rect><text class="ct" x="105" y="479" text-anchor="middle">Master data</text><text class="ct" x="105" y="492" text-anchor="middle">entities, programmes</text>
+      <rect class="db" x="188" y="462" width="150" height="40" rx="6"></rect><text class="ct" x="263" y="479" text-anchor="middle">Budget lines</text><text class="ct" x="263" y="492" text-anchor="middle">+ attachments</text>
+      <rect class="db" x="346" y="462" width="150" height="40" rx="6"></rect><text class="ct" x="421" y="479" text-anchor="middle">Submissions</text><text class="ct" x="421" y="492" text-anchor="middle">+ snapshots</text>
+      <rect class="db" x="504" y="462" width="140" height="40" rx="6"></rect><text class="ct" x="574" y="479" text-anchor="middle">HR cost + actuals</text><text class="ct" x="574" y="492" text-anchor="middle">historical, mid-year</text>
+      <rect class="db" x="652" y="462" width="138" height="40" rx="6"></rect><text class="ct" x="721" y="479" text-anchor="middle">Performance</text><text class="ct" x="721" y="492" text-anchor="middle">KPIs, narratives</text>
+      <rect class="db" x="30" y="510" width="298" height="36" rx="6"></rect><text class="ct" x="179" y="532" text-anchor="middle">Security: users, roles, permissions, audit log</text>
+      <rect class="db" x="336" y="510" width="454" height="36" rx="6"></rect><text class="ct" x="563" y="532" text-anchor="middle">Reporting views (read-only, consumed by Power BI)</text>
+
+      <!-- Local state -->
+      <rect class="box" x="596" y="200" width="194" height="48" rx="8"></rect>
+      <text class="ct" x="693" y="219" text-anchor="middle">Server local state</text>
+      <text class="ct" x="693" y="235" text-anchor="middle">App_Data\keys · logs</text>
+
+      <!-- External -->
+      <rect class="zone" x="10" y="566" width="800" height="64" rx="8"></rect>
+      <text class="zl" x="24" y="586">EXTERNAL</text>
+      <rect class="boxo" x="140" y="592" width="180" height="30" rx="6"></rect><text class="ct" x="230" y="611" text-anchor="middle">OpenAI API (optional)</text>
+      <rect class="boxo" x="336" y="592" width="180" height="30" rx="6"></rect><text class="ct" x="426" y="611" text-anchor="middle">OECD statistics (optional)</text>
+      <rect class="box" x="532" y="592" width="180" height="30" rx="6"></rect><text class="ct" x="622" y="611" text-anchor="middle">Power BI (reads views)</text>
+      <path class="flo" d="M 360 394 C 300 470 250 520 230 592"></path>
+      <path class="flo" d="M 372 394 C 400 470 420 520 426 592"></path>
+      <path class="fl" d="M 700 546 C 660 566 630 578 622 592"></path>
+    </svg>
+    <div class="cap">Figure 1 — Logical architecture. Dashed amber elements are optional and switchable off by configuration.</div>
+  </div>
+
+  <h2>4. Technology inventory</h2>
+  <table>
+    <tr><th>Layer</th><th>Technology</th><th>Notes</th></tr>
+    <tr><td>Runtime</td><td>.NET 10 (<code>net10.0</code>), LTS</td><td>Requires the ASP.NET Core 10 Hosting Bundle on a Windows/IIS host.</td></tr>
+    <tr><td>Web framework</td><td>ASP.NET Core MVC</td><td>Server-rendered Razor views, compiled into the application assemblies.</td></tr>
+    <tr><td>Data access</td><td>Entity Framework Core 10</td><td>SQL Server provider; retry-on-failure enabled, 120-second command timeout for consolidation queries.</td></tr>
+    <tr><td>Database</td><td>Microsoft SQL Server 2019+</td><td>Single database, objects under the <code>core</code> schema. Azure SQL is compatible.</td></tr>
+    <tr><td>Spreadsheet engine</td><td>ClosedXML</td><td>Excel import of actuals and HR cost; Excel export of reports. Microsoft Office is <strong>not</strong> required on the server.</td></tr>
+    <tr><td>Front end</td><td>Bootstrap 5, Bootstrap Icons, jQuery</td><td>All served locally from the application; no public CDN dependency at runtime.</td></tr>
+    <tr><td>Authentication</td><td>ASP.NET Core cookie authentication</td><td>Local application accounts with PBKDF2 password hashing. Federated sign-in can be added — see Section 12.</td></tr>
+    <tr><td>Reporting</td><td>Power BI (external)</td><td>Connects to dedicated read-only SQL views; no write access required.</td></tr>
+  </table>
+  <div class="callout note">
+    <strong>Licensing</strong>
+    All server-side components are open-source or part of the .NET platform and carry no per-seat licence cost. Chargeable items are limited to the Windows Server and SQL Server licences provided by the host, and Power BI licensing where used.
+  </div>
+</div>
+
+<div class="page pagebreak">
+  <h2>5. Deployment topology</h2>
+
+  <div class="fig">
+    <svg viewBox="0 0 820 470" role="img" aria-label="GovBudget deployment diagram">
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f4c81"></path>
+        </marker>
+        <style>
+          .z2{fill:#f6f8fa;stroke:#d8dee6;stroke-width:1}
+          .z3{fill:#fff;stroke:#9fb6cc;stroke-width:1;stroke-dasharray:5 4}
+          .zl2{font:700 11px "Segoe UI",Arial;fill:#6b7280;letter-spacing:1px}
+          .n{fill:#fff;stroke:#0f4c81;stroke-width:1.4}
+          .na{fill:#e8f0f7;stroke:#0f4c81;stroke-width:1.4}
+          .nd{fill:#eaf6ef;stroke:#1b7a45;stroke-width:1.4}
+          .no{fill:#fff8ec;stroke:#c8911e;stroke-width:1.4;stroke-dasharray:4 3}
+          .t2{font:600 12px "Segoe UI",Arial;fill:#1f2937}
+          .s2{font:10.5px "Segoe UI",Arial;fill:#6b7280}
+          .f2{stroke:#0f4c81;stroke-width:1.6;fill:none;marker-end:url(#ar2)}
+          .f3{stroke:#c8911e;stroke-width:1.4;fill:none;stroke-dasharray:5 3;marker-end:url(#ar2)}
+          .l2{font:10.5px "Segoe UI",Arial;fill:#6b7280}
+        </style>
+      </defs>
+
+      <!-- user zone -->
+      <rect class="z2" x="10" y="14" width="240" height="120" rx="8"></rect>
+      <text class="zl2" x="24" y="34">USER ZONE</text>
+      <rect class="n" x="28" y="44" width="204" height="34" rx="6"></rect>
+      <text class="t2" x="130" y="65" text-anchor="middle">Government users</text>
+      <rect class="n" x="28" y="86" width="204" height="34" rx="6"></rect>
+      <text class="s2" x="130" y="100" text-anchor="middle">Department of Finance +</text>
+      <text class="s2" x="130" y="113" text-anchor="middle">government entities</text>
+
+      <!-- edge -->
+      <rect class="z2" x="286" y="14" width="200" height="120" rx="8"></rect>
+      <text class="zl2" x="300" y="34">EGA EDGE (if used)</text>
+      <rect class="no" x="302" y="48" width="168" height="70" rx="6"></rect>
+      <text class="t2" x="386" y="70" text-anchor="middle">Reverse proxy / WAF</text>
+      <text class="s2" x="386" y="87" text-anchor="middle">TLS termination</text>
+      <text class="s2" x="386" y="103" text-anchor="middle">see note below diagram</text>
+
+      <!-- app zone -->
+      <rect class="z2" x="10" y="150" width="476" height="180" rx="8"></rect>
+      <text class="zl2" x="24" y="170">APPLICATION TIER — 1 instance</text>
+      <rect class="na" x="28" y="180" width="440" height="60" rx="6"></rect>
+      <text class="t2" x="248" y="202" text-anchor="middle">Windows Server + IIS 10 + ASP.NET Core 10 Hosting Bundle</text>
+      <text class="s2" x="248" y="220" text-anchor="middle">Dedicated app pool · No Managed Code · in-process · 2 vCPU / 4 GB / 20 GB</text>
+      <text class="s2" x="248" y="234" text-anchor="middle">Linux or container hosting is equally acceptable</text>
+      <rect class="n" x="28" y="248" width="212" height="70" rx="6"></rect>
+      <text class="t2" x="134" y="268" text-anchor="middle">GovBudget application</text>
+      <text class="s2" x="134" y="285" text-anchor="middle">DLLs + wwwroot static files</text>
+      <text class="s2" x="134" y="299" text-anchor="middle">web.config</text>
+      <rect class="n" x="256" y="248" width="212" height="70" rx="6"></rect>
+      <text class="t2" x="362" y="268" text-anchor="middle">Persistent local state</text>
+      <text class="s2" x="362" y="285" text-anchor="middle">App_Data\keys (key ring)</text>
+      <text class="s2" x="362" y="299" text-anchor="middle">logs\ · appsettings.Production.json</text>
+
+      <!-- db zone -->
+      <rect class="z2" x="520" y="150" width="290" height="180" rx="8"></rect>
+      <text class="zl2" x="534" y="170">DATABASE TIER</text>
+      <rect class="nd" x="538" y="180" width="254" height="60" rx="6"></rect>
+      <text class="t2" x="665" y="202" text-anchor="middle">Microsoft SQL Server 2019+</text>
+      <text class="s2" x="665" y="220" text-anchor="middle">GovBudget_SBX · schema [core]</text>
+      <text class="s2" x="665" y="234" text-anchor="middle">approx. 2 GB data + 1 GB log</text>
+      <rect class="nd" x="538" y="248" width="254" height="70" rx="6"></rect>
+      <text class="t2" x="665" y="268" text-anchor="middle">Backup / retention</text>
+      <text class="s2" x="665" y="285" text-anchor="middle">nightly full + log backups</text>
+      <text class="s2" x="665" y="299" text-anchor="middle">per EGA policy</text>
+
+      <!-- release + egress -->
+      <rect class="z2" x="10" y="346" width="476" height="110" rx="8"></rect>
+      <text class="zl2" x="24" y="366">RELEASE PATH</text>
+      <rect class="n" x="28" y="376" width="200" height="66" rx="6"></rect>
+      <text class="t2" x="128" y="396" text-anchor="middle">DoF developer workstation</text>
+      <text class="s2" x="128" y="413" text-anchor="middle">Visual Studio publish profile</text>
+      <text class="s2" x="128" y="427" text-anchor="middle">or EGA CI/CD pipeline</text>
+      <rect class="na" x="248" y="376" width="220" height="66" rx="6"></rect>
+      <text class="t2" x="358" y="396" text-anchor="middle">Web Deploy (preferred)</text>
+      <text class="s2" x="358" y="413" text-anchor="middle">incremental · app_offline handled</text>
+      <text class="s2" x="358" y="427" text-anchor="middle">server-only files never overwritten</text>
+
+      <rect class="z2" x="520" y="346" width="290" height="110" rx="8"></rect>
+      <text class="zl2" x="534" y="366">OUTBOUND (OPTIONAL)</text>
+      <rect class="no" x="538" y="376" width="254" height="66" rx="6"></rect>
+      <text class="t2" x="665" y="396" text-anchor="middle">api.openai.com · sdmx.oecd.org</text>
+      <text class="s2" x="665" y="413" text-anchor="middle">HTTPS 443, proxy acceptable</text>
+      <text class="s2" x="665" y="427" text-anchor="middle">features disabled if not permitted</text>
+
+      <!-- flows -->
+      <line class="f2" x1="232" y1="61" x2="298" y2="61"></line>
+      <text class="l2" x="240" y="52">443</text>
+      <path class="f2" d="M 386 122 C 386 150 300 160 248 178"></path>
+      <text class="l2" x="300" y="150">443</text>
+      <path class="f2" d="M 130 122 C 130 150 160 160 200 178"></path>
+      <line class="f2" x1="468" y1="210" x2="536" y2="210"></line>
+      <text class="l2" x="470" y="202">TDS 1433, encrypted</text>
+      <path class="f2" d="M 358 376 C 358 356 300 340 248 322"></path>
+      <path class="f3" d="M 470 300 C 520 320 600 350 660 374"></path>
+    </svg>
+    <div class="cap">Figure 2 — Proposed EGA sandbox deployment topology, including the release path and optional outbound access.</div>
+  </div>
+
+  <div class="callout warn">
+    <strong>One decision that determines whether the environment works on day one</strong>
+    The application enforces HTTPS redirection, HSTS and <code>Secure</code> cookies. If TLS terminates at an EGA proxy and the internal hop to the application is plain HTTP, users will experience a redirect loop and rejected sign-in cookies. Either keep <strong>HTTPS end-to-end to the application</strong>, or confirm that <code>X-Forwarded-Proto</code> is sent and provide the proxy addresses — we then enable forwarded-headers handling in the application. Please confirm which topology the sandbox will use.
+  </div>
+
+  <h3>5.1 Current production environment (for reference)</h3>
+  <p>GovBudget runs today on a commercial Windows/IIS shared-hosting service with SQL Server, published over Web Deploy. The application and database structure in that environment are identical to what is proposed above; only the hosting provider differs. Migration to EGA infrastructure requires no code change other than the configuration items in Section 9.</p>
+</div>
+
+<div class="page pagebreak">
+  <h2>6. Sandbox: application server</h2>
+  <table>
+    <tr><th>Item</th><th>Requirement</th><th>Notes</th></tr>
+    <tr><td>Operating system</td><td>Windows Server 2019 / 2022 / 2025, 64-bit</td><td>Linux or a container platform is equally acceptable.</td></tr>
+    <tr><td>Web server</td><td>IIS 10+ with ASP.NET Core Module V2</td><td>Installed by the hosting bundle.</td></tr>
+    <tr><td>Runtime</td><td>.NET 10 ASP.NET Core Hosting Bundle</td><td>Must be major version 10.x.</td></tr>
+    <tr><td>Compute</td><td>2 vCPU, 4 GB RAM, 20 GB disk</td><td>Sandbox sizing. Production: 4 vCPU / 8 GB, subject to confirmed concurrency.</td></tr>
+    <tr><td>Application pool</td><td>Dedicated · No Managed Code · Integrated</td><td>Idle time-out disabled to avoid cold starts on a low-traffic internal system.</td></tr>
+    <tr><td>Instances</td><td>One</td><td>Multi-instance requires the changes in Section 12.</td></tr>
+  </table>
+
+  <h3>6.1 Writable folders — required</h3>
+  <p>The application account needs <strong>Modify</strong> permission on two folders inside the site directory. Both are created by the application on first run.</p>
+  <table>
+    <tr><th>Path</th><th>Contents</th><th>If not writable / if overwritten</th></tr>
+    <tr><td><code>App_Data\keys\</code></td><td>Data-protection key ring that encrypts authentication cookies and antiforgery tokens</td><td>Keys are regenerated on every restart and <strong>all signed-in users are logged out</strong></td></tr>
+    <tr><td><code>logs\</code></td><td>Start-up and diagnostic output</td><td>No evidence available if the application fails to start</td></tr>
+  </table>
+  <p>These two folders, together with <code>appsettings.Production.json</code>, must be excluded from any deployment or file-synchronisation process and included in the server backup.</p>
+
+  <h3>6.2 Not required</h3>
+  <p>No SMTP relay, file share, Redis or other cache, message queue, scheduled task, COM component, Microsoft Office installation, or 32-bit component.</p>
+
+  <h2>7. Sandbox: database</h2>
+  <table>
+    <tr><th>Item</th><th>Requirement</th></tr>
+    <tr><td>Product</td><td>Microsoft SQL Server 2019 or later. Azure SQL / Managed Instance also acceptable.</td></tr>
+    <tr><td>Edition</td><td>Standard; Express is sufficient for the trial (10 GB limit is ample).</td></tr>
+    <tr><td>Sizing</td><td>Approximately 2 GB data and 1 GB transaction log.</td></tr>
+    <tr><td>Schema</td><td>All objects in the <code>core</code> schema. Provisioned from scripts we supply.</td></tr>
+    <tr><td>Collation</td><td>Any. All text columns are <code>NVARCHAR</code>, so Arabic content is safe irrespective of collation.</td></tr>
+    <tr><td>Connectivity</td><td>TDS 1433 from the application server only, with <code>Encrypt=True</code>. No public endpoint required.</td></tr>
+    <tr><td>Authentication</td><td>SQL authentication, or Windows / managed identity if EGA prefers.</td></tr>
+  </table>
+
+  <h3>7.1 Privilege model — EGA decision required</h3>
+  <p>The application applies small, idempotent schema upgrades at start-up (adding a missing column, creating a missing table, seeding the permission matrix). Two supported models:</p>
+  <ul>
+    <li><strong>Option A — simpler.</strong> The application login holds <code>db_owner</code> on this database only. Each release self-heals the schema on first start.</li>
+    <li><strong>Option B — least privilege.</strong> We deliver a versioned DDL script per release for an EGA DBA to run in the change window. The application login then needs only <code>db_datareader</code>, <code>db_datawriter</code> and <code>EXECUTE</code>; the start-up checks detect the work is already done and take no action.</li>
+  </ul>
+  <p>Option B requires no code change — only an agreed release process. Please confirm which model EGA requires.</p>
+</div>
+
+<div class="page pagebreak">
+  <h2>8. Sandbox: network, DNS and TLS</h2>
+  <table>
+    <tr><th>Direction</th><th>Source → destination</th><th>Port</th><th>Purpose</th></tr>
+    <tr><td>Inbound</td><td>Government users → application server</td><td>443/TCP</td><td>Application access (HTTPS only)</td></tr>
+    <tr><td>Internal</td><td>Application server → SQL Server</td><td>1433/TCP</td><td>Encrypted database traffic</td></tr>
+    <tr><td>Outbound <span class="tag opt">optional</span></td><td>Application server → <code>api.openai.com</code></td><td>443/TCP</td><td>AI assistant, if approved</td></tr>
+    <tr><td>Outbound <span class="tag opt">optional</span></td><td>Application server → <code>sdmx.oecd.org</code>, <code>oecd.org</code></td><td>443/TCP</td><td>Live OECD benchmark statistics</td></tr>
+  </table>
+  <p>Port 80 is required only if EGA wants an edge-level HTTP to HTTPS redirect; the application performs the redirect itself and issues HSTS.</p>
+
+  <h3>8.1 Hostname and certificate</h3>
+  <p>One DNS name and a matching TLS certificate (TLS 1.2 minimum, 1.3 preferred). <strong>The hostname must be provided to us before go-live</strong>: the application validates the <code>Host</code> header against an allow-list and will return HTTP 400 for an unlisted name. This is a one-line configuration value, not a code change.</p>
+
+  <h3>8.2 Outbound access — EGA decision</h3>
+  <p>Both outbound features are switchable off by configuration and nothing else depends on them. For EGA's data-protection review: when the assistant is enabled, the user's question and the query results returned by the application's internal tools are transmitted to the AI provider. The database is never exposed directly, and results are already restricted to the signed-in user's entity and cost-centre scope. <strong>Our recommendation is that both features remain disabled in the sandbox</strong> unless EGA explicitly approves them.</p>
+
+  <h2>9. Sandbox: configuration and data set</h2>
+  <h3>9.1 Configuration values</h3>
+  <p>Held server-side only, in <code>appsettings.Production.json</code> in the site root or as environment variables. This file is excluded from source control and from deployments.</p>
+  <table>
+    <tr><th>Setting</th><th>Purpose</th><th>Provided by</th></tr>
+    <tr><td><code>ConnectionStrings:DefaultConnection</code></td><td>SQL Server connection, <code>Encrypt=True</code></td><td>EGA</td></tr>
+    <tr><td><code>AllowedHosts</code></td><td>The sandbox hostname (Section 8.1)</td><td>EGA</td></tr>
+    <tr><td><code>ASPNETCORE_ENVIRONMENT</code></td><td><code>Production</code></td><td>Department of Finance</td></tr>
+    <tr><td><code>Security:ContentSecurityPolicy</code></td><td>Optional override if EGA has a standard CSP</td><td>EGA (optional)</td></tr>
+    <tr><td>Assistant feature switches</td><td>Enable or disable the outbound features in Section 8.2</td><td>EGA decision</td></tr>
+  </table>
+  <p>Configuration is read once at process start; any change requires an application-pool recycle.</p>
+
+  <h3>9.2 Sandbox data set — two options, both ready</h3>
+  <table>
+    <tr><th>Option</th><th>Contents</th><th>Consideration</th></tr>
+    <tr><td><strong>A — Synthetic</strong> <span class="tag">recommended</span></td><td>Empty database provisioned from our scripts, plus a generated test data set: one test entity, two departments, three programmes, six activities, a chart of accounts, budget lines, HR cost with activity allocations, prior-year and mid-year actuals, and KPIs covering on-track and behind-target states.</td><td>No real budget data leaves the current environment, so no data-classification approval is needed before testing starts.</td></tr>
+    <tr><td><strong>B — Anonymised copy</strong></td><td>Restored copy of the live database with all credentials removed, employee names replaced, attachments deleted, internal correspondence and notes cleared, audit trail emptied, and optionally all monetary values scaled by a single factor.</td><td>Retains the real programme and KPI structure. Note that scaling by one factor conceals absolute figures but preserves ratios; it is de-identification, not statistical anonymisation.</td></tr>
+  </table>
+  <p>Provisioning scripts and the documented run order for both options are available on request.</p>
+
+  <h3>9.3 Test users</h3>
+  <p>Please confirm the number of test users required. Accounts can be created by us during handover or by an EGA administrator in the application's user-management screen.</p>
+</div>
+
+<div class="page pagebreak">
+  <h2>10. Security posture</h2>
+  <p>The following controls are implemented and can be verified in the sandbox.</p>
+  <table>
+    <tr><th>Area</th><th>Control</th></tr>
+    <tr><td>Credentials</td><td>PBKDF2-SHA256 password hashing; no clear-text password stored; forced password change on administrator-issued credentials.</td></tr>
+    <tr><td>Sign-in protection</td><td>Account lockout after repeated failures; IP-based rate limiting on the sign-in endpoint; failed attempts recorded in the audit log.</td></tr>
+    <tr><td>Authorisation</td><td>Role-based access plus a per-form permission matrix, enforced server-side on every request; entity and cost-centre data scoping.</td></tr>
+    <tr><td>Session</td><td>Cookie authentication with <code>HttpOnly</code> and <code>Secure</code> cookies; 60-minute sliding expiry.</td></tr>
+    <tr><td>Transport</td><td>HTTPS enforced with HSTS; TLS 1.2 minimum.</td></tr>
+    <tr><td>Application</td><td>Antiforgery tokens on state-changing requests; security response headers with a configurable Content Security Policy; parameterised data access through EF Core.</td></tr>
+    <tr><td>Auditability</td><td>Database audit trail of sign-in, budget, submission, approval and credential events, with actor and UTC timestamp.</td></tr>
+    <tr><td>Secrets</td><td>Held in a server-side configuration file outside source control; integration with an EGA-approved secret store can be added.</td></tr>
+  </table>
+
+  <h2>11. Acceptance checklist</h2>
+  <p>Proposed joint verification once the sandbox is available. Each step either passes or identifies a specific fault.</p>
+  <ol>
+    <li>The sign-in page loads over HTTPS at the agreed hostname — confirms DNS, certificate, host allow-list and proxy topology.</li>
+    <li>Administrator sign-in succeeds — confirms database connectivity and credential handling.</li>
+    <li>No errors in the start-up log; role and permission tables populated.</li>
+    <li>Create, submit and approve a budget line — confirms the write path and the permission matrix.</li>
+    <li>Import an Excel actuals file — confirms upload limits and in-database document storage.</li>
+    <li>Export a management-review report to Excel — confirms report generation.</li>
+    <li>Recycle the application pool and reload: the user remains signed in — confirms the key ring is persisted and writable.</li>
+    <li>Assistant panel either answers or reports that it is disabled, with no error — confirms the outbound configuration is as agreed.</li>
+  </ol>
+
+  <h2>12. Decisions requested from EGA</h2>
+  <table>
+    <tr><th>#</th><th>Decision</th><th>Why it matters</th></tr>
+    <tr><td>1</td><td>TLS topology: end-to-end HTTPS, or proxy termination with forwarded headers <span class="tag act">blocking</span></td><td>Determines whether users can sign in at all on day one.</td></tr>
+    <tr><td>2</td><td>Database privilege model: Option A or Option B (Section 7.1)</td><td>Determines the release process and the DBA involvement per release.</td></tr>
+    <tr><td>3</td><td>Outbound internet: permitted, or the two features disabled</td><td>Firewall rules, and the data-protection assessment of the assistant.</td></tr>
+    <tr><td>4</td><td>Deployment channel: Web Deploy, EGA CI/CD, or escorted change window</td><td>Determines how releases reach the sandbox.</td></tr>
+    <tr><td>5</td><td>Sandbox hostname and certificate</td><td>Required in the application configuration before go-live.</td></tr>
+    <tr><td>6</td><td>Data set: synthetic or anonymised copy (Section 9.2)</td><td>Determines whether a data-classification approval is on the critical path.</td></tr>
+    <tr><td>7</td><td>Number of test users; server time zone; central logging platform, if any</td><td>Environment set-up details.</td></tr>
+  </table>
+
+  <h3>12.1 Items that would require a change on our side</h3>
+  <p>None of these are needed for the sandbox; they are listed so EGA can plan a production phase.</p>
+  <table>
+    <tr><th>Item</th><th>Triggered by</th><th>Indicative effort</th></tr>
+    <tr><td>Health-check endpoint for monitoring or load-balancer probes</td><td>EGA monitoring standard</td><td>Very small</td></tr>
+    <tr><td>Forwarded-headers handling</td><td>Proxy TLS termination (Section 5)</td><td>Very small</td></tr>
+    <tr><td>E-mail delivery of password-reset links</td><td>EGA provides an SMTP relay</td><td>Small</td></tr>
+    <tr><td>Single sign-on / federated identity</td><td>EGA mandates central authentication</td><td>Medium</td></tr>
+    <tr><td>Distributed session and shared key ring</td><td>More than one application instance</td><td>Small</td></tr>
+    <tr><td>Structured logging to an EGA log platform or SIEM</td><td>EGA log platform integration</td><td>Small</td></tr>
+    <tr><td>Integration with an EGA secret store</td><td>Policy on configuration secrets</td><td>Small to medium</td></tr>
+  </table>
+
+  <div class="callout ok">
+    <strong>Summary</strong>
+    One application server, one SQL Server database, one hostname, HTTPS in and encrypted SQL internally, two writable folders on the server, and a decision on the TLS topology and the database privilege model. Once decisions 1 to 4 are settled the environment can be provisioned and handed to testers.
+  </div>
+</div>
+
+</body>
+</html>

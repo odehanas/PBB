@@ -34,10 +34,23 @@
                 <button class="btn btn-sm btn-primary">Apply</button>
             </div>
         </form>
-        <form method="post" asp-action="Run" class="ms-auto" data-tour="run" onsubmit="return confirm('Run step-down allocation for @Model.Year? This supersedes the previous posted run.');">
+        <form method="post" asp-action="Run" class="ms-auto row g-2 align-items-end" data-tour="run"
+              onsubmit="return confirm(document.getElementById('scenarioOnly').checked ? 'Save this run as a comparison scenario? The official posted run stays in place.' : 'Run step-down allocation for @Model.Year? This supersedes the previous posted run.');">
             <input type="hidden" name="year" value="@Model.Year" />
             <input type="hidden" name="entityId" value="@(Model.EntityId?.ToString() ?? "")" />
-            <button class="btn btn-sm btn-success">Run allocation</button>
+            <div class="col-auto">
+                <label class="form-label">Scenario name <span class="text-muted small">(optional)</span></label>
+                <input name="scenarioName" class="form-control form-control-sm" maxlength="120" style="width:200px" placeholder="e.g. Headcount basis" />
+            </div>
+            <div class="col-auto">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="scenarioOnly" value="true" id="scenarioOnly" />
+                    <label class="form-check-label small" for="scenarioOnly">Scenario only<br /><span class="text-muted">keep the official run</span></label>
+                </div>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-sm btn-success">Run allocation</button>
+            </div>
         </form>
     </div>
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using ClosedXML.Excel;
 using GovBudget.Models;
@@ -96,12 +97,14 @@ namespace GovBudget.Controllers
 
             var entityMap = await _db.Entities.AsNoTracking().ToDictionaryAsync(e => e.EntityId, e => e.EntityCode + " - " + e.EntityName);
             var progMap = await _db.Programs.AsNoTracking().ToDictionaryAsync(p => p.ProgramId, p => p.ProgramCode);
+            var actMap = await _db.Activities.AsNoTracking().ToDictionaryAsync(a => a.ActivityId, a => a.ActivityCode);
 
             var rows = kpis.Select(k => new KpiListRow
             {
                 KpiId = k.KpiId,
                 EntityLabel = entityMap.TryGetValue(k.EntityId, out var en) ? en : k.EntityId.ToString(),
                 ProgramCode = k.ProgramId != null && progMap.TryGetValue(k.ProgramId.Value, out var pc) ? pc : "",
+                ActivityCode = k.ActivityId != null && actMap.TryGetValue(k.ActivityId.Value, out var ac) ? ac : "",
                 KpiCode = k.KpiCode ?? "",
                 Priority = k.Priority ?? "",
                 KpiName = k.KpiName,
@@ -115,7 +118,13 @@ namespace GovBudget.Controllers
                 StrategicTarget2029 = k.StrategicTarget2029,
                 Status = ResolveKpiStatus(k)
             })
-            .OrderBy(r => r.EntityLabel).ThenBy(r => r.KpiName)
+            // Programme code, then activity code, then KPI code (entity first, because the table
+            // groups rows under an entity heading when more than one entity is in scope).
+            .OrderBy(r => r.EntityLabel, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => CodeSortKey(r.ProgramCode), StringComparer.Ordinal)
+            .ThenBy(r => CodeSortKey(r.ActivityCode), StringComparer.Ordinal)
+            .ThenBy(r => CodeSortKey(r.KpiCode), StringComparer.Ordinal)
+            .ThenBy(r => r.KpiName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
             ViewBag.Year = selectedYear;
@@ -150,8 +159,10 @@ namespace GovBudget.Controllers
                 .Where(p => !eff.HasValue || p.EntityId == eff.Value)
                 .Select(p => new { p.ProgramId, p.ProgramCode, p.ProgramName, p.EntityId })
                 .ToListAsync();
+            // Inactive activities are hidden from the hierarchy once nothing points at them
+            // (see ActivityVisibility); ones that still carry data stay visible on purpose.
             var activities = await (
-                from a in _db.Activities.AsNoTracking()
+                from a in _db.Activities.AsNoTracking().Where(ActivityVisibility.IsVisible(_db))
                 join p in _db.Programs.AsNoTracking() on a.ProgramId equals p.ProgramId
                 where (!eff.HasValue || p.EntityId == eff.Value)
                 select new { a.ActivityId, a.ActivityCode, a.ActivityName, a.ProgramId, p.EntityId }
@@ -723,7 +734,7 @@ namespace GovBudget.Controllers
                 .ToListAsync();
 
             var actQ =
-                from a in _db.Activities.AsNoTracking()
+                from a in _db.Activities.AsNoTracking().Where(ActivityVisibility.IsVisible(_db))
                 join p in _db.Programs.AsNoTracking() on a.ProgramId equals p.ProgramId
                 select new { a.ActivityId, a.ActivityCode, a.ActivityName, p.EntityId };
             if (!global && scoped.HasValue) actQ = actQ.Where(x => x.EntityId == scoped.Value);
@@ -814,7 +825,7 @@ namespace GovBudget.Controllers
             if (!(scope.HasValue && scope.Value <= 0))
             {
                 var activitiesQuery =
-                    from a in _db.Activities.AsNoTracking()
+                    from a in _db.Activities.AsNoTracking().Where(ActivityVisibility.IsVisible(_db))
                     join p in _db.Programs.AsNoTracking() on a.ProgramId equals p.ProgramId
                     select new ActivityRowProjection { ActivityId = a.ActivityId, ActivityCode = a.ActivityCode, ActivityName = a.ActivityName, EntityId = p.EntityId, ProgramCode = p.ProgramCode };
                 if (scope.HasValue)
@@ -1088,6 +1099,25 @@ namespace GovBudget.Controllers
             return options;
         }
 
+        // Sort key for codes such as "DAM-02" / "DAM 02" / "KPI-004". Separators and case are
+        // ignored so the same code written differently still sorts together, and digit groups are
+        // padded so KPI-9 comes before KPI-10 instead of after it. Blank codes sort last.
+        private static string CodeSortKey(string? code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return "\uFFFF";
+
+            var sb = new StringBuilder();
+            var digits = new StringBuilder();
+            foreach (var ch in code.Trim().ToUpperInvariant())
+            {
+                if (char.IsDigit(ch)) { digits.Append(ch); continue; }
+                if (digits.Length > 0) { sb.Append(digits.ToString().PadLeft(9, '0')); digits.Clear(); }
+                if (char.IsLetter(ch)) sb.Append(ch);
+            }
+            if (digits.Length > 0) sb.Append(digits.ToString().PadLeft(9, '0'));
+            return sb.ToString();
+        }
+
         // Status resolution mirrors ManagementReviewController: honor a manually set Status,
         // otherwise derive Green/Watch/Behind from progress = (actual - baseline)/(target - baseline).
         private static string ResolveKpiStatus(Kpis k)
@@ -1121,6 +1151,7 @@ namespace GovBudget.Controllers
         public long KpiId { get; set; }
         public string EntityLabel { get; set; } = "";
         public string ProgramCode { get; set; } = "";
+        public string ActivityCode { get; set; } = "";
         public string KpiCode { get; set; } = "";
         public string Priority { get; set; } = "";
         public string KpiName { get; set; } = "";

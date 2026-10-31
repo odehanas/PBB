@@ -11,11 +11,16 @@ namespace GovBudget.Utils
     // inline handlers; removing that is tracked as a follow-up (nonce per request).
     public static class SecurityHeaders
     {
+        // Every front-end library is now served from wwwroot/lib, so no external origin is
+        // allowed at all. The browser therefore cannot be made to fetch a script, stylesheet
+        // or font from the internet - which is both a hardening win and what lets the app run
+        // unchanged inside an air-gapped environment.
+        // 'unsafe-inline' stays because several views declare inline <script>/<style> blocks.
         public const string DefaultContentSecurityPolicy =
             "default-src 'self'; " +
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com; " +
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; " +
-            "font-src 'self' data: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.gstatic.com; " +
+            "script-src 'self' 'unsafe-inline'; " +
+            "style-src 'self' 'unsafe-inline'; " +
+            "font-src 'self' data:; " +
             "img-src 'self' data:; " +
             "connect-src 'self'; " +
             "frame-ancestors 'none'; " +

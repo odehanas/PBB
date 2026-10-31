@@ -32,6 +32,11 @@ bld/
 [Oo]ut/
 [Ll]og/
 [Ll]ogs/
+# ...but keep the placeholder that makes the deployed .\logs folder exist, so the ASP.NET
+# Core Module never has to have it created by hand on the server after a deployment.
+!logs/
+logs/*
+!logs/.keep
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
@@ -186,6 +191,13 @@ publish/
 # but database connection strings (with potential passwords) will be unencrypted
 *.pubxml
 *.publishproj
+
+# ...but DO version the SmarterASP publish profiles. They carry the skip rules that stop a
+# deployment from deleting or overwriting the server-only files (appsettings.Production.json,
+# App_Data key ring, logs). Losing those rules is what makes a deploy break the live site.
+# No password is stored in a .pubxml - it goes in the matching .pubxml.user, which stays
+# ignored by the "*.user" rule near the top of this file.
+!Properties/PublishProfiles/*.pubxml
 
 # Microsoft Azure Web App publish settings. Comment the next line if you want to
 # checkin your Azure Web App publish settings, but sensitive information contained
@@ -361,3 +373,18 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Runtime state. App_Data/keys holds the ASP.NET Core data-protection key ring that
+# protects authentication cookies - committing it would let anyone forge a session.
+App_Data/
+
+# Local secret overrides (API keys, connection strings). Never commit these.
+appsettings.Local.json
+appsettings.Production.json
+appsettings.*.local.json
+# Claude Code local settings
+.claude/settings.local.json
+
+# Database exports contain real employee data - never commit them
+*.bacpac
+*.dacpac
