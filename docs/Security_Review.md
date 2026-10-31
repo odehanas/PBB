@@ -108,9 +108,11 @@ in a managed key vault once the hosting platform supports it.
 
 **H-3. Weak password policy**
 *Risk:* six-character minimum, no complexity, no first-login change.
-*Remediated.* A single shared policy (`Utils/PasswordPolicy.cs`) requires **12+ characters**
-and **three of four character classes**, rejects passwords containing the username and a
-deny-list of common patterns, and rejects reuse of the current password. Administrator-issued
+*Remediated.* A single shared policy (`Utils/PasswordPolicy.cs`) requires **8+ characters**
+and **three of four character classes**, rejects passwords based on the username and common
+passwords with only digits or symbols added (Password1, Admin@123, P@ssw0rd), and rejects
+reuse of the current password. The minimum was lowered from 12 to 8 on 2026-10-31 at the
+product owner's request; the five-attempt lockout and must-change flag are unchanged. Administrator-issued
 passwords set a **must-change flag**, and a middleware confines such users to the
 change-password page until they set their own password.
 
