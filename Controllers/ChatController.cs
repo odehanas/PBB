@@ -15,8 +15,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace GovBudget.Controllers
 {
     /// <summary>
-    /// Backend for the in-app assistant. Read-only: it answers questions about the signed-in
-    /// user's budget and performance data and about OECD performance-budgeting practice.
+    /// Backend for the in-app assistant. It answers questions about the signed-in user's budget
+    /// and performance data and about OECD performance-budgeting practice, and prepares data
+    /// entry as proposals. It never writes: the widget posts a confirmed proposal to the screen's
+    /// own action and reports the outcome back through Outcome.
     /// The widget uses AskStream; Ask returns the same answer in one JSON response.
     /// </summary>
     [Authorize]
@@ -24,17 +26,29 @@ namespace GovBudget.Controllers
     {
         private const string HistorySessionKey = "assistantHistory";
 
+        // camelCase, matching what Json(...) sends from the non-streaming endpoint.
+        private static readonly JsonSerializerOptions EventJson = new(JsonSerializerDefaults.Web);
+
         private readonly IChatAssistantService _assistant;
         private readonly IPermissionService _permissions;
+        private readonly AssistantProposalCollector _proposals;
 
-        public ChatController(IChatAssistantService assistant, IPermissionService permissions)
+        public ChatController(IChatAssistantService assistant, IPermissionService permissions, AssistantProposalCollector proposals)
         {
             _assistant = assistant;
             _permissions = permissions;
+            _proposals = proposals;
         }
 
         public sealed class AskRequest
         {
+            public string? Message { get; set; }
+        }
+
+        public sealed class OutcomeRequest
+        {
+            public string? Title { get; set; }
+            public bool Ok { get; set; }
             public string? Message { get; set; }
         }
 
@@ -58,7 +72,7 @@ namespace GovBudget.Controllers
                 WriteHistory(history);
             }
 
-            return Json(new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed });
+            return Json(new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed, proposals = _proposals.Proposals });
         }
 
         /// <summary>
@@ -107,12 +121,35 @@ namespace GovBudget.Controllers
                 WriteHistory(history);
             }
 
-            await WriteEventAsync("done", new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed }, ct);
+            await WriteEventAsync("done", new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed, proposals = _proposals.Proposals }, ct);
+        }
+
+        /// <summary>
+        /// Records what a screen answered after the user confirmed (or cancelled) a proposal, so
+        /// the assistant knows on the next question whether the change went through.
+        /// </summary>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Outcome([FromBody] OutcomeRequest request)
+        {
+            if (!await _permissions.CanViewAsync(User, AppForms.Assistant))
+            {
+                return Json(new { ok = false });
+            }
+
+            static string Clip(string? text, int max) =>
+                string.IsNullOrWhiteSpace(text) ? "" : text.Length > max ? text[..max] : text.Trim();
+
+            var history = ReadHistory();
+            history.Add(new ChatTurn("assistant",
+                $"[Confirmed change \"{Clip(request?.Title, 200)}\": {(request?.Ok == true ? "saved" : "not saved")} - {Clip(request?.Message, 500)}]"));
+            WriteHistory(history);
+            return Json(new { ok = true });
         }
 
         private async Task WriteEventAsync(string name, object data, CancellationToken ct)
         {
-            await Response.WriteAsync($"event: {name}\ndata: {JsonSerializer.Serialize(data)}\n\n", ct);
+            await Response.WriteAsync($"event: {name}\ndata: {JsonSerializer.Serialize(data, EventJson)}\n\n", ct);
             await Response.Body.FlushAsync(ct);
         }
 
@@ -161,7 +198,9 @@ namespace GovBudget.Controllers
                 isGlobalAdmin,
                 entityId,
                 departmentId,
-                year);
+                year,
+                HttpContext.Session.GetInt("ctxEntityId"),
+                HttpContext.Session.GetInt("ctxDeptId"));
         }
 
         private List<ChatTurn> ReadHistory()

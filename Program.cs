@@ -19,6 +19,7 @@ builder.Services.AddControllersWithViews(options =>
 {
     options.Filters.Add<GovBudget.Utils.FormPermissionFilter>();
     options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute());
+    options.Filters.Add<GovBudget.Utils.AssistantActionResultFilter>();
 });
 
 builder.Services.AddAntiforgery(options =>
@@ -175,6 +176,10 @@ builder.Services.AddHttpClient(GovBudget.Services.Assistant.OecdKnowledgeToolPro
 
 builder.Services.AddScoped<GovBudget.Services.Assistant.IAssistantToolProvider, GovBudget.Services.Assistant.BudgetDataToolProvider>();
 builder.Services.AddScoped<GovBudget.Services.Assistant.IAssistantToolProvider, GovBudget.Services.Assistant.OecdKnowledgeToolProvider>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<GovBudget.Services.Assistant.AssistantWriteCatalog>();
+builder.Services.AddScoped<GovBudget.Services.Assistant.AssistantProposalCollector>();
+builder.Services.AddScoped<GovBudget.Services.Assistant.IAssistantToolProvider, GovBudget.Services.Assistant.DataEntryToolProvider>();
 builder.Services.AddScoped<GovBudget.Services.Assistant.IChatAssistantService, GovBudget.Services.Assistant.OpenAIChatAssistantService>();
 
 // Password reset delivery. NoOp for now (admin shares the link manually);

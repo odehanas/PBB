@@ -83,3 +83,64 @@
     50% { content: ".."; }
     75% { content: "..."; }
 }
+
+/* Confirmation cards for changes the assistant prepared. */
+.assistant-proposals {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    margin: .25rem 0 .5rem;
+}
+
+.assistant-confirm-all {
+    align-self: flex-start;
+}
+
+.assistant-proposal {
+    border: 1px solid var(--bs-border-color);
+    border-left: 3px solid var(--bs-primary);
+    border-radius: .375rem;
+    padding: .5rem .6rem;
+    background: var(--bs-body-bg);
+    font-size: .875rem;
+}
+
+.assistant-proposal-delete {
+    border-left-color: var(--bs-danger);
+}
+
+.assistant-proposal-workflow {
+    border-left-color: var(--bs-warning);
+}
+
+.assistant-proposal-title {
+    font-weight: 600;
+}
+
+.assistant-proposal-record {
+    color: var(--bs-secondary-color);
+    font-size: .8rem;
+}
+
+.assistant-proposal table {
+    border-collapse: collapse;
+    margin: .35rem 0;
+    width: 100%;
+}
+
+.assistant-proposal th,
+.assistant-proposal td {
+    border: 1px solid var(--bs-border-color);
+    padding: .15rem .35rem;
+    word-break: break-word;
+}
+
+.assistant-proposal-actions {
+    display: flex;
+    gap: .35rem;
+    margin-top: .35rem;
+}
+
+.assistant-proposal-result {
+    margin-top: .25rem;
+}

@@ -6,6 +6,7 @@
 <div id="assistantWidget" class="assistant-widget d-print-none"
      data-stream-url="@Url.Action("AskStream", "Chat")"
      data-reset-url="@Url.Action("Reset", "Chat")"
+     data-outcome-url="@Url.Action("Outcome", "Chat")"
      data-token="@tokens.RequestToken">
     <button type="button" class="assistant-launcher btn btn-primary" id="assistantLauncher"
             title="Ask the assistant" aria-expanded="false" aria-controls="assistantPanel">
@@ -25,11 +26,13 @@
         <div class="card-body assistant-log" id="assistantLog">
             <div class="assistant-msg assistant-msg-bot">
                 Ask me about your budget, actuals, programs, activities or KPIs — or about OECD
-                performance-based budgeting practice and standard ratios.
+                performance-based budgeting practice and standard ratios. I can also prepare data
+                entry on any screen; nothing is saved until you confirm it.
                 <div class="assistant-suggestions mt-2">
                     <button type="button" class="btn btn-sm btn-outline-primary assistant-suggestion">What is my total OPEX budget this year by cost center?</button>
                     <button type="button" class="btn btn-sm btn-outline-primary assistant-suggestion">Which KPIs are below target?</button>
                     <button type="button" class="btn btn-sm btn-outline-primary assistant-suggestion">What ratios does the OECD recommend for performance budgeting?</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary assistant-suggestion">Add an OPEX budget line for office supplies: 12 units at 250.</button>
                 </div>
             </div>
         </div>
@@ -41,7 +44,7 @@
                     <i class="bi bi-send"></i>
                 </button>
             </form>
-            <div class="small text-muted mt-1">Read-only. Answers use your own data scope.</div>
+            <div class="small text-muted mt-1">Answers use your own data scope. Changes are saved only when you confirm them.</div>
         </div>
     </div>
 </div>
