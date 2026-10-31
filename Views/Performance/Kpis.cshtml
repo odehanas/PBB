@@ -30,7 +30,7 @@
     .kpi-page .table thead th { font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; }
     .kpi-page .table td.num, .kpi-page .table th.num { font-variant-numeric: tabular-nums; }
     .kpi-page .kpi-name { max-width: 460px; overflow: hidden; text-overflow: ellipsis; }
-    .kpi-page .kpi-name .sub { font-size: .68rem; color: #94a3b8; }
+    .kpi-page .sub { font-size: .68rem; color: #94a3b8; }
     .kpi-page .entity-group td { background: #f1f5f9; font-weight: 600; color: #334155; letter-spacing: .02em; }
     .kpi-page .badge-status { font-weight: 600; min-width: 58px; }
     .kpi-page .act-btns { white-space: nowrap; }
@@ -155,7 +155,13 @@
                                 {
                                     <td></td>
                                 }
-                                <td class="text-muted">@r.ProgramCode</td>
+                                <td class="text-muted">
+                                    @r.ProgramCode
+                                    @if (!string.IsNullOrEmpty(r.ActivityCode))
+                                    {
+                                        <div class="sub">@r.ActivityCode</div>
+                                    }
+                                </td>
                                 <td class="text-muted num">@(string.IsNullOrEmpty(r.KpiCode) ? "-" : r.KpiCode)</td>
                                 <td class="kpi-name" dir="auto" title="@r.KpiName">
                                     @if (!string.IsNullOrEmpty(r.Priority))

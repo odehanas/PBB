@@ -6,7 +6,15 @@
 
     // End users only see End User + Reference guides; admins see everything.
     var visible = Model.Where(d => isAdmin || d.Category != "Administrator").ToList();
-    var categoryOrder = new[] { "End User", "Administrator", "Reference" };
+
+    // Preferred display order. Any category NOT named here still gets rendered,
+    // appended after these — previously an unlisted category was silently dropped,
+    // so adding a guide with a new category made it invisible with no error.
+    var preferred = new[] { "Complete", "End User", "Administrator", "Reference" };
+    var categoryOrder = preferred
+        .Where(c => visible.Any(d => d.Category == c))
+        .Concat(visible.Select(d => d.Category).Distinct().Where(c => !preferred.Contains(c)))
+        .ToList();
 
     string CategoryBadge(string cat) => cat switch
     {

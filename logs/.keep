@@ -1,0 +1,4 @@
+Placeholder so the .\logs folder is part of the publish output.
+The ASP.NET Core Module writes its stdout log here when stdoutLogEnabled is turned on in
+web.config; it does not create the folder itself, which is why it had to be created by hand
+on the server before. Do not delete this file.

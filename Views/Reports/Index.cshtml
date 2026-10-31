@@ -157,6 +157,13 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link @(report == "hrrate" ? "active" : "")"
+                   asp-controller="Reports" asp-action="Index"
+                   asp-route-report="hrrate" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-clock-history app-nav-icon"></i>Employee Cost per Hour
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link @(report == "entitysummary" ? "active" : "")"
                    asp-controller="Reports" asp-action="Index"
                    asp-route-report="entitysummary" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
@@ -168,6 +175,13 @@
                    asp-controller="Reports" asp-action="Index"
                    asp-route-report="trend" asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
                     <i class="bi bi-graph-up-arrow app-nav-icon"></i>Trend Summary
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link"
+                   asp-controller="Reports" asp-action="SubmissionReview"
+                   asp-route-year="@Model.Year" asp-route-entityId="@(Model.IsAdmin ? (Model.EntityId?.ToString() ?? "") : "")">
+                    <i class="bi bi-clock-history app-nav-icon"></i>Submission Review
                 </a>
             </li>
             <li class="nav-item">
@@ -314,8 +328,8 @@
                                     @foreach (var r in Model.Income.Lines)
                                     {
                                         <tr data-cat="@r.CategoryCode">
-                                            <td>@(string.IsNullOrWhiteSpace(r.ProgramCode) ? "" : (r.ProgramCode + " - " + r.ProgramName))</td>
-                                            <td>@(string.IsNullOrWhiteSpace(r.ActivityCode) ? "" : (r.ActivityCode + " - " + r.ActivityName))</td>
+                                            <td>@ReportLabel.CodeName(r.ProgramCode, r.ProgramName)</td>
+                                            <td>@ReportLabel.CodeName(r.ActivityCode, r.ActivityName)</td>
                                             <td>@r.GLCode</td>
                                             <td>@r.GLName</td>
                                             <td>@r.CategoryCode</td>
@@ -467,7 +481,7 @@
                                     @foreach (var r in Model.ProjectCosts)
                                     {
                                         <tr class="project-row" style="cursor: pointer;" data-project-id="@r.ProjectId" data-loaded="false" title="Click to view underlying transactions">
-                                            <td><span class="cost-caret text-muted me-1">&#9656;</span>@(r.ProjectCode + " - " + r.ProjectName)</td>
+                                            <td><span class="cost-caret text-muted me-1">&#9656;</span>@ReportLabel.CodeName(r.ProjectCode, r.ProjectName)</td>
                                             <td class="text-end cost-cell" data-section="revenue" title="View revenue transactions">@r.Revenue.ToString("N2")</td>
                                             <td class="text-end cost-cell" data-section="hr" title="View HR allocations">@r.Hr.ToString("N2")</td>
                                             <td class="text-end cost-cell" data-section="capex" title="View CAPEX transactions">@r.Capex.ToString("N2")</td>
@@ -545,7 +559,7 @@
                                     }
                                     @foreach (var g in programGroups)
                                     {
-                                        var programLabel = string.IsNullOrWhiteSpace(g.Key.ProgramCode) ? "No Program" : (g.Key.ProgramCode + " - " + g.Key.ProgramName);
+                                        var programLabel = ReportLabel.CodeName(g.Key.ProgramCode, g.Key.ProgramName, "No Program");
                                         var totalRevenue = g.Sum(x => x.Revenue);
                                         var totalHr = g.Sum(x => x.Hr);
                                         var totalCapex = g.Sum(x => x.Capex);
@@ -577,7 +591,7 @@
                                             var clickable = r.ActivityId > 0;
                                             <tr class="@(clickable ? "activity-row" : "")" style="@(clickable ? "cursor: pointer;" : "")" data-activity-id="@r.ActivityId" data-loaded="false" title="@(clickable ? "Click to view underlying transactions" : "")">
                                                 <td></td>
-                                                <td>@if (clickable) { <span class="cost-caret text-muted me-1">&#9656;</span> }@(r.ActivityCode + " - " + r.ActivityName)</td>
+                                                <td>@if (clickable) { <span class="cost-caret text-muted me-1">&#9656;</span> }@ReportLabel.CodeName(r.ActivityCode, r.ActivityName)</td>
                                                 <td class="text-end @(clickable ? "cost-cell" : "")" data-section="revenue">@r.Revenue.ToString("N2")</td>
                                                 <td class="text-end @(clickable ? "cost-cell" : "")" data-section="hr">@r.Hr.ToString("N2")</td>
                                                 <td class="text-end @(clickable ? "cost-cell" : "")" data-section="capex">@r.Capex.ToString("N2")</td>
@@ -671,10 +685,132 @@
                                             <td>@(r.EmployeeId + " - " + r.EmployeeName)</td>
                                             <td>@r.EntityName</td>
                                             <td>@r.DepartmentName</td>
-                                            <td>@(string.IsNullOrWhiteSpace(r.ProgramCode) ? "" : (r.ProgramCode + " - " + r.ProgramName))</td>
-                                            <td>@(r.ActivityCode + " - " + r.ActivityName)</td>
+                                            <td>@ReportLabel.CodeName(r.ProgramCode, r.ProgramName)</td>
+                                            <td>@ReportLabel.CodeName(r.ActivityCode, r.ActivityName)</td>
                                             <td>@(string.IsNullOrWhiteSpace(r.GLName) ? r.GLCode : (r.GLCode + " - " + r.GLName))</td>
                                             <td class="text-end">@r.Amount.ToString("N2")</td>
+                                        </tr>
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+            else if (report == "hrrate")
+            {
+                var rate = Model.HrHourlyRates;
+                if (rate == null || rate.Rows.Count == 0)
+                {
+                    <div class="alert alert-info">No data found for the selected filters.</div>
+                }
+                else
+                {
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-header bg-white fw-bold">Cost per Hour Summary</div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <div class="text-muted small">Blended standard rate / hour</div>
+                                    <div class="fw-bold fs-5">@(rate.BlendedRatePerHour?.ToString("N2") ?? "-")</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Total cost &divide; total productive hours</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="text-muted small">Blended nominal rate / hour</div>
+                                    <div class="fw-bold fs-5 text-muted">@(rate.BlendedNominalRatePerHour?.ToString("N2") ?? "-")</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Reference only - do not cost with this</div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="text-muted small">Employees</div>
+                                    <div class="fw-bold fs-5">@((rate.EmployeeCount - rate.VacancyCount).ToString("N0"))</div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="text-muted small">Vacant posts</div>
+                                    <div class="fw-bold fs-5">@rate.VacancyCount.ToString("N0")</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Excluded from blended rate</div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="text-muted small">Productive hours</div>
+                                    <div class="fw-bold fs-5">@rate.TotalEffectiveHours.ToString("N0")</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-secondary py-2 small d-print-none">
+                        <strong>Standard rate</strong> = annual cost &divide; <strong>productive</strong> hours
+                        (contracted hours less paid public holidays and annual leave).
+                        Because paid leave already sits inside the annual cost, it is absorbed into the rate &mdash;
+                        so hours &times; rate reconciles back to 100% of salary cost. This is the rate to use for
+                        costing services, outputs and KPIs.
+                        The <strong>nominal rate</strong> divides by contracted hours and understates the cost of an
+                        hour actually worked; it is shown for comparison only.
+                        Hours come from the work calendar in <code>core.WorkCalendars</code>.
+                    </div>
+
+                    @if (rate.MissingCalendarCount > 0)
+                    {
+                        <div class="alert alert-warning py-2 small">
+                            <strong>@rate.MissingCalendarCount</strong> employee(s) have no work calendar for @Model.Year,
+                            so no rate could be calculated. They are listed below in grey.
+                            Add a calendar row for their entity (or a default row for the year) to bring them in.
+                        </div>
+                    }
+
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-white fw-bold">Employee Cost per Hour</div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Employee</th>
+                                            <th>Occupation</th>
+                                            <th>Entity</th>
+                                            <th>Cost Center</th>
+                                            <th class="text-end">Annual Cost</th>
+                                            <th class="text-end">Gross Hours</th>
+                                            <th class="text-end">Holiday</th>
+                                            <th class="text-end">Leave</th>
+                                            <th class="text-end">Effective Hours</th>
+                                            <th class="text-end">Standard / hr</th>
+                                            <th class="text-end">Nominal / hr</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach (var r in rate.Rows)
+                                    {
+                                        var muted = r.IsVacancy == true || r.IsRateAvailable != true;
+                                        <tr class="@(muted ? "text-muted" : "")">
+                                            <td>
+                                                @(r.EmployeeId + " - " + r.EmployeeName)
+                                                @if (r.IsVacancy == true)
+                                                {
+                                                    <span class="badge bg-secondary ms-1"
+                                                          title="Budgeted vacant post: the cost is for part of a year, so an hourly rate is not meaningful.">Vacant</span>
+                                                }
+                                                @if (r.OverrideHours.HasValue)
+                                                {
+                                                    <span class="badge bg-info ms-1"
+                                                          title="Hours overridden for this employee instead of using the entity calendar.">Override</span>
+                                                }
+                                                @if (r.IsRateAvailable != true)
+                                                {
+                                                    <span class="badge bg-warning text-dark ms-1"
+                                                          title="No work calendar found for this budget year.">No calendar</span>
+                                                }
+                                            </td>
+                                            <td>@r.Occupation</td>
+                                            <td>@r.EntityName</td>
+                                            <td>@r.DepartmentName</td>
+                                            <td class="text-end">@r.AnnualCost.ToString("N2")</td>
+                                            <td class="text-end">@(r.GrossPaidHours?.ToString("N0") ?? "-")</td>
+                                            <td class="text-end">@(r.HolidayHours?.ToString("N0") ?? "-")</td>
+                                            <td class="text-end">@(r.LeaveHours?.ToString("N0") ?? "-")</td>
+                                            <td class="text-end">@(r.EffectiveHours?.ToString("N0") ?? "-")</td>
+                                            <td class="text-end fw-bold">@(r.StandardRatePerHour?.ToString("N2") ?? "-")</td>
+                                            <td class="text-end text-muted">@(r.NominalRatePerHour?.ToString("N2") ?? "-")</td>
                                         </tr>
                                     }
                                     </tbody>

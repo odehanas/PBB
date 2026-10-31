@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -19,17 +20,26 @@ namespace GovBudget.Controllers
         }
 
         // Curated list of the prepared guide documents (stored under /docs).
+        //
+        // One complete guide per language replaced the previous five-document set (user
+        // guide, user manual, administrator guide, submission workflow and what-if). They
+        // overlapped heavily, drifted apart as the system changed, and left readers unsure
+        // which one to trust. Everything they covered now lives in a single document per
+        // language, so there is exactly one place to read and one place to update.
         private static readonly List<GuideDoc> Docs = new()
         {
-            new GuideDoc("User Guide", "Step-by-step guide for budget preparers: context, entry, submission and reports.", "GovBudget_User_Guide.html", "EN", "End User"),
-            new GuideDoc("دليل المستخدم", "دليل خطوة بخطوة لمُعِدّي الموازنة: السياق، الإدخال، التقديم والتقارير.", "GovBudget_User_Guide_AR.html", "AR", "End User"),
-            new GuideDoc("User Manual", "Comprehensive reference manual covering every screen and workflow.", "GovBudget_User_Manual.html", "EN", "End User"),
-            new GuideDoc("Submission Workflow Guide", "How budgets move from draft to submitted, returned and approved.", "GovBudget_Submission_Workflow_Guide.html", "EN", "End User"),
-            new GuideDoc("دليل سير الاعتماد", "كيفية انتقال الموازنة من مسودة إلى مُقدّمة ومُعادة ومُعتمدة.", "GovBudget_Submission_Workflow_Guide_AR.html", "AR", "End User"),
-            new GuideDoc("What-If Scenarios Guide", "Building and comparing what-if budget scenarios (Arabic & English).", "GovBudget_WhatIf_Guide_AR_EN.html", "AR / EN", "End User"),
-            new GuideDoc("Administrator Guide", "Setup and administration: entities, users, master data, programmes and allocation.", "GovBudget_Admin_Guide.html", "EN", "Administrator"),
-            new GuideDoc("دليل المسؤول", "الإعداد والإدارة: الجهات والمستخدمون والبيانات المرجعية والبرامج والتوزيع.", "GovBudget_Admin_Guide_AR.html", "AR", "Administrator"),
-            new GuideDoc("Power BI Reporting Guide", "Technical reference for the combined-cost SQL views used in Power BI.", "PowerBI_Reporting_Guide.md", "EN", "Reference"),
+            new GuideDoc(
+                "Complete Guide",
+                "Everything in one document: concepts, budget preparation, submission and approval, cost allocation, cost per hour, reports and administration.",
+                "GovBudget_Guide_EN.html", "EN", "Complete"),
+            new GuideDoc(
+                "الدليل الشامل",
+                "كل شيء في مستند واحد: المفاهيم، إعداد الموازنة، التقديم والاعتماد، توزيع التكاليف، تكلفة الساعة، التقارير والإدارة.",
+                "GovBudget_Guide_AR.html", "AR", "Complete"),
+            new GuideDoc(
+                "Power BI Reporting Guide",
+                "Technical reference for the combined-cost SQL views used in Power BI.",
+                "PowerBI_Reporting_Guide.md", "EN", "Reference"),
         };
 
         [HttpGet]
@@ -56,6 +66,21 @@ namespace GovBudget.Controllers
                 && !string.Equals(requested, docsRoot, StringComparison.OrdinalIgnoreCase))
             {
                 return Forbid();
+            }
+
+            // Only the curated documents and their images are served. The docs folder also
+            // carries internal material (security review, schema scripts) that must never be
+            // reachable from a browser.
+            var relative = requested[docsRoot.Length..]
+                .TrimStart(Path.DirectorySeparatorChar)
+                .Replace('\\', '/');
+
+            var isCurated = Docs.Any(d => string.Equals(d.File, relative, StringComparison.OrdinalIgnoreCase));
+            var isAsset = relative.StartsWith("images/", StringComparison.OrdinalIgnoreCase);
+
+            if (!isCurated && !isAsset)
+            {
+                return NotFound();
             }
 
             if (!System.IO.File.Exists(requested))

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GovBudget — Test Results &amp; Business Objective Validation</title>
+<style>
+  :root {
+    --ink: #1f2937; --muted: #6b7280; --brand: #16233d; --brand-light: #eaeef5;
+    --accent: #c8911e; --line: #d8dee6; --green: #0f7b5b; --amber: #a86a00;
+    --red: #b3261e; --bg-soft: #f6f8fa;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Segoe UI", Calibri, Arial, sans-serif; color: var(--ink);
+         line-height: 1.55; margin: 0; background: #fff; font-size: 14px; }
+  .page { max-width: 940px; margin: 0 auto; padding: 40px 56px 80px; }
+
+  h1, h2, h3 { color: var(--brand); line-height: 1.25; }
+  h1 { font-size: 27px; margin: 0 0 6px; }
+  h2 { font-size: 20px; border-bottom: 2px solid var(--brand-light); padding-bottom: 6px; margin-top: 38px; }
+  h3 { font-size: 15px; margin-top: 22px; }
+  p { margin: 8px 0; }
+  ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+  li { margin: 4px 0; }
+
+  code { font-family: "Cascadia Code", Consolas, monospace; background: var(--bg-soft);
+         padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 12.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--brand); color: #fff; font-weight: 600; }
+  tbody tr:nth-child(even) { background: var(--bg-soft); }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+
+  .r { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px;
+       border-radius: 999px; color: #fff; white-space: nowrap; }
+  .r-pass    { background: var(--green); }
+  .r-partial { background: var(--amber); }
+  .r-not     { background: #6b7280; }
+
+  .callout { border-left: 4px solid var(--accent); background: #fff8ec; padding: 10px 14px;
+             margin: 14px 0; border-radius: 0 6px 6px 0; }
+  .callout.note { border-left-color: var(--brand); background: var(--brand-light); }
+  .callout.warn { border-left-color: var(--red); background: #fdecea; }
+  .callout strong { display: block; margin-bottom: 2px; }
+
+  .cover { border-bottom: 3px solid var(--brand); padding-bottom: 26px; margin-bottom: 8px; }
+  .cover .kicker { letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
+                   font-weight: 700; font-size: 12px; }
+  .cover h1 { font-size: 34px; margin: 10px 0 6px; }
+  .cover .sub { font-size: 17px; color: var(--muted); max-width: 40em; }
+  .meta { margin-top: 22px; font-size: 13px; color: var(--muted); }
+  .meta div { margin: 3px 0; }
+
+  .kpi { display: flex; gap: 14px; flex-wrap: wrap; margin: 16px 0; }
+  .kpi div { flex: 1 1 150px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+  .kpi .lbl { font-size: 11.5px; color: var(--muted); }
+  .kpi .val { font-size: 19px; font-weight: 700; color: var(--brand); }
+
+  @media print {
+    .page { max-width: 100%; padding: 0; }
+    h2 { break-after: avoid; }
+    table, .callout { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<section class="cover">
+  <div class="kicker">Ras Al Khaimah Government &middot; Department of Finance</div>
+  <h1>GovBudget — Test Results and Business Objective Validation</h1>
+  <div class="sub">Evidence of the application tested against the business objectives it was
+      built to meet, prepared for EGA / IDO evaluation ahead of sandbox provisioning.</div>
+  <div class="meta">
+    <div><strong>Prepared for</strong> — Ajay Pundhir, Director, Data &amp; Analytics, EGA</div>
+    <div><strong>Prepared by</strong> — Anas Odeh, Department of Finance, Ras Al Khaimah</div>
+    <div><strong>Date</strong> — 9 September 2026</div>
+    <div><strong>Environment tested</strong> — current hosted instance, budget year 2026, live departmental data</div>
+  </div>
+</section>
+
+<h2 id="purpose">1. Purpose and scope</h2>
+
+<p>This document reports what has been tested in GovBudget and what the results were, framed
+against the business objectives the system exists to serve. It is intended to support EGA's
+evaluation while the Azure sandbox is being provisioned.</p>
+
+<p>It deliberately reports both what passes and what has <strong>not</strong> yet been exercised.
+Two objectives are not yet fully evidenced, and they are stated as plainly as the ones that pass —
+an evaluation is only useful if the gaps are visible.</p>
+
+<h2 id="method">2. How these results were produced</h2>
+
+<p>Three kinds of verification were used, and each result below states which applies:</p>
+
+<table>
+  <thead><tr><th style="width:24%">Method</th><th>What it establishes</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Data verification</strong></td>
+        <td>Direct queries against the live database, checking that the figures the system
+            produces actually reconcile. This is the strongest evidence: it tests outcomes, not
+            intentions.</td></tr>
+    <tr><td><strong>Application testing</strong></td>
+        <td>Functions exercised through the application in a browser, signed in as a user with the
+            relevant role.</td></tr>
+    <tr><td><strong>Code verification</strong></td>
+        <td>Inspection of the implementation where behaviour cannot be observed from data alone —
+            for example password hashing parameters or outbound network calls.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout note">
+  <strong>Scale of the data behind these results</strong>
+  These are not results from a demonstration data set. They come from the department's working
+  2026 budget.
+</div>
+
+<div class="kpi">
+  <div><div class="lbl">Budget lines, FY2026</div><div class="val">1,034</div></div>
+  <div><div class="lbl">Budget value</div><div class="val">335.0 M AED</div></div>
+  <div><div class="lbl">Employees costed</div><div class="val">470</div></div>
+  <div><div class="lbl">Programmes / activities</div><div class="val">14 / 37</div></div>
+  <div><div class="lbl">Audit records</div><div class="val">626</div></div>
+</div>
+
+<h2 id="summary">3. Results summary</h2>
+
+<table>
+  <thead>
+    <tr><th style="width:6%">#</th><th style="width:40%">Business objective</th>
+        <th style="width:14%">Result</th><th>Basis</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>Shift from input-based to performance-based budgeting: cost attributed to programmes and activities, not just accounts</td>
+        <td><span class="r r-pass">Passed</span></td><td>Data verification</td></tr>
+    <tr><td>2</td><td>Complete attribution of manpower cost to the activities staff actually work on</td>
+        <td><span class="r r-pass">Passed</span></td><td>Data verification</td></tr>
+    <tr><td>3</td><td>Overhead redistribution: support programme cost carried onto the mandate work it enables, without altering the underlying budget</td>
+        <td><span class="r r-pass">Passed</span></td><td>Data verification</td></tr>
+    <tr><td>4</td><td>Unit costing: express cost per hour of staff time as a basis for costing services and outputs</td>
+        <td><span class="r r-pass">Passed</span></td><td>Data verification</td></tr>
+    <tr><td>5</td><td>Performance layer: KPIs, activity outputs and maturity captured alongside cost</td>
+        <td><span class="r r-partial">Partial</span></td><td>Data verification</td></tr>
+    <tr><td>6</td><td>Governed budget cycle: prepare, submit, review, return, approve — with an evidence trail</td>
+        <td><span class="r r-not">Not yet exercised</span></td><td>Code verification only</td></tr>
+    <tr><td>7</td><td>Management reporting sufficient to support budget decisions</td>
+        <td><span class="r r-pass">Passed</span></td><td>Application testing</td></tr>
+    <tr><td>8</td><td>Access control and auditability appropriate to government financial data</td>
+        <td><span class="r r-pass">Passed</span></td><td>Code verification + data</td></tr>
+    <tr><td>9</td><td>Operable inside a restricted environment with no outbound internet</td>
+        <td><span class="r r-pass">Passed</span></td><td>Code verification</td></tr>
+  </tbody>
+</table>
+
+<h2 id="detail">4. Detailed results</h2>
+
+<h3>Objective 1 — Cost attributed to programmes and activities <span class="r r-pass">Passed</span></h3>
+<p>The FY2026 budget is fully structured against the performance-based model rather than
+against accounts alone.</p>
+<table>
+  <thead><tr><th>Entity</th><th class="num">Budget lines</th><th class="num">Budget (AED)</th></tr></thead>
+  <tbody>
+    <tr><td>RCUD — Customs Department</td><td class="num">883</td><td class="num">324,574,511</td></tr>
+    <tr><td>RDAM — Antiquities and Museums</td><td class="num">148</td><td class="num">8,925,708</td></tr>
+    <tr><td>RDOF — Department of Finance</td><td class="num">3</td><td class="num">1,525,000</td></tr>
+  </tbody>
+</table>
+<p>Every line carries an activity and a general ledger account, and each activity belongs to a
+programme classified as either Mandate or Support. That structure is what makes the reporting in
+objectives 3, 4 and 7 possible. Figures are rounded to whole dirhams.</p>
+
+<h3>Objective 2 — Complete manpower attribution <span class="r r-pass">Passed</span></h3>
+<p>This is the objective most likely to fail quietly in a costing system: salary that is budgeted
+but never attached to any activity disappears from programme reporting while still being spent.</p>
+<table>
+  <thead><tr><th>Check</th><th class="num">Result</th></tr></thead>
+  <tbody>
+    <tr><td>Employees costed for FY2026</td><td class="num">470</td></tr>
+    <tr><td>Total annual manpower cost</td><td class="num">87,363,024 AED</td></tr>
+    <tr><td>Total allocated to activities</td><td class="num">87,363,024 AED</td></tr>
+    <tr><td>Allocation rows</td><td class="num">876</td></tr>
+    <tr><td><strong>Employees not fully allocated</strong></td><td class="num"><strong>0</strong></td></tr>
+  </tbody>
+</table>
+<p><strong>Attribution is 100%.</strong> Allocated cost equals budgeted cost to the dirham, and no
+employee is partially or wholly unattached to activities. The application enforces this: it refuses
+an allocation exceeding an employee's annual cost, and reports anyone under-allocated on a dedicated
+variance screen.</p>
+
+<h3>Objective 3 — Overhead redistribution <span class="r r-pass">Passed</span></h3>
+<p>Support programme cost is redistributed onto the mandate programmes it enables, so that
+programme cost can be reported fully loaded rather than only as direct cost.</p>
+<p>One allocation run is posted. It moves the entire direct cost of the support programme:</p>
+<table>
+  <thead><tr><th>Direction</th><th>Programme</th><th class="num">Amount (AED)</th></tr></thead>
+  <tbody>
+    <tr><td>Out</td><td>DAM-07 — Governance &amp; Corporate Support (Support)</td><td class="num">8,685,800.12</td></tr>
+    <tr><td>In</td><td>DAM-04 — Archaeological Sites &amp; Collections</td><td class="num">3,985,249.48</td></tr>
+    <tr><td>In</td><td>DAM-05 — Archaeological Excavation &amp; Research</td><td class="num">2,452,461.21</td></tr>
+    <tr><td>In</td><td>DAM-03 — Museum Spaces, Content and Exhibitions</td><td class="num">1,532,788.25</td></tr>
+    <tr><td>In</td><td>DAM-02 — Community Awareness of Culture and Heritage</td><td class="num">408,743.54</td></tr>
+    <tr><td>In</td><td>DAM-01 — Intangible Heritage Documentation</td><td class="num">204,371.77</td></tr>
+    <tr><td>In</td><td>DAM-06 — Partnerships &amp; Knowledge Exchange</td><td class="num">102,185.87</td></tr>
+    <tr><td colspan="2"><strong>Total in</strong></td><td class="num"><strong>8,685,800.12</strong></td></tr>
+  </tbody>
+</table>
+<p><strong>Amount out equals amount in exactly</strong>, and that figure is independently confirmed
+as DAM-07's full direct cost (4,897,577.93 in budget lines plus 3,788,222.19 in allocated manpower).
+Total entity cost is therefore unchanged by allocation: cost moves, it is neither created nor lost.</p>
+<p>Separately confirmed: the run writes only to its own tables. Budget lines and manpower
+allocations are not modified, so the Direct basis always continues to show the budget exactly as
+entered. Superseded runs are retained rather than overwritten.</p>
+
+<h3>Objective 4 — Unit costing (cost per hour) <span class="r r-pass">Passed</span></h3>
+<table>
+  <thead><tr><th>Check</th><th class="num">Result</th></tr></thead>
+  <tbody>
+    <tr><td>Employees with a calculated hourly rate</td><td class="num">470 of 470</td></tr>
+    <tr><td>Blended standard rate (excluding vacant posts)</td><td class="num">104.51 AED / hour</td></tr>
+    <tr><td>Vacant budgeted posts, correctly excluded</td><td class="num">15</td></tr>
+  </tbody>
+</table>
+<p>The rate divides annual cost by <em>productive</em> hours — contracted hours less paid public
+holidays and annual leave — rather than by contracted hours. Because paid leave already sits inside
+the annual salary, dividing by contracted hours would recover only 86.15% of it (1,792 productive
+hours against 2,080 contracted) and under-cost every activity by 13.85%. Dividing by productive
+hours means hours multiplied by rate reconciles back to total salary cost, preserving the 100%
+attribution proved in objective 2.</p>
+<p>Budgeted but unfilled posts are identified and excluded from blended rates, since their cost is
+part-year and an hourly rate derived from it would be misleading.</p>
+
+<h3>Objective 5 — Performance layer <span class="r r-partial">Partial</span></h3>
+<table>
+  <thead><tr><th>Component</th><th class="num">Records</th><th>Assessment</th></tr></thead>
+  <tbody>
+    <tr><td>KPIs</td><td class="num">43</td><td>Populated — 27 Customs, 16 Antiquities</td></tr>
+    <tr><td>Activity outputs</td><td class="num">45</td><td>Populated — covering 45 activities</td></tr>
+    <tr><td>Maturity assessments</td><td class="num">1</td><td><strong>Sparse</strong> — one entity assessed</td></tr>
+  </tbody>
+</table>
+<p>The model and the screens exist and hold real data for KPIs and outputs, which is what unit-cost
+reporting depends on. Maturity staging is implemented but only one assessment has been recorded, so
+cross-entity maturity comparison is not yet meaningful. This is a data-collection gap rather than a
+functional one.</p>
+
+<h3>Objective 6 — Governed budget cycle <span class="r r-not">Not yet exercised</span></h3>
+<div class="callout warn">
+  <strong>Reported as not proven</strong>
+  The submission and approval workflow is implemented, but there are currently <strong>zero
+  submissions</strong> in the database. The cycle of prepare → submit → review → return → approve
+  has not been run end to end against real departmental data, so no test result can honestly be
+  claimed for it.
+</div>
+<p>What <em>is</em> confirmed by inspecting the implementation: submissions are held per entity,
+cost centre and category; each category approves independently; budget lines lock once submitted;
+and a return does not edit the locked version but creates a new draft as the next version, retaining
+the prior one. A comparison report reads any two versions and reports what changed, alongside the
+dated record of who submitted, returned or approved and the notes they left.</p>
+<p><strong>This is the primary item recommended for the sandbox test window</strong>, where a full
+cycle can be run without touching live budget data. It is listed in the proposed test plan in
+section 7.</p>
+
+<h3>Objective 7 — Management reporting <span class="r r-pass">Passed</span></h3>
+<p>Reporting has been exercised in the application against the live data set. Available and working:
+income statement; general ledger view; project costs; activity costs on both a direct and a fully
+loaded basis; manpower allocation; employee cost per hour; entity budget summary; multi-year trend;
+a configurable report builder with cross-tabulation and charting; and an executive presentation
+populated with real figures.</p>
+<p>All reports export to Excel and print in a layout designed for committee papers. A management
+review pack covers cost structure, capital discipline, cost per employee against a reference band,
+programme cost before and after allocation, and cost per output.</p>
+
+<h3>Objective 8 — Access control and auditability <span class="r r-pass">Passed</span></h3>
+<table>
+  <thead><tr><th style="width:38%">Control</th><th>Implementation confirmed</th></tr></thead>
+  <tbody>
+    <tr><td>Password storage</td><td>PBKDF2-SHA256, 210,000 iterations, per-user salt — meets current OWASP guidance</td></tr>
+    <tr><td>Brute-force protection</td><td>Account lockout after 5 failed attempts; rate limiting on sign-in</td></tr>
+    <tr><td>Authorisation</td><td>Role-based, with a per-screen permission matrix enforced on every server request, not only in the interface</td></tr>
+    <tr><td>Data scoping</td><td>Users are confined to their entity and cost centre; scoping is applied in the data query</td></tr>
+    <tr><td>Audit trail</td><td>626 records, covering sign-in, imports, allocation runs, and data changes</td></tr>
+    <tr><td>Transport and browser</td><td>HTTPS enforced with HSTS; antiforgery protection; Content Security Policy permitting no external origin</td></tr>
+  </tbody>
+</table>
+<p>Audit coverage observed: 344 sign-ins, 157 inserts, 80 updates, 17 allocation actions, 14 imports,
+plus recorded failed sign-in attempts.</p>
+
+<h3>Objective 9 — Operation without outbound internet <span class="r r-pass">Passed</span></h3>
+<p>Relevant to the Azure sandbox, where egress is expected to be restricted.</p>
+<p>The entire application makes outbound network calls from exactly two places, both belonging to
+the optional AI assistant: the language model service, and the OECD statistics service. Both are
+disabled by a single configuration setting, and nothing else in the system depends on them.</p>
+<p>All front-end libraries are served by the application itself rather than from public content
+delivery networks, and the Content Security Policy permits no external origin at all — so the
+browser is structurally unable to fetch a script, stylesheet or font from the internet. The
+application therefore runs fully functional in an air-gapped environment.</p>
+
+<h2 id="gaps">5. Known gaps and limitations</h2>
+
+<p>Stated in full so the evaluation is not based on an incomplete picture.</p>
+
+<table>
+  <thead><tr><th style="width:30%">Gap</th><th>Detail and impact</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Approval cycle unproven</strong></td>
+        <td>Zero submissions exist; the workflow has never been run end to end with real data. Highest priority for sandbox testing.</td></tr>
+    <tr><td><strong>Maturity data sparse</strong></td>
+        <td>One assessment recorded. Cross-entity maturity comparison not yet meaningful.</td></tr>
+    <tr><td><strong>Actuals partial</strong></td>
+        <td>391 manpower actual records and 135 ledger actual records, covering part of the year and not all entities. Budget-versus-actual reporting is therefore complete only where actuals have been imported.</td></tr>
+    <tr><td><strong>Pilot data incomplete</strong></td>
+        <td>Two entities carry substantive budgets; a third holds three residual lines from earlier testing which should be removed before the sandbox is loaded.</td></tr>
+    <tr><td><strong>Single-developer delivery</strong></td>
+        <td>Built in-house without a second reviewer. Independent review during the sandbox phase would be prudent, and is welcomed.</td></tr>
+    <tr><td><strong>Not yet load tested</strong></td>
+        <td>Concurrency has not been tested beyond the current small user population of 9 accounts.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="next">6. Proposed sandbox test plan</h2>
+
+<p>Once the Azure sandbox is provisioned, the following would close the open items above. The first
+is the most valuable, because it is the one thing that cannot be proven on the live system without
+disturbing a working budget.</p>
+
+<ol>
+  <li><strong>Full budget cycle, end to end.</strong> Prepare a budget in a test entity, submit it,
+      return it with comments, revise, resubmit, and approve through to final. Verify at each step
+      that data locks and unlocks correctly, that a new version is created rather than the previous
+      one overwritten, and that the comparison report and approval trail reproduce what happened.</li>
+  <li><strong>Concurrent multi-user test.</strong> Several preparers working in different entities
+      simultaneously, confirming data scoping holds under concurrent use.</li>
+  <li><strong>Permission matrix verification.</strong> Confirm each role can reach exactly the
+      screens intended and no others, tested against the server rather than the interface.</li>
+  <li><strong>Restricted-egress confirmation.</strong> Run with outbound internet blocked and
+      confirm every function except the optional assistant behaves normally.</li>
+  <li><strong>Restart and session persistence.</strong> Recycle the application and confirm signed-in
+      users remain signed in, proving the encryption key ring is correctly persisted.</li>
+  <li><strong>Backup and restore.</strong> Take a backup, restore it, and confirm the recovery point
+      and recovery time objectives already stated to EGA are achievable in the Azure environment.</li>
+</ol>
+
+<p>The existing eight-step acceptance checklist already provided to EGA covers items 4 and 5 and can
+be run on the first day the environment is available.</p>
+
+<h2 id="conclusion">7. Conclusion</h2>
+
+<p>The financial and costing objectives the system was built for are met and evidenced against real
+departmental data: manpower cost is fully attributed, overhead redistribution balances exactly,
+unit costing reconciles to total salary cost, and reporting is in daily use.</p>
+
+<p>The performance layer is functional with real KPI and output data, though maturity assessment
+remains sparse. The approval workflow is built but unproven in practice, and proving it is the
+single most useful thing the sandbox can deliver.</p>
+
+<p>We are ready to proceed with provisioning and to run the test plan in section 6 jointly with EGA.</p>
+
+<hr style="border:0; border-top:1px solid var(--line); margin:36px 0 16px;" />
+<p style="font-size:12px; color:var(--muted);">
+  GovBudget — Test Results and Business Objective Validation, 9 September 2026.
+  Figures verified against the live database on the date of issue.
+  Ras Al Khaimah Government, Department of Finance.
+</p>
+
+</div>
+</body>
+</html>

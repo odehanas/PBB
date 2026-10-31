@@ -138,6 +138,12 @@ namespace GovBudget.Services.Assistant
             new("Projects", "Edit", WriteKind.Edit, "Change a project.", typeof(Projects), "id"),
             new("Projects", "DeleteConfirmed", WriteKind.Delete, "Delete a project.", typeof(Projects), "id"),
 
+            new("WorkCalendar", "Create", WriteKind.Add,
+                "Create a work calendar (hours per day, work days per week, holidays, leave, utilisation) for a year and entity.",
+                typeof(WorkCalendars)),
+            new("WorkCalendar", "Edit", WriteKind.Edit, "Change a work calendar.", typeof(WorkCalendars), "id"),
+            new("WorkCalendar", "DeleteConfirmed", WriteKind.Delete, "Delete a work calendar.", typeof(WorkCalendars), "id"),
+
             // Requests and working context
             new("InternalMessages", "Index", WriteKind.Add, "Send an internal request or message to the administrators.",
                 OnlyFields: new[] { "Subject", "Body" }),

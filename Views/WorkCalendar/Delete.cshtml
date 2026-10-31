@@ -1,0 +1,75 @@
+@model GovBudget.Models.WorkCalendars
+
+@{
+    ViewData["Title"] = "Delete Work Calendar";
+    var affected = ViewBag.AffectedEmployees as int? ?? 0;
+}
+
+<div class="container-fluid py-3">
+    <h1 class="mb-3">Delete Work Calendar</h1>
+
+    @if (!Model.EntityId.HasValue)
+    {
+        <div class="alert alert-danger">
+            <strong>This is the default calendar for @Model.BudgetYear.</strong>
+            Every entity without its own calendar falls back to it. Deleting it leaves
+            <strong>@affected.ToString("N0")</strong> employee(s) with no hourly rate at all &mdash; they will show as
+            &ldquo;No calendar&rdquo; on the cost per hour report until you add a replacement.
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-warning">
+            <strong>@affected.ToString("N0")</strong> employee(s) currently use this calendar. After deleting it they
+            fall back to the default calendar for @Model.BudgetYear, if one exists &mdash; which will change their
+            reported hourly rate.
+        </div>
+    }
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Scope</dt>
+                <dd class="col-sm-9">
+                    @if (Model.EntityId.HasValue)
+                    {
+                        @(Model.Entity != null ? Model.Entity.EntityCode + " - " + Model.Entity.EntityName : "Entity " + Model.EntityId)
+                    }
+                    else
+                    {
+                        <span class="badge bg-primary">All entities (default)</span>
+                    }
+                </dd>
+
+                <dt class="col-sm-3">Year</dt>
+                <dd class="col-sm-9">@Model.BudgetYear</dd>
+
+                <dt class="col-sm-3">Calendar</dt>
+                <dd class="col-sm-9">@Model.CalendarName</dd>
+
+                <dt class="col-sm-3">Pattern</dt>
+                <dd class="col-sm-9">
+                    @Model.HoursPerDay.ToString("0.##") hours &times; @Model.WorkDaysPerWeek.ToString("0.##") days
+                    &times; @Model.WeeksPerYear.ToString("0.##") weeks
+                </dd>
+
+                <dt class="col-sm-3">Paid absence</dt>
+                <dd class="col-sm-9">
+                    @Model.PublicHolidayDays.ToString("0.##") holiday +
+                    @Model.AnnualLeaveDays.ToString("0.##") leave +
+                    @Model.OtherPaidAbsenceDays.ToString("0.##") other days
+                </dd>
+
+                <dt class="col-sm-3">Productive hours</dt>
+                <dd class="col-sm-9 fw-bold">@Model.ProductiveHours.ToString("N0")</dd>
+            </dl>
+        </div>
+    </div>
+
+    <form asp-action="Delete" method="post">
+        @Html.AntiForgeryToken()
+        <input type="hidden" asp-for="CalendarId" />
+        <button type="submit" class="btn btn-danger">Delete Calendar</button>
+        <a asp-action="Index" asp-route-year="@Model.BudgetYear" class="btn btn-outline-secondary">Cancel</a>
+    </form>
+</div>

@@ -11,6 +11,7 @@
     <a asp-action="Create" class="btn btn-primary">Create New</a>
     <a asp-action="Template" class="btn btn-outline-primary">Download Template</a>
     <a asp-action="Export" class="btn btn-success">Export to Excel</a>
+    <a asp-action="InactiveLinks" class="btn btn-outline-danger">Inactive activity links</a>
 </div>
 
 @if (TempData["Success"] != null)
@@ -71,7 +72,7 @@ else if (TempData["Error"] != null)
                 @(item.Department.DeptCode + " - " + item.Department.DeptName)
             </td>
             <td>
-                @(item.Program.ProgramCode + " - " + item.Program.ProgramName)
+                @ReportLabel.CodeName(item.Program.ProgramCode, item.Program.ProgramName)
             </td>
             <td>
                 <a asp-action="Edit" asp-route-id="@item.ActivityId">Edit</a> |

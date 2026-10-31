@@ -195,6 +195,10 @@ namespace GovBudget.Controllers
                 ViewBag.HrAllocatedTotal = allocatedTotal;
                 ViewBag.HrUnallocatedTotal = importedTotal - allocatedTotal;
             }
+            else if (report == "hrrate")
+            {
+                vm.HrHourlyRates = await BuildHrHourlyRates(selectedYear, effectiveEntityId);
+            }
             else if (report == "entitysummary")
             {
                 vm.EntitySummary = await BuildEntityBudgetSummary(selectedYear, effectiveEntityId);
@@ -359,6 +363,11 @@ namespace GovBudget.Controllers
                 var hr = await BuildHrAllocations(selectedYear, effectiveEntityId);
                 BuildHrAllocationsWorksheet(wb, hr, selectedYear, entityLabel);
             }
+            else if (report == "hrrate")
+            {
+                var rates = await BuildHrHourlyRates(selectedYear, effectiveEntityId);
+                BuildHrHourlyRateWorksheet(wb, rates, selectedYear, entityLabel);
+            }
             else if (report == "entitysummary")
             {
                 var summary = await BuildEntityBudgetSummary(selectedYear, effectiveEntityId);
@@ -376,6 +385,293 @@ namespace GovBudget.Controllers
 
             var fileName = $"Report_{report}_{selectedYear}_{entityLabel}.xlsx";
             return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+        }
+
+        // ---------- Submission review: compare two versions of one submission ----------
+
+        [HttpGet]
+        public async Task<IActionResult> SubmissionReview(
+            int? year = null, int? entityId = null, int? deptId = null, int? categoryId = null,
+            long? fromId = null, long? toId = null)
+        {
+            var vm = await BuildSubmissionReview(year, entityId, deptId, categoryId, fromId, toId);
+            return View(vm);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> SubmissionReviewExport(
+            int? year = null, int? entityId = null, int? deptId = null, int? categoryId = null,
+            long? fromId = null, long? toId = null)
+        {
+            var vm = await BuildSubmissionReview(year, entityId, deptId, categoryId, fromId, toId);
+            if (!vm.HasResult)
+            {
+                TempData["Error"] = vm.Message ?? "Nothing to export.";
+                return RedirectToAction(nameof(SubmissionReview), new { year, entityId, deptId, categoryId, fromId, toId });
+            }
+
+            using var wb = new XLWorkbook();
+            BuildSubmissionReviewWorkbook(wb, vm);
+
+            using var stream = new MemoryStream();
+            wb.SaveAs(stream);
+            var name = $"SubmissionReview_{vm.Year}_{vm.ScopeLabel}_v{vm.From?.VersionNo}-v{vm.To?.VersionNo}.xlsx"
+                .Replace(' ', '_').Replace('/', '-');
+            return File(stream.ToArray(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", name);
+        }
+
+        private async Task<SubmissionReviewVm> BuildSubmissionReview(
+            int? year, int? entityId, int? deptId, int? categoryId, long? fromId, long? toId)
+        {
+            var thisYear = DateTime.Now.Year;
+            var selectedYear = year ?? HttpContext.Session.GetInt("ctxYear") ?? thisYear;
+
+            var isAdmin = User.IsInRole("ADMIN");
+            var isSysAdmin = User.IsInRole("SYSADMIN");
+            var isAdminLike = isAdmin || isSysAdmin;
+            var scopedEntityId = GetEntityClaimId();
+            var isGlobalAdmin = IsGlobalAdmin(isAdmin, isSysAdmin, scopedEntityId);
+            var effectiveEntityId = ResolveEntityScope(isAdminLike, isGlobalAdmin, entityId);
+
+            var vm = new SubmissionReviewVm
+            {
+                Year = selectedYear,
+                IsAdmin = isAdminLike,
+                EntityId = effectiveEntityId,
+                DepartmentId = deptId,
+                CategoryId = categoryId,
+                FromSubmissionId = fromId,
+                ToSubmissionId = toId,
+                YearOptions = new[] { thisYear - 1, thisYear, thisYear + 1, thisYear + 2 }
+                    .Select(y => new SelectListItem(y.ToString(), y.ToString(), y == selectedYear)).ToList(),
+            };
+
+            // ResolveEntityScope returns -1 for an account with no entity assigned. That
+            // would filter to nothing anyway, but relying on a sentinel to match no rows is
+            // implicit; refuse explicitly instead. This report exposes return notes and
+            // approver names, so the scope guard should be obvious rather than incidental.
+            if (effectiveEntityId.HasValue && effectiveEntityId.Value <= 0)
+            {
+                vm.Message = "Your account is not assigned to an entity, so no submissions are visible.";
+                return vm;
+            }
+
+            // Every submission this user is allowed to see, for the chosen year.
+            var scopeQuery = _db.BudgetSubmissions.AsNoTracking()
+                .Include(s => s.Entity).Include(s => s.Department).Include(s => s.Category)
+                .Where(s => s.BudgetYear == selectedYear);
+
+            if (effectiveEntityId.HasValue)
+            {
+                scopeQuery = scopeQuery.Where(s => s.EntityId == effectiveEntityId.Value);
+            }
+
+            var all = await scopeQuery.ToListAsync();
+
+            vm.EntityOptions = all.Select(s => new { s.EntityId, Label = s.Entity.EntityCode + " - " + s.Entity.EntityName })
+                .Distinct().OrderBy(x => x.Label)
+                .Select(x => new SelectListItem(x.Label, x.EntityId.ToString(), x.EntityId == effectiveEntityId))
+                .ToList();
+            if (isGlobalAdmin) vm.EntityOptions.Insert(0, new SelectListItem("Select entity", "", !effectiveEntityId.HasValue));
+
+            vm.DepartmentOptions = all.Where(s => !effectiveEntityId.HasValue || s.EntityId == effectiveEntityId.Value)
+                .Select(s => new { s.DepartmentId, Label = s.Department.DeptCode + " - " + s.Department.DeptName })
+                .Distinct().OrderBy(x => x.Label)
+                .Select(x => new SelectListItem(x.Label, x.DepartmentId.ToString(), x.DepartmentId == deptId))
+                .ToList();
+            vm.DepartmentOptions.Insert(0, new SelectListItem("Select cost centre", "", !deptId.HasValue));
+
+            vm.CategoryOptions = all.Select(s => new { s.CategoryId, Label = s.Category.CategoryCode })
+                .Distinct().OrderBy(x => x.Label)
+                .Select(x => new SelectListItem(x.Label, x.CategoryId.ToString(), x.CategoryId == categoryId))
+                .ToList();
+            vm.CategoryOptions.Insert(0, new SelectListItem("Select category", "", !categoryId.HasValue));
+
+            if (all.Count == 0)
+            {
+                vm.Message = $"No budget submissions exist for {selectedYear} within your access.";
+                return vm;
+            }
+
+            if (!effectiveEntityId.HasValue || !deptId.HasValue || !categoryId.HasValue)
+            {
+                vm.Message = "Choose an entity, cost centre and category to compare versions.";
+                return vm;
+            }
+
+            // The full version history for this one submission stream, oldest first.
+            var stream2 = all
+                .Where(s => s.EntityId == effectiveEntityId.Value
+                         && s.DepartmentId == deptId.Value
+                         && s.CategoryId == categoryId.Value)
+                .OrderBy(s => s.VersionNo)
+                .ToList();
+
+            vm.ScopeLabel = stream2.Count > 0
+                ? $"{stream2[0].Entity.EntityCode}/{stream2[0].Department.DeptCode} — {stream2[0].Category.CategoryCode}"
+                : "";
+
+            vm.VersionOptions = stream2
+                .Select(s => new SelectListItem($"v{s.VersionNo} — {s.Status}", s.SubmissionId.ToString()))
+                .ToList();
+
+            vm.Trail = BuildSubmissionTrail(stream2);
+
+            if (stream2.Count < 2)
+            {
+                vm.Message = stream2.Count == 1
+                    ? "This category has only one version, so there is nothing to compare yet. A comparison becomes available once a submission is returned and re-submitted."
+                    : "No submission found for that combination.";
+                return vm;
+            }
+
+            // Default to the widest span - first version against latest. That is the
+            // question a reviewer is usually asked: what did the whole cycle change?
+            var from = fromId.HasValue ? stream2.FirstOrDefault(s => s.SubmissionId == fromId.Value) : stream2.First();
+            var to = toId.HasValue ? stream2.FirstOrDefault(s => s.SubmissionId == toId.Value) : stream2.Last();
+            if (from == null || to == null)
+            {
+                vm.Message = "One of the selected versions is not part of this submission.";
+                return vm;
+            }
+
+            vm.From = from;
+            vm.To = to;
+            vm.FromSubmissionId = from.SubmissionId;
+            vm.ToSubmissionId = to.SubmissionId;
+            vm.VersionOptions = stream2
+                .Select(s => new SelectListItem($"v{s.VersionNo} — {s.Status}", s.SubmissionId.ToString()))
+                .ToList();
+
+            await PopulateSubmissionDiff(vm, from.SubmissionId, to.SubmissionId);
+            vm.HasResult = true;
+            return vm;
+        }
+
+        // Flattens each version's dated actions into one chronological trail. This is the
+        // part reviewers are actually asked for: who returned it, when, and why.
+        private static List<SubmissionTrailVm> BuildSubmissionTrail(List<BudgetSubmissions> versions)
+        {
+            var trail = new List<SubmissionTrailVm>();
+
+            foreach (var s in versions)
+            {
+                void Add(string action, DateTime? at, string? by, string? note)
+                {
+                    if (!at.HasValue && string.IsNullOrWhiteSpace(by)) return;
+                    trail.Add(new SubmissionTrailVm { VersionNo = s.VersionNo, Action = action, At = at, By = by, Note = note });
+                }
+
+                Add("Submitted", s.SubmittedAt, s.SubmittedBy, null);
+                Add("Returned", s.ReturnedAt, s.ReturnedBy, s.ReturnNote);
+                Add("Approved by entity", s.ApprovedAt, s.ApprovedBy, s.ApprovalNote);
+                Add("Sent to central", s.SentToCentralAt, s.SentToCentralBy, null);
+                Add("Approved centrally", s.SysApprovedAt, s.SysApprovedBy, s.SysApprovalNote);
+                Add("Finalised", s.FinalizedAt, s.FinalizedBy, null);
+            }
+
+            return trail
+                .OrderBy(t => t.VersionNo)
+                .ThenBy(t => t.At ?? DateTime.MaxValue)
+                .ToList();
+        }
+
+        private async Task PopulateSubmissionDiff(SubmissionReviewVm vm, long fromSubmissionId, long toSubmissionId)
+        {
+            var fromLines = await _db.BudgetSubmissionLines.AsNoTracking()
+                .Where(l => l.SubmissionId == fromSubmissionId).ToListAsync();
+            var toLines = await _db.BudgetSubmissionLines.AsNoTracking()
+                .Where(l => l.SubmissionId == toSubmissionId).ToListAsync();
+
+            // Same identity rule as the existing Variance screen, so the two agree.
+            static string Key(BudgetSubmissionLines l) =>
+                $"{l.ItemId}|{l.ProgramId}|{l.ActivityId}|{l.ProjectId}|{(l.Description ?? "").Trim()}";
+
+            var fromByKey = fromLines.GroupBy(Key).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+            var toByKey = toLines.GroupBy(Key).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+            var sample = fromLines.Concat(toLines).GroupBy(Key).ToDictionary(g => g.Key, g => g.First());
+
+            vm.TotalFrom = fromLines.Sum(l => l.Amount);
+            vm.TotalTo = toLines.Sum(l => l.Amount);
+
+            // Look-ups for the codes and names, resolved in bulk rather than per row.
+            var itemIds = sample.Values.Select(l => l.ItemId).Distinct().ToList();
+            var items = (await _db.Items.AsNoTracking().Where(i => itemIds.Contains(i.ItemId))
+                    .Select(i => new { i.ItemId, i.ItemCode, i.ItemName }).ToListAsync())
+                .ToDictionary(i => i.ItemId, i => i.ItemCode + " - " + i.ItemName);
+
+            var actIds = sample.Values.Where(l => l.ActivityId.HasValue).Select(l => l.ActivityId!.Value).Distinct().ToList();
+            var acts = (await _db.Activities.AsNoTracking().Where(a => actIds.Contains(a.ActivityId))
+                    .Select(a => new { a.ActivityId, a.ActivityCode, a.ActivityName, a.ProgramId }).ToListAsync())
+                .ToDictionary(a => a.ActivityId);
+
+            var progIds = sample.Values.Where(l => l.ProgramId.HasValue).Select(l => l.ProgramId!.Value)
+                .Concat(acts.Values.Select(a => a.ProgramId)).Distinct().ToList();
+            var progs = (await _db.Programs.AsNoTracking().Where(p => progIds.Contains(p.ProgramId))
+                    .Select(p => new { p.ProgramId, p.ProgramCode, p.ProgramName }).ToListAsync())
+                .ToDictionary(p => p.ProgramId, p => p.ProgramCode + " - " + p.ProgramName);
+
+            var projIds = sample.Values.Where(l => l.ProjectId.HasValue).Select(l => l.ProjectId!.Value).Distinct().ToList();
+            var projs = (await _db.Projects.AsNoTracking().Where(p => projIds.Contains(p.ProjectId))
+                    .Select(p => new { p.ProjectId, p.ProjectCode, p.ProjectName }).ToListAsync())
+                .ToDictionary(p => p.ProjectId, p => p.ProjectCode + " - " + p.ProjectName);
+
+            var lines = new List<SubmissionReviewLineVm>();
+
+            foreach (var key in fromByKey.Keys.Concat(toByKey.Keys).Distinct())
+            {
+                var hasFrom = fromByKey.TryGetValue(key, out var fromAmt);
+                var hasTo = toByKey.TryGetValue(key, out var toAmt);
+
+                // Status comes from whether the line EXISTS on each side, not from whether
+                // the amount happens to be zero: a line budgeted at zero is not the same
+                // thing as a line that was deleted, and a reviewer reads them differently.
+                var status = !hasFrom ? "Added" : !hasTo ? "Removed" : "Changed";
+
+                if (status == "Changed" && fromAmt == toAmt)
+                {
+                    vm.UnchangedCount++;
+                    continue;
+                }
+
+                var l = sample[key];
+                var programme =
+                    l.ProgramId.HasValue && progs.TryGetValue(l.ProgramId.Value, out var pd) ? pd
+                    : l.ActivityId.HasValue && acts.TryGetValue(l.ActivityId.Value, out var av)
+                        && progs.TryGetValue(av.ProgramId, out var pd2) ? pd2
+                    : "(no programme)";
+
+                lines.Add(new SubmissionReviewLineVm
+                {
+                    Status = status,
+                    Programme = programme,
+                    Activity = l.ActivityId.HasValue && acts.TryGetValue(l.ActivityId.Value, out var a)
+                        ? a.ActivityCode + " - " + a.ActivityName : "",
+                    Project = l.ProjectId.HasValue && projs.TryGetValue(l.ProjectId.Value, out var pr) ? pr : "",
+                    Item = items.TryGetValue(l.ItemId, out var it) ? it : l.ItemId.ToString(),
+                    Description = (l.Description ?? "").Trim(),
+                    FromAmount = hasFrom ? fromAmt : 0m,
+                    ToAmount = hasTo ? toAmt : 0m,
+                });
+            }
+
+            vm.AddedCount = lines.Count(x => x.Status == "Added");
+            vm.RemovedCount = lines.Count(x => x.Status == "Removed");
+            vm.ChangedCount = lines.Count(x => x.Status == "Changed");
+
+            vm.Lines = lines.OrderByDescending(x => Math.Abs(x.Delta)).ToList();
+
+            vm.Programmes = lines
+                .GroupBy(x => x.Programme)
+                .Select(g => new SubmissionReviewGroupVm
+                {
+                    Programme = g.Key,
+                    FromAmount = g.Sum(x => x.FromAmount),
+                    ToAmount = g.Sum(x => x.ToAmount),
+                })
+                .OrderByDescending(g => Math.Abs(g.Delta))
+                .ToList();
         }
 
         // ---------- Report Builder ----------
@@ -832,10 +1128,86 @@ namespace GovBudget.Controllers
         {
             // Cap to top 25 rows for readable charts.
             var rows = result.Rows.Take(25).ToList();
-            var labels = rows.Select(r => r.Key).ToList();
+
+            var horizontal = string.Equals(chartType, "hbar", StringComparison.OrdinalIgnoreCase);
+            var waterfall = string.Equals(chartType, "waterfall", StringComparison.OrdinalIgnoreCase);
+
+            // "hbar" and "waterfall" are our own names for layouts Chart.js draws as a
+            // bar; it only understands bar/line/pie, so map before serialising.
+            var jsType = (horizontal || waterfall) ? "bar" : chartType;
+
+            var fullLabels = rows.Select(r => r.Key).ToList();
+
+            // A horizontal bar puts labels down the y-axis, which has room for the name as
+            // well as the code - but not unlimited room: Chart.js does not bound tick
+            // width, so a full 90-character name leaves the bars a few pixels wide. Cap it
+            // and let the tooltip carry the rest.
+            // Every other type labels a cramped x-axis, where such a label gets tilted and
+            // swallows the plot area, so those show the code alone.
+            var labels = horizontal
+                ? rows.Select(r => ReportLabel.Shorten(r.Key, 46)).ToList()
+                : rows.Select(r => ReportLabel.CodeOnly(r.Key)).ToList();
+
             var palette = new[] { "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac" };
 
+            const string PositiveFill = "rgba(15, 123, 91, 0.45)";
+            const string PositiveLine = "rgba(15, 123, 91, 0.85)";
+            const string NegativeFill = "rgba(220, 53, 69, 0.35)";
+            const string NegativeLine = "rgba(220, 53, 69, 0.75)";
+            const string TotalFill = "rgba(22, 35, 61, 0.35)";
+            const string TotalLine = "rgba(22, 35, 61, 0.80)";
+
             object data;
+
+            if (waterfall)
+            {
+                // Floating bars: each point is [start, end], so a bar hangs between the
+                // running total before and after that row. This is Chart.js's own feature
+                // rather than the invisible-base-plus-stack trick, which means a negative
+                // step draws downward correctly instead of needing special casing.
+                var steps = new List<decimal[]>(rows.Count + 1);
+                var deltas = new List<decimal>(rows.Count + 1);
+                var fills = new List<string>(rows.Count + 1);
+                var lines = new List<string>(rows.Count + 1);
+
+                var running = 0m;
+                foreach (var r in rows)
+                {
+                    var start = running;
+                    running += r.Total;
+                    steps.Add(new[] { start, running });
+                    deltas.Add(r.Total);
+                    fills.Add(r.Total >= 0m ? PositiveFill : NegativeFill);
+                    lines.Add(r.Total >= 0m ? PositiveLine : NegativeLine);
+                }
+
+                // Closing bar: the accumulated total, measured from zero.
+                labels.Add("TOTAL");
+                fullLabels.Add("Total");
+                steps.Add(new[] { 0m, running });
+                deltas.Add(running);
+                fills.Add(TotalFill);
+                lines.Add(TotalLine);
+
+                data = new
+                {
+                    labels,
+                    datasets = new[]
+                    {
+                        new
+                        {
+                            label = result.MeasureLabel,
+                            data = steps,
+                            backgroundColor = fills,
+                            borderColor = lines,
+                            borderWidth = 1
+                        }
+                    }
+                };
+
+                return JsonSerializer.Serialize(new { type = jsType, data, fullLabels, deltas, waterfall = true, horizontal = false });
+            }
+
             if (result.Pivoted && result.ColumnKeys.Count > 0)
             {
                 var datasets = result.ColumnKeys.Select((ck, i) => (object)new
@@ -862,7 +1234,8 @@ namespace GovBudget.Controllers
                     }
                 };
             }
-            return JsonSerializer.Serialize(new { type = chartType, data });
+
+            return JsonSerializer.Serialize(new { type = jsType, data, fullLabels, waterfall = false, horizontal });
         }
 
         private static string NormalizeReport(string? report)
@@ -876,6 +1249,7 @@ namespace GovBudget.Controllers
                 "activities" => "activities",
                 "activitiesalloc" => "activitiesalloc",
                 "hralloc" => "hralloc",
+                "hrrate" => "hrrate",
                 "entitysummary" => "entitysummary",
                 "trend" => "trend",
                 _ => "income"
@@ -1718,8 +2092,35 @@ namespace GovBudget.Controllers
             return all;
         }
 
+        // Reallocation postings behind the reported figures. Only the run the reports actually use
+        // is listed (latest Posted per entity, falling back to a global run); scenario and superseded
+        // runs keep their transactions but must not be added on top of the official ones.
         private async Task<List<ReallocExportRow>> GetReallocationExportRows(int year, int? entityId)
         {
+            var posted = await _db.AllocationRuns.AsNoTracking()
+                .Where(r => r.BudgetYear == year && r.Status == "Posted"
+                    && (entityId == null || r.EntityId == null || r.EntityId == entityId))
+                .OrderByDescending(r => r.RunAt)
+                .ToListAsync();
+            if (posted.Count == 0) return new List<ReallocExportRow>();
+
+            var postedIds = posted.Select(r => r.RunId).ToList();
+
+            var txEntityIds = await _db.AllocationTransactions.AsNoTracking()
+                .Where(t => t.BudgetYear == year && postedIds.Contains(t.RunId)
+                    && (entityId == null || t.EntityId == entityId))
+                .Select(t => t.EntityId).Distinct().ToListAsync();
+
+            // One run per entity: the entity's own latest posted run, else the latest global run.
+            var allowed = new HashSet<(int runId, int entityId)>();
+            foreach (var eid in txEntityIds)
+            {
+                var run = posted.FirstOrDefault(r => r.EntityId == eid)
+                          ?? posted.FirstOrDefault(r => r.EntityId == null);
+                if (run != null) allowed.Add((run.RunId, eid));
+            }
+            if (allowed.Count == 0) return new List<ReallocExportRow>();
+
             var raw = await (
                 from t in _db.AllocationTransactions.AsNoTracking()
                 join sp in _db.Programs.AsNoTracking() on t.SourceProgramId equals sp.ProgramId into spj
@@ -1732,20 +2133,30 @@ namespace GovBudget.Controllers
                 from ta in taj.DefaultIfEmpty()
                 join ent in _db.Entities.AsNoTracking() on t.EntityId equals ent.EntityId into entj
                 from ent in entj.DefaultIfEmpty()
-                where t.BudgetYear == year && (entityId == null || t.EntityId == entityId)
-                select new ReallocExportRow
+                where t.BudgetYear == year && postedIds.Contains(t.RunId)
+                    && (entityId == null || t.EntityId == entityId)
+                select new
                 {
-                    EntityLabel = ent != null ? (ent.EntityCode + " - " + ent.EntityName) : "",
-                    SourceProgram = sp != null ? sp.ProgramCode + " - " + sp.ProgramName : "",
-                    SourceActivity = sa != null ? sa.ActivityCode + " - " + sa.ActivityName : "",
-                    TargetProgram = tp != null ? tp.ProgramCode + " - " + tp.ProgramName : "",
-                    TargetActivity = ta != null ? ta.ActivityCode + " - " + ta.ActivityName : "",
-                    Category = t.SourceCategoryCode ?? "",
-                    AllocationPct = t.AllocationPct,
-                    Amount = t.Amount
+                    t.RunId,
+                    t.EntityId,
+                    Row = new ReallocExportRow
+                    {
+                        EntityLabel = ent != null ? (ent.EntityCode + " - " + ent.EntityName) : "",
+                        SourceProgram = sp != null ? sp.ProgramCode + " - " + sp.ProgramName : "",
+                        SourceActivity = sa != null ? sa.ActivityCode + " - " + sa.ActivityName : "",
+                        TargetProgram = tp != null ? tp.ProgramCode + " - " + tp.ProgramName : "",
+                        TargetActivity = ta != null ? ta.ActivityCode + " - " + ta.ActivityName : "",
+                        Category = t.SourceCategoryCode ?? "",
+                        AllocationPct = t.AllocationPct,
+                        Amount = t.Amount
+                    }
                 }
             ).ToListAsync();
-            return raw;
+
+            return raw
+                .Where(x => allowed.Contains((x.RunId, x.EntityId)))
+                .Select(x => x.Row)
+                .ToList();
         }
 
         private static void BuildActivityTransactionsWorksheet(XLWorkbook wb, List<CostTxnExportRow> txns, List<ReallocExportRow> realloc, int year, string entityLabel)
@@ -1974,6 +2385,212 @@ namespace GovBudget.Controllers
             }
 
             ws.Columns(1, 8).AdjustToContents();
+        }
+
+        // Three sheets, because a reviewer defending a decision needs all three: the
+        // headline movement, the lines behind it, and the dated record of who decided what.
+        private static void BuildSubmissionReviewWorkbook(XLWorkbook wb, SubmissionReviewVm vm)
+        {
+            var header = $"{vm.ScopeLabel}  —  v{vm.From?.VersionNo} ({vm.From?.Status}) → v{vm.To?.VersionNo} ({vm.To?.Status})";
+
+            // ---- Sheet 1: summary by programme ----
+            var ws = wb.Worksheets.Add("Summary");
+            ws.Cell(1, 1).Value = "Budget Submission Review";
+            ws.Cell(2, 1).Value = $"Year: {vm.Year}    {header}";
+            ws.Range(1, 1, 1, 5).Merge().Style.Font.Bold = true;
+            ws.Range(1, 1, 1, 5).Style.Font.FontSize = 14;
+            ws.Range(2, 1, 2, 5).Merge().Style.Font.Bold = true;
+
+            var r = 4;
+            ws.Cell(r, 1).Value = "Total before";
+            ws.Cell(r, 2).Value = vm.TotalFrom;
+            ws.Cell(r, 3).Value = "Total after";
+            ws.Cell(r, 4).Value = vm.TotalTo;
+            ws.Cell(r, 5).Value = "Change";
+            ws.Cell(r, 6).Value = vm.Delta;
+            ws.Range(r, 1, r, 6).Style.Font.Bold = true;
+            ws.Range(r, 2, r, 2).Style.NumberFormat.Format = "#,##0.00";
+            ws.Range(r, 4, r, 4).Style.NumberFormat.Format = "#,##0.00";
+            ws.Range(r, 6, r, 6).Style.NumberFormat.Format = "#,##0.00";
+
+            r += 1;
+            ws.Cell(r, 1).Value = $"Lines added: {vm.AddedCount}    removed: {vm.RemovedCount}    changed: {vm.ChangedCount}    unchanged: {vm.UnchangedCount}";
+            ws.Range(r, 1, r, 6).Merge().Style.Font.Italic = true;
+
+            r += 2;
+            ws.Cell(r, 1).Value = "Programme";
+            ws.Cell(r, 2).Value = "Before";
+            ws.Cell(r, 3).Value = "After";
+            ws.Cell(r, 4).Value = "Change";
+            ws.Cell(r, 5).Value = "Change %";
+            ApplyHeaderStyle(ws.Range(r, 1, r, 5));
+
+            r++;
+            foreach (var g in vm.Programmes)
+            {
+                ws.Cell(r, 1).Value = g.Programme;
+                ws.Cell(r, 2).Value = g.FromAmount;
+                ws.Cell(r, 3).Value = g.ToAmount;
+                ws.Cell(r, 4).Value = g.Delta;
+                if (g.DeltaPct.HasValue) ws.Cell(r, 5).Value = g.DeltaPct.Value;
+                ws.Range(r, 2, r, 4).Style.NumberFormat.Format = "#,##0.00";
+                ws.Cell(r, 5).Style.NumberFormat.Format = "0.00";
+                r++;
+            }
+            ws.Columns(1, 5).AdjustToContents();
+
+            // ---- Sheet 2: line detail ----
+            var wd = wb.Worksheets.Add("Changed lines");
+            wd.Cell(1, 1).Value = "Changed lines";
+            wd.Cell(2, 1).Value = $"Year: {vm.Year}    {header}";
+            wd.Range(1, 1, 1, 9).Merge().Style.Font.Bold = true;
+            wd.Range(1, 1, 1, 9).Style.Font.FontSize = 14;
+            wd.Range(2, 1, 2, 9).Merge().Style.Font.Bold = true;
+
+            var dr = 4;
+            string[] cols = { "Status", "Programme", "Activity", "Project", "Item", "Description", "Before", "After", "Change" };
+            for (var i = 0; i < cols.Length; i++) wd.Cell(dr, i + 1).Value = cols[i];
+            ApplyHeaderStyle(wd.Range(dr, 1, dr, cols.Length));
+
+            dr++;
+            foreach (var l in vm.Lines)
+            {
+                wd.Cell(dr, 1).Value = l.Status;
+                wd.Cell(dr, 2).Value = l.Programme;
+                wd.Cell(dr, 3).Value = l.Activity;
+                wd.Cell(dr, 4).Value = l.Project;
+                wd.Cell(dr, 5).Value = l.Item;
+                wd.Cell(dr, 6).Value = l.Description;
+                wd.Cell(dr, 7).Value = l.FromAmount;
+                wd.Cell(dr, 8).Value = l.ToAmount;
+                wd.Cell(dr, 9).Value = l.Delta;
+                wd.Range(dr, 7, dr, 9).Style.NumberFormat.Format = "#,##0.00";
+                dr++;
+            }
+            wd.Columns(1, cols.Length).AdjustToContents();
+
+            // ---- Sheet 3: approval trail ----
+            var wt = wb.Worksheets.Add("Approval trail");
+            wt.Cell(1, 1).Value = "Approval trail";
+            wt.Cell(2, 1).Value = $"Year: {vm.Year}    {vm.ScopeLabel}";
+            wt.Range(1, 1, 1, 5).Merge().Style.Font.Bold = true;
+            wt.Range(1, 1, 1, 5).Style.Font.FontSize = 14;
+            wt.Range(2, 1, 2, 5).Merge().Style.Font.Bold = true;
+
+            var tr = 4;
+            wt.Cell(tr, 1).Value = "Version";
+            wt.Cell(tr, 2).Value = "Action";
+            wt.Cell(tr, 3).Value = "When (UTC)";
+            wt.Cell(tr, 4).Value = "By";
+            wt.Cell(tr, 5).Value = "Note";
+            ApplyHeaderStyle(wt.Range(tr, 1, tr, 5));
+
+            tr++;
+            foreach (var t in vm.Trail)
+            {
+                wt.Cell(tr, 1).Value = "v" + t.VersionNo;
+                wt.Cell(tr, 2).Value = t.Action;
+                wt.Cell(tr, 3).Value = t.At?.ToString("yyyy-MM-dd HH:mm") ?? "";
+                wt.Cell(tr, 4).Value = t.By ?? "";
+                wt.Cell(tr, 5).Value = t.Note ?? "";
+                tr++;
+            }
+            wt.Columns(1, 5).AdjustToContents();
+            wt.Column(5).Width = Math.Min(wt.Column(5).Width, 70);
+        }
+
+        private static void BuildHrHourlyRateWorksheet(XLWorkbook wb, HrHourlyRateVm vm, int year, string entityLabel)
+        {
+            const int LastCol = 14;
+            var ws = wb.Worksheets.Add("Employee Cost per Hour");
+            ws.Cell(1, 1).Value = "Employee Cost per Hour (standard / fully loaded)";
+            ws.Cell(2, 1).Value = $"Year: {year}    Entity: {entityLabel}";
+            ws.Range(1, 1, 1, LastCol).Merge().Style.Font.Bold = true;
+            ws.Range(1, 1, 1, LastCol).Style.Font.FontSize = 14;
+            ws.Range(2, 1, 2, LastCol).Merge().Style.Font.Bold = true;
+
+            // The basis has to travel with the file: an hourly rate with no stated
+            // divisor is the kind of number that gets quoted out of context.
+            ws.Cell(3, 1).Value =
+                "Standard rate = annual cost / productive hours (contracted hours less paid public holidays and annual leave). " +
+                "Paid leave sits inside annual cost, so it is absorbed into the rate - this is the rate to use for costing. " +
+                "Nominal rate divides by contracted hours and is shown for reference only.";
+            ws.Range(3, 1, 3, LastCol).Merge();
+            ws.Cell(3, 1).Style.Font.Italic = true;
+            ws.Cell(3, 1).Style.Font.FontColor = XLColor.Gray;
+
+            var row = 5;
+            ws.Cell(row, 1).Value = "Blended rate / hour";
+            ws.Cell(row, 2).Value = vm.BlendedRatePerHour ?? 0m;
+            ws.Cell(row, 2).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 3).Value = "Employees";
+            ws.Cell(row, 4).Value = vm.EmployeeCount - vm.VacancyCount;
+            ws.Cell(row, 5).Value = "Vacant posts (excluded)";
+            ws.Cell(row, 6).Value = vm.VacancyCount;
+            ws.Cell(row, 7).Value = "No calendar";
+            ws.Cell(row, 8).Value = vm.MissingCalendarCount;
+            ws.Range(row, 1, row, 8).Style.Font.Bold = true;
+
+            row += 2;
+            ws.Cell(row, 1).Value = "Employee ID";
+            ws.Cell(row, 2).Value = "Employee Name";
+            ws.Cell(row, 3).Value = "Occupation";
+            ws.Cell(row, 4).Value = "Entity";
+            ws.Cell(row, 5).Value = "Cost Center";
+            ws.Cell(row, 6).Value = "Annual Cost";
+            ws.Cell(row, 7).Value = "Gross Paid Hours";
+            ws.Cell(row, 8).Value = "Holiday Hours";
+            ws.Cell(row, 9).Value = "Leave Hours";
+            ws.Cell(row, 10).Value = "Productive Hours";
+            ws.Cell(row, 11).Value = "Effective Hours";
+            ws.Cell(row, 12).Value = "Standard Rate / Hour";
+            ws.Cell(row, 13).Value = "Nominal Rate / Hour";
+            ws.Cell(row, 14).Value = "Note";
+            ApplyHeaderStyle(ws.Range(row, 1, row, LastCol));
+
+            row++;
+            foreach (var r in vm.Rows)
+            {
+                ws.Cell(row, 1).Value = r.EmployeeId;
+                ws.Cell(row, 2).Value = r.EmployeeName;
+                ws.Cell(row, 3).Value = r.Occupation ?? "";
+                ws.Cell(row, 4).Value = r.EntityName;
+                ws.Cell(row, 5).Value = r.DepartmentName;
+                ws.Cell(row, 6).Value = r.AnnualCost;
+                ws.Cell(row, 7).Value = r.GrossPaidHours ?? 0m;
+                ws.Cell(row, 8).Value = r.HolidayHours ?? 0m;
+                ws.Cell(row, 9).Value = r.LeaveHours ?? 0m;
+                ws.Cell(row, 10).Value = r.ProductiveHours ?? 0m;
+                ws.Cell(row, 11).Value = r.EffectiveHours ?? 0m;
+
+                if (r.StandardRatePerHour.HasValue)
+                {
+                    ws.Cell(row, 12).Value = r.StandardRatePerHour.Value;
+                }
+
+                if (r.NominalRatePerHour.HasValue)
+                {
+                    ws.Cell(row, 13).Value = r.NominalRatePerHour.Value;
+                }
+
+                ws.Cell(row, 14).Value =
+                    r.IsVacancy == true ? "Vacant post - part-year cost, rate not meaningful"
+                    : r.IsRateAvailable != true ? "No work calendar for this year"
+                    : r.OverrideHours.HasValue ? "Hours overridden for this employee"
+                    : "";
+
+                ws.Range(row, 6, row, 11).Style.NumberFormat.Format = "#,##0.00";
+                ws.Range(row, 12, row, 13).Style.NumberFormat.Format = "#,##0.0000";
+
+                if (r.IsVacancy == true || r.IsRateAvailable != true)
+                {
+                    ws.Range(row, 1, row, LastCol).Style.Font.FontColor = XLColor.Gray;
+                }
+
+                row++;
+            }
+
+            ws.Columns(1, LastCol).AdjustToContents();
         }
 
         private static void BuildEntitySummaryWorksheet(XLWorkbook wb, List<EntityBudgetSummaryRowVm> rows, int year, string entityLabel)
@@ -2681,6 +3298,59 @@ namespace GovBudget.Controllers
             return PartialView("_GlDetail", vm);
         }
 
+        // Employee cost per hour, read from core.vw_HrEmployeeHourlyRates.
+        // Purely derived and read-only: this touches no table the budget entry,
+        // HR import or allocation paths write to.
+        private async Task<HrHourlyRateVm> BuildHrHourlyRates(int year, int? entityId)
+        {
+            var query = _db.vw_HrEmployeeHourlyRates
+                .AsNoTracking()
+                .Where(x => x.BudgetYear == year);
+
+            if (entityId.HasValue)
+            {
+                query = query.Where(x => x.EntityId == entityId.Value);
+            }
+
+            var rows = await query
+                .OrderBy(x => x.EntityName)
+                .ThenBy(x => x.DepartmentName)
+                .ThenByDescending(x => x.AnnualCost)
+                .Take(5000)
+                .ToListAsync();
+
+            var vm = new HrHourlyRateVm
+            {
+                Rows = rows,
+                EmployeeCount = rows.Count,
+                VacancyCount = rows.Count(r => r.IsVacancy == true),
+                MissingCalendarCount = rows.Count(r => r.IsRateAvailable != true)
+            };
+
+            // Blended figures exclude vacant posts: their cost is budgeted for a
+            // part year, so including them would drag the organisational rate down
+            // against hours nobody is going to work.
+            var rated = rows
+                .Where(r => r.IsVacancy != true && r.IsRateAvailable == true && r.EffectiveHours > 0m)
+                .ToList();
+
+            vm.TotalAnnualCost = rated.Sum(r => r.AnnualCost);
+            vm.TotalEffectiveHours = rated.Sum(r => r.EffectiveHours ?? 0m);
+
+            if (vm.TotalEffectiveHours > 0m)
+            {
+                vm.BlendedRatePerHour = Math.Round(vm.TotalAnnualCost / vm.TotalEffectiveHours, 2);
+            }
+
+            var grossHours = rated.Sum(r => r.GrossPaidHours ?? 0m);
+            if (grossHours > 0m)
+            {
+                vm.BlendedNominalRatePerHour = Math.Round(vm.TotalAnnualCost / grossHours, 2);
+            }
+
+            return vm;
+        }
+
         private async Task<List<HrAllocationRowVm>> BuildHrAllocations(int year, int? entityId)
         {
             if (entityId.HasValue && entityId.Value <= 0)
@@ -2975,6 +3645,7 @@ namespace GovBudget.Controllers
         // True when ActivityCosts reflect the step-down cost allocation (after-allocation tab).
         public bool AfterAllocation { get; set; }
         public List<HrAllocationRowVm>? HrAllocations { get; set; }
+        public HrHourlyRateVm? HrHourlyRates { get; set; }
         public List<EntityBudgetSummaryRowVm>? EntitySummary { get; set; }
         public List<TrendRowVm>? TrendSummary { get; set; }
     }
@@ -3326,6 +3997,113 @@ namespace GovBudget.Controllers
         public string Category { get; set; } = "";
         public decimal AllocationPct { get; set; }
         public decimal Amount { get; set; }
+    }
+
+    // ---------- Submission review: what changed between two versions ----------
+    //
+    // A returned budget is never edited in place - a Return spawns a new Draft as the
+    // next version and keeps the old one. That makes "what did our review actually
+    // change" answerable, but only if you can line two versions up against each other,
+    // which is what this report does.
+
+    public class SubmissionReviewVm
+    {
+        public int Year { get; set; }
+        public bool IsAdmin { get; set; }
+        public int? EntityId { get; set; }
+        public int? DepartmentId { get; set; }
+        public int? CategoryId { get; set; }
+        public long? FromSubmissionId { get; set; }
+        public long? ToSubmissionId { get; set; }
+
+        public List<SelectListItem> YearOptions { get; set; } = new();
+        public List<SelectListItem> EntityOptions { get; set; } = new();
+        public List<SelectListItem> DepartmentOptions { get; set; } = new();
+        public List<SelectListItem> CategoryOptions { get; set; } = new();
+        public List<SelectListItem> VersionOptions { get; set; } = new();
+
+        /// <summary>False until a scope is chosen and two versions exist to compare.</summary>
+        public bool HasResult { get; set; }
+
+        /// <summary>Why there is no result, when there isn't one. Shown to the user.</summary>
+        public string? Message { get; set; }
+
+        public string ScopeLabel { get; set; } = "";
+        public BudgetSubmissions? From { get; set; }
+        public BudgetSubmissions? To { get; set; }
+
+        public decimal TotalFrom { get; set; }
+        public decimal TotalTo { get; set; }
+        public decimal Delta => TotalTo - TotalFrom;
+        public decimal? DeltaPct => TotalFrom == 0m ? null : Math.Round(Delta / TotalFrom * 100m, 2);
+
+        public int AddedCount { get; set; }
+        public int RemovedCount { get; set; }
+        public int ChangedCount { get; set; }
+        public int UnchangedCount { get; set; }
+
+        public List<SubmissionReviewGroupVm> Programmes { get; set; } = new();
+        public List<SubmissionReviewLineVm> Lines { get; set; } = new();
+        public List<SubmissionTrailVm> Trail { get; set; } = new();
+    }
+
+    public class SubmissionReviewGroupVm
+    {
+        public string Programme { get; set; } = "";
+        public decimal FromAmount { get; set; }
+        public decimal ToAmount { get; set; }
+        public decimal Delta => ToAmount - FromAmount;
+        public decimal? DeltaPct => FromAmount == 0m ? null : Math.Round(Delta / FromAmount * 100m, 2);
+    }
+
+    public class SubmissionReviewLineVm
+    {
+        /// <summary>Added, Removed or Changed - decided by whether the line key exists on each side.</summary>
+        public string Status { get; set; } = "";
+        public string Programme { get; set; } = "";
+        public string Activity { get; set; } = "";
+        public string Project { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal FromAmount { get; set; }
+        public decimal ToAmount { get; set; }
+        public decimal Delta => ToAmount - FromAmount;
+        public decimal? DeltaPct => FromAmount == 0m ? null : Math.Round(Delta / FromAmount * 100m, 2);
+    }
+
+    /// <summary>One dated action in the approval history - the evidence of who decided what.</summary>
+    public class SubmissionTrailVm
+    {
+        public int VersionNo { get; set; }
+        public string Action { get; set; } = "";
+        public DateTime? At { get; set; }
+        public string? By { get; set; }
+        public string? Note { get; set; }
+    }
+
+    // Employee cost per hour. Rows come straight from core.vw_HrEmployeeHourlyRates,
+    // which derives everything below AnnualCost from the work calendar.
+    public class HrHourlyRateVm
+    {
+        public List<vw_HrEmployeeHourlyRates> Rows { get; set; } = new();
+
+        public int EmployeeCount { get; set; }
+        public int VacancyCount { get; set; }
+
+        // Employees whose budget year has no work calendar, so no rate could be
+        // produced. Surfaced rather than hidden - a silent zero here would be
+        // read as "this person is free".
+        public int MissingCalendarCount { get; set; }
+
+        public decimal TotalAnnualCost { get; set; }
+        public decimal TotalEffectiveHours { get; set; }
+
+        // Total cost over total hours - NOT the average of the per-employee rates.
+        // Averaging ratios would weight a cleaner the same as a director and
+        // understate what an organisational hour actually costs.
+        public decimal? BlendedRatePerHour { get; set; }
+
+        public decimal? BlendedNominalRatePerHour { get; set; }
     }
 
     public class HrAllocationRowVm

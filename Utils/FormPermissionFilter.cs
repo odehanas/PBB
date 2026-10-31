@@ -56,7 +56,8 @@ namespace GovBudget.Utils
                 ["Projects"] = new[] { AppForms.Projects },
                 ["Reports"] = new[] { AppForms.Reports, AppForms.BudgetVsActual },
                 ["RolePermissions"] = new[] { AppForms.Roles },
-                ["WhatIf"] = new[] { AppForms.WhatIf }
+                ["WhatIf"] = new[] { AppForms.WhatIf },
+                ["WorkCalendar"] = new[] { AppForms.WorkCalendar }
             };
 
         // Sign-in, password reset and the year/entity/cost-center picker only touch the
