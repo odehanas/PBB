@@ -35,6 +35,20 @@ namespace GovBudget.Services.Assistant
 
     public sealed record AssistantAnswer(bool Success, string Reply, IReadOnlyList<string> ToolsUsed);
 
+    public enum AssistantStreamEventKind
+    {
+        /// <summary>A tool is about to run. Text is the tool name.</summary>
+        Tool,
+
+        /// <summary>A fragment of the reply text, to append to what was already shown.</summary>
+        Delta,
+
+        /// <summary>Text streamed so far was a preamble to tool calls; discard it.</summary>
+        Reset
+    }
+
+    public sealed record AssistantStreamEvent(AssistantStreamEventKind Kind, string Text);
+
     public interface IChatAssistantService
     {
         bool IsConfigured { get; }
@@ -43,6 +57,18 @@ namespace GovBudget.Services.Assistant
             string question,
             IReadOnlyList<ChatTurn> history,
             AssistantUserContext user,
+            CancellationToken ct);
+
+        /// <summary>
+        /// Same as <see cref="AskAsync"/>, but reports progress and reply text through
+        /// <paramref name="onEvent"/> as it arrives. The returned answer is authoritative:
+        /// it may add text (such as the HR caveat) that was never streamed.
+        /// </summary>
+        Task<AssistantAnswer> AskStreamAsync(
+            string question,
+            IReadOnlyList<ChatTurn> history,
+            AssistantUserContext user,
+            Func<AssistantStreamEvent, Task> onEvent,
             CancellationToken ct);
     }
 }

@@ -1,4 +1,4 @@
-// Floating budget assistant. Posts questions to /Chat/Ask and renders the reply.
+// Floating budget assistant. Posts questions to /Chat/AskStream and renders the reply as it streams in.
 (function () {
     'use strict';
 
@@ -10,7 +10,7 @@
     var form = document.getElementById('assistantForm');
     var input = document.getElementById('assistantInput');
     var sendBtn = document.getElementById('assistantSend');
-    var askUrl = widget.getAttribute('data-ask-url');
+    var streamUrl = widget.getAttribute('data-stream-url');
     var resetUrl = widget.getAttribute('data-reset-url');
     var token = widget.getAttribute('data-token');
     var busy = false;
@@ -81,6 +81,68 @@
         input.disabled = state;
     }
 
+    var toolLabels = {
+        get_user_scope: 'Checking your access',
+        get_budget_summary: 'Summarising the budget',
+        search_budget_lines: 'Searching budget lines',
+        get_budget_vs_actual: 'Comparing budget with actuals',
+        get_kpis: 'Looking up KPIs',
+        get_activity_unit_cost: 'Calculating activity unit costs',
+        get_pbb_maturity: 'Checking PBB maturity',
+        list_master_data: 'Reading master data',
+        search_pbb_reference: 'Searching the PBB reference',
+        oecd_find_dataflow: 'Searching OECD datasets',
+        oecd_data_query: 'Querying OECD data',
+        oecd_read_page: 'Reading an OECD page'
+    };
+
+    function showStatus(div, text) {
+        div.className = 'assistant-msg assistant-msg-bot assistant-typing';
+        div.textContent = text;
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function showReply(div, text, cssClass) {
+        div.className = 'assistant-msg ' + cssClass;
+        div.innerHTML = render(text);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    // Reads a text/event-stream body and calls onEvent(name, data) for each event.
+    function readEvents(response, onEvent) {
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+
+        function dispatch(block) {
+            var name = 'message';
+            var data = '';
+            block.split('\n').forEach(function (line) {
+                if (line.indexOf('event:') === 0) name = line.slice(6).trim();
+                else if (line.indexOf('data:') === 0) data += line.slice(5).trim();
+            });
+            if (data) onEvent(name, JSON.parse(data));
+        }
+
+        function pump() {
+            return reader.read().then(function (chunk) {
+                if (chunk.done) {
+                    if (buffer.trim()) dispatch(buffer);
+                    return;
+                }
+                buffer += decoder.decode(chunk.value, { stream: true }).replace(/\r/g, '');
+                var end;
+                while ((end = buffer.indexOf('\n\n')) >= 0) {
+                    dispatch(buffer.slice(0, end));
+                    buffer = buffer.slice(end + 2);
+                }
+                return pump();
+            });
+        }
+
+        return pump();
+    }
+
     function ask(question) {
         if (busy || !question) return;
         append(question, 'assistant-msg-user', false);
@@ -88,20 +150,33 @@
         setBusy(true);
 
         var pending = append('Thinking', 'assistant-msg-bot assistant-typing', false);
+        var text = '';
+        var finished = false;
 
-        fetch(askUrl, {
+        fetch(streamUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
             body: JSON.stringify({ message: question })
         }).then(function (response) {
-            if (!response.ok) throw new Error('HTTP ' + response.status);
-            return response.json();
-        }).then(function (data) {
-            pending.remove();
-            append(data.reply, data.ok ? 'assistant-msg-bot' : 'assistant-msg-error', true);
+            if (!response.ok || !response.body) throw new Error('HTTP ' + response.status);
+            return readEvents(response, function (name, data) {
+                if (name === 'tool') {
+                    showStatus(pending, toolLabels[data.name] || 'Looking up data');
+                } else if (name === 'delta') {
+                    text += data.text;
+                    showReply(pending, text, 'assistant-msg-bot');
+                } else if (name === 'reset') {
+                    text = '';
+                    showStatus(pending, 'Thinking');
+                } else if (name === 'done') {
+                    finished = true;
+                    showReply(pending, data.reply, data.ok ? 'assistant-msg-bot' : 'assistant-msg-error');
+                }
+            });
+        }).then(function () {
+            if (!finished) throw new Error('Stream ended early');
         }).catch(function () {
-            pending.remove();
-            append('The assistant is unavailable right now. Please try again.', 'assistant-msg-error', false);
+            showReply(pending, 'The assistant is unavailable right now. Please try again.', 'assistant-msg-error');
         }).finally(function () {
             setBusy(false);
             input.focus();

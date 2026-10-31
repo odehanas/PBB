@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -41,10 +42,18 @@ namespace GovBudget.Services.Assistant
 
         public bool IsConfigured => _options.IsConfigured;
 
-        public async Task<AssistantAnswer> AskAsync(
+        public Task<AssistantAnswer> AskAsync(
             string question,
             IReadOnlyList<ChatTurn> history,
             AssistantUserContext user,
+            CancellationToken ct)
+            => AskStreamAsync(question, history, user, _ => Task.CompletedTask, ct);
+
+        public async Task<AssistantAnswer> AskStreamAsync(
+            string question,
+            IReadOnlyList<ChatTurn> history,
+            AssistantUserContext user,
+            Func<AssistantStreamEvent, Task> onEvent,
             CancellationToken ct)
         {
             if (!IsConfigured)
@@ -93,51 +102,61 @@ namespace GovBudget.Services.Assistant
                     ["model"] = _options.Model,
                     ["messages"] = messages.DeepClone(),
                     ["tools"] = toolSchema.DeepClone(),
-                    ["tool_choice"] = round == _options.MaxToolRounds ? "none" : "auto"
+                    ["tool_choice"] = round == _options.MaxToolRounds ? "none" : "auto",
+                    ["stream"] = true
                 };
 
-                JsonElement message;
+                StreamedMessage message;
                 try
                 {
-                    message = await PostAsync(client, payload, ct);
+                    message = await PostStreamingAsync(client, payload, onEvent, ct);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (!ct.IsCancellationRequested)
                 {
                     _logger.LogError(ex, "Assistant completion failed.");
                     return new AssistantAnswer(false, "The assistant service could not be reached. Please try again.", toolsUsed);
                 }
 
-                var toolCalls = message.TryGetProperty("tool_calls", out var tc) && tc.ValueKind == JsonValueKind.Array
-                    ? tc.EnumerateArray().ToList()
-                    : new List<JsonElement>();
-
-                if (toolCalls.Count == 0)
+                if (message.ToolCalls.Count == 0)
                 {
-                    var content = message.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
-                    if (string.IsNullOrWhiteSpace(content))
+                    if (string.IsNullOrWhiteSpace(message.Content))
                     {
                         return new AssistantAnswer(true, "I could not produce an answer for that question.", toolsUsed);
                     }
 
-                    return new AssistantAnswer(true, WithHrCaveat(content, hrExcluded), toolsUsed);
+                    return new AssistantAnswer(true, WithHrCaveat(message.Content, hrExcluded), toolsUsed);
                 }
 
-                var assistantMessage = new JsonObject
+                if (message.Content.Length > 0)
+                {
+                    await onEvent(new AssistantStreamEvent(AssistantStreamEventKind.Reset, ""));
+                }
+
+                var toolCallsJson = new JsonArray();
+                foreach (var call in message.ToolCalls)
+                {
+                    toolCallsJson.Add(new JsonObject
+                    {
+                        ["id"] = call.Id,
+                        ["type"] = "function",
+                        ["function"] = new JsonObject { ["name"] = call.Name, ["arguments"] = call.Arguments }
+                    });
+                }
+
+                messages.Add(new JsonObject
                 {
                     ["role"] = "assistant",
-                    ["content"] = message.TryGetProperty("content", out var mc) && mc.ValueKind == JsonValueKind.String
-                        ? mc.GetString()
-                        : null,
-                    ["tool_calls"] = JsonNode.Parse(tc.GetRawText())
-                };
-                messages.Add(assistantMessage);
+                    ["content"] = message.Content.Length > 0 ? message.Content : null,
+                    ["tool_calls"] = toolCallsJson
+                });
 
-                foreach (var call in toolCalls)
+                foreach (var call in message.ToolCalls)
                 {
-                    var id = call.GetProperty("id").GetString() ?? "";
-                    var fn = call.GetProperty("function");
-                    var name = fn.GetProperty("name").GetString() ?? "";
-                    var argsJson = fn.TryGetProperty("arguments", out var a) ? a.GetString() ?? "{}" : "{}";
+                    var id = call.Id;
+                    var name = call.Name;
+                    var argsJson = call.Arguments;
+
+                    await onEvent(new AssistantStreamEvent(AssistantStreamEventKind.Tool, name));
 
                     string result;
                     if (!tools.TryGetValue(name, out var tool))
@@ -206,7 +225,27 @@ namespace GovBudget.Services.Assistant
             }
         }
 
-        private async Task<JsonElement> PostAsync(HttpClient client, JsonObject payload, CancellationToken ct)
+        private sealed record StreamedToolCall(string Id, string Name, string Arguments);
+
+        private sealed record StreamedMessage(string Content, IReadOnlyList<StreamedToolCall> ToolCalls);
+
+        private sealed class ToolCallBuilder
+        {
+            public string Id = "";
+            public string Name = "";
+            public readonly StringBuilder Arguments = new();
+        }
+
+        /// <summary>
+        /// Posts a streaming chat completion and reassembles the server-sent chunks. Reply text
+        /// is forwarded as it arrives; tool calls arrive in fragments keyed by index and are
+        /// only usable once the stream ends.
+        /// </summary>
+        private async Task<StreamedMessage> PostStreamingAsync(
+            HttpClient client,
+            JsonObject payload,
+            Func<AssistantStreamEvent, Task> onEvent,
+            CancellationToken ct)
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, $"{_options.BaseUrl.TrimEnd('/')}/chat/completions")
             {
@@ -214,15 +253,81 @@ namespace GovBudget.Services.Assistant
             };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
 
-            using var response = await client.SendAsync(request, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!response.IsSuccessStatusCode)
             {
+                var body = await response.Content.ReadAsStringAsync(ct);
                 throw new HttpRequestException($"OpenAI returned {(int)response.StatusCode}: {body}");
             }
 
-            using var doc = JsonDocument.Parse(body);
-            return doc.RootElement.GetProperty("choices")[0].GetProperty("message").Clone();
+            var content = new StringBuilder();
+            var calls = new SortedDictionary<int, ToolCallBuilder>();
+
+            await using var stream = await response.Content.ReadAsStreamAsync(ct);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            string? line;
+            while ((line = await reader.ReadLineAsync(ct)) is not null)
+            {
+                if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+
+                var data = line[5..].Trim();
+                if (data == "[DONE]") break;
+                if (data.Length == 0) continue;
+
+                using var doc = JsonDocument.Parse(data);
+                if (!doc.RootElement.TryGetProperty("choices", out var choices)
+                    || choices.ValueKind != JsonValueKind.Array
+                    || choices.GetArrayLength() == 0
+                    || !choices[0].TryGetProperty("delta", out var delta))
+                {
+                    continue;
+                }
+
+                if (delta.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String)
+                {
+                    var text = c.GetString() ?? "";
+                    if (text.Length > 0)
+                    {
+                        content.Append(text);
+                        await onEvent(new AssistantStreamEvent(AssistantStreamEventKind.Delta, text));
+                    }
+                }
+
+                if (delta.TryGetProperty("tool_calls", out var tc) && tc.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var part in tc.EnumerateArray())
+                    {
+                        var index = part.TryGetProperty("index", out var ix) ? ix.GetInt32() : 0;
+                        if (!calls.TryGetValue(index, out var builder))
+                        {
+                            calls[index] = builder = new ToolCallBuilder();
+                        }
+
+                        if (part.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+                        {
+                            builder.Id = id.GetString() ?? "";
+                        }
+                        if (part.TryGetProperty("function", out var fn))
+                        {
+                            if (fn.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String)
+                            {
+                                builder.Name += n.GetString();
+                            }
+                            if (fn.TryGetProperty("arguments", out var a) && a.ValueKind == JsonValueKind.String)
+                            {
+                                builder.Arguments.Append(a.GetString());
+                            }
+                        }
+                    }
+                }
+            }
+
+            var toolCalls = calls.Values
+                .Select(b => new StreamedToolCall(b.Id, b.Name, b.Arguments.Length > 0 ? b.Arguments.ToString() : "{}"))
+                .ToList();
+
+            return new StreamedMessage(content.ToString(), toolCalls);
         }
 
         private static string SystemPrompt(AssistantUserContext user) => $"""
