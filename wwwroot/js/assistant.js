@@ -12,6 +12,7 @@
     var sendBtn = document.getElementById('assistantSend');
     var streamUrl = widget.getAttribute('data-stream-url');
     var resetUrl = widget.getAttribute('data-reset-url');
+    var outcomeUrl = widget.getAttribute('data-outcome-url');
     var token = widget.getAttribute('data-token');
     var busy = false;
 
@@ -143,6 +144,139 @@
         return pump();
     }
 
+    function el(tag, cssClass, text) {
+        var node = document.createElement(tag);
+        if (cssClass) node.className = cssClass;
+        if (text !== undefined && text !== null) node.textContent = text;
+        return node;
+    }
+
+    function reportOutcome(proposal, ok, message) {
+        return fetch(outcomeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+            body: JSON.stringify({ title: proposal.summary || proposal.title, ok: ok, message: message })
+        }).catch(function () { /* the change itself already happened or failed; history is best effort */ });
+    }
+
+    // Posts the confirmed form to the screen's own action. The server answers flagged requests
+    // with { ok, message } instead of a redirect or a re-rendered page.
+    function execute(proposal) {
+        var body = new URLSearchParams();
+        proposal.form.forEach(function (pair) { body.append(pair.key, pair.value); });
+        body.append('__RequestVerificationToken', token);
+
+        return fetch(proposal.url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'RequestVerificationToken': token,
+                'X-Assistant-Action': '1',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            body: body
+        }).then(function (response) {
+            var isJson = (response.headers.get('Content-Type') || '').indexOf('json') >= 0;
+            return (isJson ? response.json() : Promise.resolve(null)).then(function (data) {
+                var ok = response.ok && !(data && (data.ok === false || data.success === false || data.error));
+                var message = (data && (data.message || data.error)) || (ok ? 'Saved.' : 'The screen rejected the change (HTTP ' + response.status + ').');
+                return { ok: ok, message: message };
+            });
+        }).catch(function () {
+            return { ok: false, message: 'The change could not be sent. Check your connection and try again.' };
+        });
+    }
+
+    function proposalCard(proposal) {
+        var card = el('div', 'assistant-proposal assistant-proposal-' + proposal.kind);
+        card.appendChild(el('div', 'assistant-proposal-title', proposal.title));
+        card.appendChild(el('div', 'assistant-proposal-summary', proposal.summary));
+        if (proposal.record) card.appendChild(el('div', 'assistant-proposal-record', proposal.record));
+
+        if (proposal.changes.length) {
+            var hasPrevious = proposal.changes.some(function (c) { return c.previous !== null && c.previous !== undefined; });
+            var table = el('table');
+            var head = el('tr');
+            head.appendChild(el('th', null, 'Field'));
+            head.appendChild(el('th', null, 'New value'));
+            if (hasPrevious) head.appendChild(el('th', null, 'Was'));
+            table.appendChild(head);
+            proposal.changes.forEach(function (c) {
+                var row = el('tr');
+                row.appendChild(el('td', null, c.name));
+                row.appendChild(el('td', null, c.value));
+                if (hasPrevious) row.appendChild(el('td', null, c.previous === null ? '' : c.previous));
+                table.appendChild(row);
+            });
+            card.appendChild(table);
+        }
+
+        var actions = el('div', 'assistant-proposal-actions');
+        var confirm = el('button', 'btn btn-sm ' + (proposal.kind === 'delete' ? 'btn-danger' : 'btn-primary'), 'Confirm');
+        var cancel = el('button', 'btn btn-sm btn-outline-secondary', 'Cancel');
+        confirm.type = cancel.type = 'button';
+        actions.appendChild(confirm);
+        actions.appendChild(cancel);
+        card.appendChild(actions);
+        var result = el('div', 'assistant-proposal-result');
+        card.appendChild(result);
+
+        function finish(outcome) {
+            actions.remove();
+            result.textContent = (outcome.ok ? '✓ ' : '✗ ') + outcome.message;
+            result.className = 'assistant-proposal-result ' + (outcome.ok ? 'text-success' : 'text-danger');
+            if (outcome.ok) {
+                var refresh = el('button', 'btn btn-link btn-sm p-0 ms-2', 'Refresh page');
+                refresh.type = 'button';
+                refresh.addEventListener('click', function () { window.location.reload(); });
+                result.appendChild(refresh);
+            }
+            card.dataset.done = '1';
+        }
+
+        card.run = function () {
+            if (card.dataset.done) return Promise.resolve();
+            confirm.disabled = cancel.disabled = true;
+            result.textContent = 'Saving…';
+            return execute(proposal).then(function (outcome) {
+                finish(outcome);
+                return reportOutcome(proposal, outcome.ok, outcome.message);
+            });
+        };
+
+        confirm.addEventListener('click', function () { card.run(); });
+        cancel.addEventListener('click', function () {
+            finish({ ok: false, message: 'Cancelled. Nothing was saved.' });
+            reportOutcome(proposal, false, 'Cancelled by the user.');
+        });
+
+        return card;
+    }
+
+    function showProposals(proposals) {
+        if (!proposals.length) return;
+        var wrap = el('div', 'assistant-proposals');
+        var cards = proposals.map(proposalCard);
+
+        if (cards.length > 1) {
+            var all = el('button', 'btn btn-sm btn-primary assistant-confirm-all', 'Confirm all ' + cards.length);
+            all.type = 'button';
+            all.addEventListener('click', function () {
+                all.remove();
+                // One at a time, in order, so dependent changes (e.g. switch context, then add) apply correctly.
+                cards.reduce(function (chain, card) {
+                    return chain.then(function () { return card.run(); });
+                }, Promise.resolve());
+            });
+            wrap.appendChild(all);
+        }
+
+        cards.forEach(function (card) { wrap.appendChild(card); });
+        log.appendChild(wrap);
+        log.scrollTop = log.scrollHeight;
+    }
+
     function ask(question) {
         if (busy || !question) return;
         append(question, 'assistant-msg-user', false);
@@ -171,6 +305,7 @@
                 } else if (name === 'done') {
                     finished = true;
                     showReply(pending, data.reply, data.ok ? 'assistant-msg-bot' : 'assistant-msg-error');
+                    showProposals(data.proposals || []);
                 }
             });
         }).then(function () {

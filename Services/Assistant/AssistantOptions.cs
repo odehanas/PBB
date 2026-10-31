@@ -18,7 +18,7 @@ namespace GovBudget.Services.Assistant
         public string BaseUrl { get; set; } = "https://api.openai.com/v1";
 
         /// <summary>How many times the model may call tools before it must answer.</summary>
-        public int MaxToolRounds { get; set; } = 5;
+        public int MaxToolRounds { get; set; } = 8;
 
         /// <summary>Conversation turns kept per user session (user + assistant messages).</summary>
         public int MaxHistoryMessages { get; set; } = 20;

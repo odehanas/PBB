@@ -116,6 +116,16 @@ namespace GovBudget.Utils
             var required = RequiredAction(context.HttpContext.Request.Method, descriptor.ActionName);
             if (required == null) return;
 
+            var allowed = IsAllowed(required.Value, merged);
+
+            if (!allowed)
+            {
+                context.Result = Deny(context.HttpContext);
+            }
+        }
+
+        private static bool IsAllowed(FormAction required, FormRights merged)
+        {
             var allowed = required switch
             {
                 FormAction.Add => merged.CanAdd,
@@ -132,10 +142,35 @@ namespace GovBudget.Utils
                 allowed = merged.CanAdd || merged.CanDelete;
             }
 
-            if (!allowed)
+            return allowed;
+        }
+
+        /// <summary>
+        /// Whether a POST to the given action would pass this filter for the user. The
+        /// assistant uses it to offer only the changes the user could make on the screens.
+        /// </summary>
+        public static async Task<bool> CanPostAsync(
+            IPermissionService permissions, System.Security.Claims.ClaimsPrincipal user, string controller, string action)
+        {
+            if (user?.Identity?.IsAuthenticated != true) return false;
+            if (ExemptControllers.Contains(controller)) return true;
+            if (!FormsByController.TryGetValue(controller, out var formKeys)) return true;
+            if (formKeys.All(k => AppForms.Find(k)?.ViewOnlyByNature == true)) return true;
+
+            var rights = new List<FormRights>(formKeys.Length);
+            foreach (var key in formKeys)
             {
-                context.Result = Deny(context.HttpContext);
+                rights.Add(await permissions.GetRightsAsync(user, key));
             }
+
+            var merged = new FormRights(
+                rights.Any(r => r.CanView),
+                rights.Any(r => r.CanAdd),
+                rights.Any(r => r.CanEdit),
+                rights.Any(r => r.CanDelete));
+
+            var required = RequiredAction(HttpMethods.Post, action);
+            return required == null || IsAllowed(required.Value, merged);
         }
 
         // Null means "no right needed" (a plain read screen).
