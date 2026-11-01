@@ -195,7 +195,11 @@ namespace GovBudget.Controllers
             catch (HttpRequestException ex)
             {
                 _logger.LogWarning(ex, "Speech-to-text failed");
-                return Json(new { ok = false, error = "Voice input failed. Please type your question instead." });
+                // Admins get OpenAI's reason (e.g. "403: missing scope api.model.audio.request")
+                // so a key or model problem can be fixed without server logs.
+                var role = BuildUserContext().Role;
+                var reason = role is "ADMIN" or "SYSADMIN" ? $" (OpenAI {ex.Message})" : "";
+                return Json(new { ok = false, error = "Voice input failed. Please type your question instead." + reason });
             }
         }
 

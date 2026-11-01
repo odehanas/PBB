@@ -1,10 +1,12 @@
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
@@ -47,7 +49,7 @@ namespace GovBudget.Services.Assistant
             var body = await response.Content.ReadAsStringAsync(ct);
             if (!response.IsSuccessStatusCode)
             {
-                throw new HttpRequestException($"OpenAI returned {(int)response.StatusCode}: {body}");
+                throw Failure(response.StatusCode, body);
             }
 
             using var doc = JsonDocument.Parse(body);
@@ -70,11 +72,38 @@ namespace GovBudget.Services.Assistant
             using var response = await _httpClientFactory.CreateClient(OpenAIChatAssistantService.HttpClientName).SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
             {
-                var body = await response.Content.ReadAsStringAsync(ct);
-                throw new HttpRequestException($"OpenAI returned {(int)response.StatusCode}: {body}");
+                throw Failure(response.StatusCode, await response.Content.ReadAsStringAsync(ct));
             }
 
             return await response.Content.ReadAsByteArrayAsync(ct);
+        }
+
+        /// <summary>
+        /// Wraps an OpenAI error as "403: message". OpenAI echoes part of a wrong key back
+        /// ("Incorrect API key provided: sk-ab***yz"), so anything key-shaped is masked because
+        /// admins see this text in the widget.
+        /// </summary>
+        private static HttpRequestException Failure(HttpStatusCode status, string body)
+        {
+            var message = body;
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("error", out var error)
+                    && error.TryGetProperty("message", out var m)
+                    && m.ValueKind == JsonValueKind.String)
+                {
+                    message = m.GetString() ?? body;
+                }
+            }
+            catch (JsonException)
+            {
+                // Not JSON (e.g. a proxy error page); keep the raw text.
+            }
+
+            message = Regex.Replace(message, @"sk-[A-Za-z0-9_\-\*]+", "sk-***");
+            if (message.Length > 300) message = message[..300];
+            return new HttpRequestException($"{(int)status}: {message}", null, status);
         }
 
         private HttpRequestMessage NewRequest(string path, HttpContent content)
