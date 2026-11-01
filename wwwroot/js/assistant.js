@@ -93,7 +93,11 @@
     var player = null;
     try { readAloud = localStorage.getItem('assistantReadAloud') === '1'; } catch (e) { /* storage blocked */ }
 
+    // Bumped whenever audio should stop, so a reply still being generated is dropped on arrival.
+    var speechId = 0;
+
     function stopSpeaking() {
+        speechId++;
         if (player) {
             player.pause();
             URL.revokeObjectURL(player.src);
@@ -120,11 +124,13 @@
             .trim();
     }
 
-    function speak(text) {
-        if (!readAloud || !speakUrl) return;
+    // A question asked by voice is always answered aloud; typed ones only when the toggle is on.
+    function speak(text, spokenQuestion) {
+        if ((!readAloud && !spokenQuestion) || !speakUrl) return;
         var plain = speechText(text);
         if (!plain) return;
         stopSpeaking();
+        var id = speechId;
 
         fetch(speakUrl, {
             method: 'POST',
@@ -134,8 +140,7 @@
             if (!response.ok) throw new Error('HTTP ' + response.status);
             return response.blob();
         }).then(function (blob) {
-            if (!readAloud) return;
-            stopSpeaking();
+            if (id !== speechId) return;
             player = new Audio(URL.createObjectURL(blob));
             player.addEventListener('ended', stopSpeaking);
             return player.play();
@@ -243,7 +248,7 @@
             pending.remove();
             setBusy(false);
             if (data.ok) {
-                ask(data.text);
+                ask(data.text, true);
             } else {
                 append(data.error || 'Voice input failed.', 'assistant-msg-error', false);
             }
@@ -489,7 +494,7 @@
         log.scrollTop = log.scrollHeight;
     }
 
-    function ask(question) {
+    function ask(question, spoken) {
         if (busy || !question) return;
         stopSpeaking();
         append(question, 'assistant-msg-user', false);
@@ -519,7 +524,7 @@
                     finished = true;
                     showReply(pending, data.reply, data.ok ? 'assistant-msg-bot' : 'assistant-msg-error');
                     showProposals(data.proposals || []);
-                    if (data.ok) speak(data.reply);
+                    if (data.ok) speak(data.reply, spoken);
                 }
             });
         }).then(function () {
