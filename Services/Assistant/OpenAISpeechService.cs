@@ -38,8 +38,9 @@ namespace GovBudget.Services.Assistant
         {
             using var form = new MultipartFormDataContent();
             var file = new StreamContent(audio);
-            file.Headers.ContentType = MediaTypeHeaderValue.TryParse(contentType, out var type)
-                ? type
+            // Bare media type only: browsers add "; codecs=opus", which OpenAI does not need.
+            file.Headers.ContentType = MediaTypeHeaderValue.TryParse(contentType, out var type) && type.MediaType is not null
+                ? new MediaTypeHeaderValue(type.MediaType)
                 : new MediaTypeHeaderValue("application/octet-stream");
             form.Add(file, "file", fileName);
             form.Add(new StringContent(_options.TranscriptionModel), "model");
