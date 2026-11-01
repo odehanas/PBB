@@ -68,6 +68,13 @@ namespace GovBudget.Services.Assistant
                 ["response_format"] = "mp3"
             };
 
+            // tts-1 and tts-1-hd reject this field.
+            if (!string.IsNullOrWhiteSpace(_options.SpeechInstructions)
+                && _options.SpeechModel.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase))
+            {
+                payload["instructions"] = _options.SpeechInstructions;
+            }
+
             using var request = NewRequest("audio/speech",
                 new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json"));
             using var response = await _httpClientFactory.CreateClient(OpenAIChatAssistantService.HttpClientName).SendAsync(request, ct);

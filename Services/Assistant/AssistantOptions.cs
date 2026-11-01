@@ -35,7 +35,18 @@ namespace GovBudget.Services.Assistant
 
         public string SpeechModel { get; set; } = "gpt-4o-mini-tts";
 
-        public string SpeechVoice { get; set; } = "alloy";
+        /// <summary>
+        /// OpenAI voice. Female: coral (default), nova, shimmer, sage. Male: ash, echo, onyx, ballad.
+        /// </summary>
+        public string SpeechVoice { get; set; } = "coral";
+
+        /// <summary>
+        /// How the voice should sound. Only the gpt-4o-* speech models use it; leave empty for none.
+        /// </summary>
+        public string SpeechInstructions { get; set; } =
+            "Speak like a friendly, professional colleague having a natural conversation: warm, relaxed, " +
+            "clear, at a comfortable pace, with natural pauses. Read large figures the way a person would say them. " +
+            "If the text is Arabic, speak natural Modern Standard Arabic.";
 
         public bool OecdLiveEnabled { get; set; } = true;
 
