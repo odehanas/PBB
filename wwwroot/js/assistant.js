@@ -165,18 +165,76 @@
         micBtn.innerHTML = '<i class="bi ' + (recording ? 'bi-stop-fill' : 'bi-mic') + '"></i>';
     }
 
+    // 16 kHz mono 16-bit PCM: what speech models use internally, and about 2 MB a minute.
+    var WAV_RATE = 16000;
+
+    function encodeWav(samples) {
+        var buffer = new ArrayBuffer(44 + samples.length * 2);
+        var view = new DataView(buffer);
+        function text(offset, s) { for (var i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i)); }
+
+        text(0, 'RIFF');
+        view.setUint32(4, 36 + samples.length * 2, true);
+        text(8, 'WAVE');
+        text(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);            // PCM
+        view.setUint16(22, 1, true);            // mono
+        view.setUint32(24, WAV_RATE, true);
+        view.setUint32(28, WAV_RATE * 2, true); // bytes per second
+        view.setUint16(32, 2, true);            // bytes per frame
+        view.setUint16(34, 16, true);           // bits per sample
+        text(36, 'data');
+        view.setUint32(40, samples.length * 2, true);
+
+        for (var i = 0; i < samples.length; i++) {
+            var s = Math.max(-1, Math.min(1, samples[i]));
+            view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        }
+        return new Blob([view], { type: 'audio/wav' });
+    }
+
+    // OpenAI rejects some browser recordings (Firefox's Ogg/Opus answers "corrupted or
+    // unsupported"), so every recording is re-encoded as WAV, which it always accepts.
+    function toWav(blob) {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx || !window.OfflineAudioContext) return Promise.reject(new Error('no Web Audio'));
+
+        return blob.arrayBuffer().then(function (data) {
+            var ctx = new Ctx();
+            return new Promise(function (resolve, reject) {
+                ctx.decodeAudioData(data, resolve, reject);
+            }).finally(function () { ctx.close(); });
+        }).then(function (decoded) {
+            var offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * WAV_RATE), WAV_RATE);
+            var source = offline.createBufferSource();
+            source.buffer = decoded;
+            source.connect(offline.destination);
+            source.start();
+            return offline.startRendering();
+        }).then(function (rendered) {
+            return encodeWav(rendered.getChannelData(0));
+        });
+    }
+
     function sendRecording(blob, type) {
         var pending = append('Listening…', 'assistant-msg-bot assistant-typing', false);
         setBusy(true);
 
         var extension = type.indexOf('mp4') >= 0 ? 'mp4' : type.indexOf('ogg') >= 0 ? 'ogg' : 'webm';
-        var body = new FormData();
-        body.append('audio', blob, 'question.' + extension);
 
-        fetch(transcribeUrl, {
-            method: 'POST',
-            headers: { 'RequestVerificationToken': token },
-            body: body
+        toWav(blob).then(function (wav) {
+            return { blob: wav, name: 'question.wav' };
+        }, function () {
+            return { blob: blob, name: 'question.' + extension };
+        }).then(function (upload) {
+            var body = new FormData();
+            body.append('audio', upload.blob, upload.name);
+            return fetch(transcribeUrl, {
+                method: 'POST',
+                headers: { 'RequestVerificationToken': token },
+                body: body
+            });
         }).then(function (response) {
             if (response.status === 429) return { ok: false, error: 'Too many voice requests. Please wait a minute.' };
             if (!response.ok) throw new Error('HTTP ' + response.status);
