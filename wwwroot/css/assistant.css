@@ -144,3 +144,19 @@
 .assistant-proposal-result {
     margin-top: .25rem;
 }
+
+/* Microphone while recording. */
+#assistantMic.assistant-recording {
+    color: #fff;
+    background-color: var(--bs-danger);
+    border-color: var(--bs-danger);
+    animation: assistant-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes assistant-pulse {
+    50% { box-shadow: 0 0 0 .35rem rgba(var(--bs-danger-rgb), .25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #assistantMic.assistant-recording { animation: none; }
+}

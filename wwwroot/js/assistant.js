@@ -14,6 +14,10 @@
     var resetUrl = widget.getAttribute('data-reset-url');
     var outcomeUrl = widget.getAttribute('data-outcome-url');
     var token = widget.getAttribute('data-token');
+    var transcribeUrl = widget.getAttribute('data-transcribe-url');
+    var speakUrl = widget.getAttribute('data-speak-url');
+    var micBtn = document.getElementById('assistantMic');
+    var speakerBtn = document.getElementById('assistantSpeaker');
     var busy = false;
 
     function escapeHtml(text) {
@@ -80,6 +84,156 @@
         busy = state;
         sendBtn.disabled = state;
         input.disabled = state;
+        if (micBtn && !recorder) micBtn.disabled = state;
+    }
+
+    // ---- Voice: read answers aloud ----
+
+    var readAloud = false;
+    var player = null;
+    try { readAloud = localStorage.getItem('assistantReadAloud') === '1'; } catch (e) { /* storage blocked */ }
+
+    function stopSpeaking() {
+        if (player) {
+            player.pause();
+            URL.revokeObjectURL(player.src);
+            player = null;
+        }
+    }
+
+    function showSpeakerState() {
+        if (!speakerBtn) return;
+        speakerBtn.setAttribute('aria-pressed', readAloud ? 'true' : 'false');
+        speakerBtn.title = readAloud ? 'Stop reading answers aloud' : 'Read answers aloud';
+        speakerBtn.innerHTML = '<i class="bi ' + (readAloud ? 'bi-volume-up' : 'bi-volume-mute') + '"></i>';
+        speakerBtn.classList.toggle('active', readAloud);
+    }
+
+    // Tables and markdown symbols sound wrong when read out, so speak plain text only.
+    function speechText(text) {
+        return text
+            .split('\n')
+            .filter(function (line) { return !/^\s*\|[\s:|-]+\|\s*$/.test(line); })
+            .map(function (line) { return line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').replace(/\|/g, ', '); })
+            .join('\n')
+            .replace(/[*`#_]/g, '')
+            .trim();
+    }
+
+    function speak(text) {
+        if (!readAloud || !speakUrl) return;
+        var plain = speechText(text);
+        if (!plain) return;
+        stopSpeaking();
+
+        fetch(speakUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+            body: JSON.stringify({ text: plain })
+        }).then(function (response) {
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response.blob();
+        }).then(function (blob) {
+            if (!readAloud) return;
+            stopSpeaking();
+            player = new Audio(URL.createObjectURL(blob));
+            player.addEventListener('ended', stopSpeaking);
+            return player.play();
+        }).catch(function () { /* the answer is already on screen; audio is a bonus */ });
+    }
+
+    if (speakerBtn) {
+        showSpeakerState();
+        speakerBtn.addEventListener('click', function () {
+            readAloud = !readAloud;
+            try { localStorage.setItem('assistantReadAloud', readAloud ? '1' : '0'); } catch (e) { /* storage blocked */ }
+            if (!readAloud) stopSpeaking();
+            showSpeakerState();
+        });
+    }
+
+    // ---- Voice: speak a question ----
+
+    var recorder = null;
+    var recordTimer = null;
+    var MAX_RECORD_MS = 60000;
+
+    function showMicState(recording) {
+        micBtn.classList.toggle('assistant-recording', recording);
+        micBtn.setAttribute('aria-pressed', recording ? 'true' : 'false');
+        micBtn.title = recording ? 'Stop and send' : 'Speak your question';
+        micBtn.innerHTML = '<i class="bi ' + (recording ? 'bi-stop-fill' : 'bi-mic') + '"></i>';
+    }
+
+    function sendRecording(blob, type) {
+        var pending = append('Listening…', 'assistant-msg-bot assistant-typing', false);
+        setBusy(true);
+
+        var extension = type.indexOf('mp4') >= 0 ? 'mp4' : type.indexOf('ogg') >= 0 ? 'ogg' : 'webm';
+        var body = new FormData();
+        body.append('audio', blob, 'question.' + extension);
+
+        fetch(transcribeUrl, {
+            method: 'POST',
+            headers: { 'RequestVerificationToken': token },
+            body: body
+        }).then(function (response) {
+            if (response.status === 429) return { ok: false, error: 'Too many voice requests. Please wait a minute.' };
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response.json();
+        }).then(function (data) {
+            pending.remove();
+            setBusy(false);
+            if (data.ok) {
+                ask(data.text);
+            } else {
+                append(data.error || 'Voice input failed.', 'assistant-msg-error', false);
+            }
+        }).catch(function () {
+            pending.remove();
+            setBusy(false);
+            append('Voice input failed. Please type your question instead.', 'assistant-msg-error', false);
+        });
+    }
+
+    function startRecording() {
+        stopSpeaking();
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+            var chunks = [];
+            recorder = new MediaRecorder(stream);
+            recorder.addEventListener('dataavailable', function (e) {
+                if (e.data && e.data.size) chunks.push(e.data);
+            });
+            recorder.addEventListener('stop', function () {
+                var type = recorder.mimeType || 'audio/webm';
+                stream.getTracks().forEach(function (t) { t.stop(); });
+                clearTimeout(recordTimer);
+                recorder = null;
+                showMicState(false);
+                if (chunks.length) sendRecording(new Blob(chunks, { type: type }), type);
+            });
+            recorder.start();
+            showMicState(true);
+            recordTimer = setTimeout(stopRecording, MAX_RECORD_MS);
+        }).catch(function () {
+            append('Microphone access was blocked. Allow the microphone for this site in your browser, then try again.', 'assistant-msg-error', false);
+        });
+    }
+
+    function stopRecording() {
+        if (recorder && recorder.state !== 'inactive') recorder.stop();
+    }
+
+    if (micBtn) {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+            micBtn.remove();
+            micBtn = null;
+        } else {
+            micBtn.addEventListener('click', function () {
+                if (recorder) stopRecording();
+                else if (!busy) startRecording();
+            });
+        }
     }
 
     var toolLabels = {
@@ -279,6 +433,7 @@
 
     function ask(question) {
         if (busy || !question) return;
+        stopSpeaking();
         append(question, 'assistant-msg-user', false);
         input.value = '';
         setBusy(true);
@@ -306,6 +461,7 @@
                     finished = true;
                     showReply(pending, data.reply, data.ok ? 'assistant-msg-bot' : 'assistant-msg-error');
                     showProposals(data.proposals || []);
+                    if (data.ok) speak(data.reply);
                 }
             });
         }).then(function () {
@@ -332,6 +488,8 @@
     document.getElementById('assistantClose').addEventListener('click', function () {
         panel.setAttribute('hidden', '');
         document.getElementById('assistantLauncher').setAttribute('aria-expanded', 'false');
+        stopRecording();
+        stopSpeaking();
     });
 
     document.getElementById('assistantReset').addEventListener('click', function () {
