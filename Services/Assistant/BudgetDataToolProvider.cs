@@ -20,7 +20,7 @@ namespace GovBudget.Services.Assistant
         private const string HrCategoryCode = "HR";
         private const string AmountUnit = "whole currency units, not thousands or millions";
 
-        private sealed record SummaryRow(string name, decimal amount, int lines);
+        private sealed record SummaryRow(string name, decimal amount, int lines, string? code = null);
 
         private readonly GovBudgetContext _db;
         private readonly AssistantOptions _options;
@@ -41,27 +41,46 @@ namespace GovBudget.Services.Assistant
 
             yield return new AssistantToolDefinition(
                 "get_budget_summary",
-                "Total budgeted amounts for a year, grouped by category (Revenue/OPEX/CAPEX/HR), department, program, activity or item. HR staff cost comes from the HR employee cost tables, so it appears when grouping by category or department but not by program, activity or item.",
+                "Total budgeted amounts for a year, grouped by category (Revenue/OPEX/CAPEX/HR), department, program, activity or item, optionally narrowed to one program or activity. HR staff cost comes from the HR employee cost tables, so it appears when grouping by category or department but not by program, activity or item.",
                 """
                 {"type":"object","properties":{
                   "year":{"type":"integer","description":"Budget year. Defaults to the working year."},
                   "group_by":{"type":"string","enum":["category","department","program","activity","item"],"description":"Grouping level. Default category."},
-                  "category_code":{"type":"string","description":"Optional filter: REVENUE, OPEX, CAPEX or HR."}
+                  "category_code":{"type":"string","description":"Optional filter: REVENUE, OPEX, CAPEX or HR."},
+                  "activity":{"type":"string","description":"Optional activity code (e.g. DAM-01.A01) or name to restrict the totals to."},
+                  "program":{"type":"string","description":"Optional program code (e.g. DAM-01) or name to restrict the totals to."}
                 },"additionalProperties":false}
                 """,
                 GetBudgetSummaryAsync);
 
             yield return new AssistantToolDefinition(
                 "search_budget_lines",
-                "Find individual budget lines by free-text description, item, program or activity name.",
+                "Find individual budget lines by free text and/or by activity, program, item, category or GL account. Every line carries its item code, GL account, quantity, unit price and amount.",
                 """
                 {"type":"object","properties":{
                   "year":{"type":"integer"},
-                  "query":{"type":"string","description":"Text to look for in the line description, item, program or activity."},
+                  "query":{"type":"string","description":"Optional text to look for in the line description, item, program or activity, or any of their codes."},
+                  "activity":{"type":"string","description":"Optional activity code (e.g. DAM-01.A01) or name."},
+                  "program":{"type":"string","description":"Optional program code (e.g. DAM-01) or name."},
+                  "category_code":{"type":"string","description":"Optional REVENUE, OPEX or CAPEX filter."},
+                  "gl_code":{"type":"string","description":"Optional GL account code."},
                   "top":{"type":"integer","description":"Maximum lines to return (default 25)."}
-                },"required":["query"],"additionalProperties":false}
+                },"additionalProperties":false}
                 """,
                 SearchBudgetLinesAsync);
+
+            yield return new AssistantToolDefinition(
+                "get_activity_line_items",
+                "Every budget line item entered against one activity for a year - item code and name, GL account, description, quantity, unit price and amount - plus the staff cost allocated to that activity, with totals per category. Use this whenever the question asks for the detail, breakdown or line items behind an activity.",
+                """
+                {"type":"object","properties":{
+                  "activity":{"type":"string","description":"Activity code (e.g. DAM-01.A01) or activity name."},
+                  "year":{"type":"integer"},
+                  "category_code":{"type":"string","description":"Optional REVENUE, OPEX or CAPEX filter. HR is returned from the staff cost allocations."},
+                  "top":{"type":"integer","description":"Maximum lines to return (default 100)."}
+                },"required":["activity"],"additionalProperties":false}
+                """,
+                GetActivityLineItemsAsync);
 
             yield return new AssistantToolDefinition(
                 "get_budget_vs_actual",
@@ -161,6 +180,21 @@ namespace GovBudget.Services.Assistant
             return q;
         }
 
+        /// <summary>Match a program by its code or by part of its name, as the user typed it.</summary>
+        private static IQueryable<BudgetLines> FilterByProgram(IQueryable<BudgetLines> lines, string program) =>
+            lines.Where(b => (b.Program != null
+                              && (b.Program.ProgramCode == program
+                                  || EF.Functions.Like(b.Program.ProgramName, $"%{program}%")))
+                             || (b.Activity != null
+                                 && (b.Activity.Program.ProgramCode == program
+                                     || EF.Functions.Like(b.Activity.Program.ProgramName, $"%{program}%"))));
+
+        /// <summary>Match an activity by its code or by part of its name, as the user typed it.</summary>
+        private static IQueryable<BudgetLines> FilterByActivity(IQueryable<BudgetLines> lines, string activity) =>
+            lines.Where(b => b.Activity != null
+                             && (b.Activity.ActivityCode == activity
+                                 || EF.Functions.Like(b.Activity.ActivityName, $"%{activity}%")));
+
         private IQueryable<HrEmployeeCosts> ScopedHrCosts(AssistantUserContext user, int year)
         {
             var q = _db.HrEmployeeCosts.AsNoTracking().Where(h => h.BudgetYear == year);
@@ -212,43 +246,55 @@ namespace GovBudget.Services.Assistant
             var year = Year(args, user);
             var groupBy = (Str(args, "group_by") ?? "category").ToLowerInvariant();
             var categoryCode = Str(args, "category_code");
+            var programFilter = Str(args, "program");
+            var activityFilter = Str(args, "activity");
 
             var lines = ScopedLines(user, year);
             if (categoryCode is not null)
             {
                 lines = lines.Where(b => b.Category.CategoryCode == categoryCode);
             }
+            if (programFilter is not null) lines = FilterByProgram(lines, programFilter);
+            if (activityFilter is not null) lines = FilterByActivity(lines, activityFilter);
 
-            var wantsHr = categoryCode is null || string.Equals(categoryCode, HrCategoryCode, StringComparison.OrdinalIgnoreCase);
+            // Staff cost only reaches a program or activity through the HR allocation table,
+            // which get_activity_line_items reports, so a narrowed summary is budget lines only.
+            var narrowed = programFilter is not null || activityFilter is not null;
+            var wantsHr = !narrowed
+                          && (categoryCode is null || string.Equals(categoryCode, HrCategoryCode, StringComparison.OrdinalIgnoreCase));
             var onlyHr = string.Equals(categoryCode, HrCategoryCode, StringComparison.OrdinalIgnoreCase);
 
             var rows = groupBy switch
             {
                 "department" => await lines
-                    .GroupBy(b => b.Department.DeptName)
-                    .Select(g => new { name = g.Key, amount = g.Sum(x => x.Amount), lines = g.Count() })
+                    .GroupBy(b => new { code = b.Department.DeptCode, name = b.Department.DeptName })
+                    .Select(g => new { g.Key.code, g.Key.name, amount = g.Sum(x => x.Amount), lines = g.Count() })
                     .OrderByDescending(r => r.amount).Take(_options.MaxRows).ToListAsync(ct),
                 "program" => await lines
-                    .GroupBy(b => b.Program != null ? b.Program.ProgramName : "(unassigned)")
-                    .Select(g => new { name = g.Key, amount = g.Sum(x => x.Amount), lines = g.Count() })
+                    .GroupBy(b => b.Program != null
+                        ? new { code = b.Program.ProgramCode, name = b.Program.ProgramName }
+                        : new { code = "", name = "(unassigned)" })
+                    .Select(g => new { g.Key.code, g.Key.name, amount = g.Sum(x => x.Amount), lines = g.Count() })
                     .OrderByDescending(r => r.amount).Take(_options.MaxRows).ToListAsync(ct),
                 "activity" => await lines
-                    .GroupBy(b => b.Activity != null ? b.Activity.ActivityName : "(unassigned)")
-                    .Select(g => new { name = g.Key, amount = g.Sum(x => x.Amount), lines = g.Count() })
+                    .GroupBy(b => b.Activity != null
+                        ? new { code = b.Activity.ActivityCode, name = b.Activity.ActivityName }
+                        : new { code = "", name = "(unassigned)" })
+                    .Select(g => new { g.Key.code, g.Key.name, amount = g.Sum(x => x.Amount), lines = g.Count() })
                     .OrderByDescending(r => r.amount).Take(_options.MaxRows).ToListAsync(ct),
                 "item" => await lines
-                    .GroupBy(b => b.Item.ItemName)
-                    .Select(g => new { name = g.Key, amount = g.Sum(x => x.Amount), lines = g.Count() })
+                    .GroupBy(b => new { code = b.Item.ItemCode, name = b.Item.ItemName })
+                    .Select(g => new { g.Key.code, g.Key.name, amount = g.Sum(x => x.Amount), lines = g.Count() })
                     .OrderByDescending(r => r.amount).Take(_options.MaxRows).ToListAsync(ct),
                 _ => await lines
-                    .GroupBy(b => b.Category.CategoryName)
-                    .Select(g => new { name = g.Key, amount = g.Sum(x => x.Amount), lines = g.Count() })
+                    .GroupBy(b => new { code = b.Category.CategoryCode, name = b.Category.CategoryName })
+                    .Select(g => new { g.Key.code, g.Key.name, amount = g.Sum(x => x.Amount), lines = g.Count() })
                     .OrderByDescending(r => r.amount).Take(_options.MaxRows).ToListAsync(ct)
             };
 
             var all = onlyHr
                 ? new List<SummaryRow>()
-                : rows.Select(r => new SummaryRow(r.name, r.amount, r.lines)).ToList();
+                : rows.Select(r => new SummaryRow(r.name, r.amount, r.lines, r.code)).ToList();
 
             // Staff cost lives in the HR tables, so it is added to the groupings that carry it.
             if (wantsHr && groupBy is "category" or "department")
@@ -256,11 +302,11 @@ namespace GovBudget.Services.Assistant
                 var hrRows = groupBy == "department"
                     ? await ScopedHrCosts(user, year)
                         .GroupBy(h => h.DepartmentName)
-                        .Select(g => new SummaryRow(g.Key, g.Sum(x => x.AnnualCost), g.Count()))
+                        .Select(g => new SummaryRow(g.Key, g.Sum(x => x.AnnualCost), g.Count(), null))
                         .ToListAsync(ct)
                     : await ScopedHrCosts(user, year)
                         .GroupBy(h => 1)
-                        .Select(g => new SummaryRow("HR (staff cost)", g.Sum(x => x.AnnualCost), g.Count()))
+                        .Select(g => new SummaryRow("HR (staff cost)", g.Sum(x => x.AnnualCost), g.Count(), HrCategoryCode))
                         .ToListAsync(ct);
 
                 foreach (var hr in hrRows.Where(r => r.amount != 0m))
@@ -288,9 +334,11 @@ namespace GovBudget.Services.Assistant
                 year,
                 grouped_by = groupBy,
                 category_code = categoryCode,
+                program = programFilter,
+                activity = activityFilter,
                 amount_unit = AmountUnit,
                 includes_hr_staff_cost = wantsHr && groupBy is "category" or "department",
-                excludes_hr_staff_cost = groupBy is not ("category" or "department"),
+                excludes_hr_staff_cost = narrowed || groupBy is not ("category" or "department"),
                 total = all.Sum(r => r.amount),
                 rows = all
             });
@@ -299,14 +347,33 @@ namespace GovBudget.Services.Assistant
         private async Task<string> SearchBudgetLinesAsync(JsonElement args, AssistantUserContext user, CancellationToken ct)
         {
             var year = Year(args, user);
-            var query = Str(args, "query") ?? "";
+            var query = Str(args, "query");
+            var activity = Str(args, "activity");
+            var program = Str(args, "program");
+            var categoryCode = Str(args, "category_code");
+            var glCode = Str(args, "gl_code");
             var top = Top(args, 25);
 
-            var rows = await ScopedLines(user, year)
-                .Where(b => EF.Functions.Like(b.Description, $"%{query}%")
-                            || EF.Functions.Like(b.Item.ItemName, $"%{query}%")
-                            || (b.Program != null && EF.Functions.Like(b.Program.ProgramName, $"%{query}%"))
-                            || (b.Activity != null && EF.Functions.Like(b.Activity.ActivityName, $"%{query}%")))
+            var lines = ScopedLines(user, year);
+            if (query is not null)
+            {
+                lines = lines.Where(b => EF.Functions.Like(b.Description, $"%{query}%")
+                                         || EF.Functions.Like(b.Item.ItemName, $"%{query}%")
+                                         || EF.Functions.Like(b.Item.ItemCode, $"%{query}%")
+                                         || EF.Functions.Like(b.Item.GLAccount.GLCode, $"%{query}%")
+                                         || (b.Program != null
+                                             && (EF.Functions.Like(b.Program.ProgramName, $"%{query}%")
+                                                 || EF.Functions.Like(b.Program.ProgramCode, $"%{query}%")))
+                                         || (b.Activity != null
+                                             && (EF.Functions.Like(b.Activity.ActivityName, $"%{query}%")
+                                                 || EF.Functions.Like(b.Activity.ActivityCode, $"%{query}%"))));
+            }
+            if (program is not null) lines = FilterByProgram(lines, program);
+            if (activity is not null) lines = FilterByActivity(lines, activity);
+            if (categoryCode is not null) lines = lines.Where(b => b.Category.CategoryCode == categoryCode);
+            if (glCode is not null) lines = lines.Where(b => b.Item.GLAccount.GLCode == glCode);
+
+            var rows = await lines
                 .OrderByDescending(b => b.Amount)
                 .Take(top)
                 .Select(b => new
@@ -315,8 +382,13 @@ namespace GovBudget.Services.Assistant
                     description = b.Description,
                     category = b.Category.CategoryName,
                     department = b.Department.DeptName,
+                    item_code = b.Item.ItemCode,
                     item = b.Item.ItemName,
+                    gl_code = b.Item.GLAccount.GLCode,
+                    gl_name = b.Item.GLAccount.GLName,
+                    program_code = b.Program != null ? b.Program.ProgramCode : null,
                     program = b.Program != null ? b.Program.ProgramName : null,
+                    activity_code = b.Activity != null ? b.Activity.ActivityCode : null,
                     activity = b.Activity != null ? b.Activity.ActivityName : null,
                     b.Quantity,
                     b.UnitPrice,
@@ -324,7 +396,128 @@ namespace GovBudget.Services.Assistant
                 })
                 .ToListAsync(ct);
 
-            return Json(new { year, query, count = rows.Count, rows });
+            return Json(new
+            {
+                year,
+                query,
+                activity,
+                program,
+                category_code = categoryCode,
+                gl_code = glCode,
+                amount_unit = AmountUnit,
+                excludes_hr_staff_cost = true,
+                count = rows.Count,
+                total = rows.Sum(r => r.Amount),
+                rows
+            });
+        }
+
+        /// <summary>
+        /// The line items behind one activity: the budget lines as entered (item, GL account,
+        /// quantity, unit price) plus the staff cost allocated to the activity, which is the
+        /// same composition the Activity Costs report shows.
+        /// </summary>
+        private async Task<string> GetActivityLineItemsAsync(JsonElement args, AssistantUserContext user, CancellationToken ct)
+        {
+            var year = Year(args, user);
+            var wanted = Str(args, "activity") ?? "";
+            var categoryCode = Str(args, "category_code");
+            var top = Top(args, 100);
+            var entityId = ScopeEntityId(user);
+
+            var activities = _db.Activities.AsNoTracking().AsQueryable();
+            if (entityId.HasValue) activities = activities.Where(a => a.Program.EntityId == entityId.Value);
+            var deptId = ScopeDepartmentId(user);
+            if (deptId.HasValue) activities = activities.Where(a => a.DepartmentId == deptId.Value);
+
+            var matches = await activities
+                .Where(a => a.ActivityCode == wanted
+                            || EF.Functions.Like(a.ActivityCode, $"%{wanted}%")
+                            || EF.Functions.Like(a.ActivityName, $"%{wanted}%"))
+                .OrderBy(a => a.ActivityCode)
+                .Take(_options.MaxRows)
+                .Select(a => new
+                {
+                    a.ActivityId,
+                    code = a.ActivityCode,
+                    name = a.ActivityName,
+                    program_code = a.Program.ProgramCode,
+                    program = a.Program.ProgramName,
+                    department = a.Department.DeptName
+                })
+                .ToListAsync(ct);
+
+            var exact = matches.FirstOrDefault(m => string.Equals(m.code, wanted, StringComparison.OrdinalIgnoreCase));
+            var activity = exact ?? (matches.Count == 1 ? matches[0] : null);
+
+            if (activity is null)
+            {
+                return Json(new
+                {
+                    year,
+                    requested = wanted,
+                    matched = false,
+                    note = matches.Count == 0
+                        ? "No activity in the user's scope matches this code or name. Do not answer with figures; offer the candidates from list_master_data."
+                        : "The text matches several activities. Ask the user which one, listing the candidates.",
+                    candidates = matches
+                });
+            }
+
+            var lines = ScopedLines(user, year).Where(b => b.ActivityId == activity.ActivityId);
+            if (categoryCode is not null) lines = lines.Where(b => b.Category.CategoryCode == categoryCode);
+
+            var rows = await lines
+                .OrderByDescending(b => b.Amount)
+                .Take(top)
+                .Select(b => new
+                {
+                    category = b.Category.CategoryCode,
+                    item_code = b.Item.ItemCode,
+                    item = b.Item.ItemName,
+                    gl_code = b.Item.GLAccount.GLCode,
+                    gl_name = b.Item.GLAccount.GLName,
+                    description = b.Description,
+                    project = b.Project != null ? b.Project.ProjectName : null,
+                    b.Quantity,
+                    b.UnitPrice,
+                    b.Amount
+                })
+                .ToListAsync(ct);
+
+            var lineCount = await lines.CountAsync(ct);
+
+            // Staff cost reaches an activity only through the HR allocation table.
+            var hrAllocated = categoryCode is null || string.Equals(categoryCode, HrCategoryCode, StringComparison.OrdinalIgnoreCase)
+                ? await _db.HrEmployeeCostAllocations.AsNoTracking()
+                    .Where(a => a.ActivityId == activity.ActivityId
+                                && a.EmployeeCost.BudgetYear == year
+                                && (!entityId.HasValue || a.EmployeeCost.EntityId == entityId.Value))
+                    .SumAsync(a => (decimal?)a.AllocatedAmount, ct) ?? 0m
+                : 0m;
+
+            // Totals come from the whole activity, not just the rows that fit in the response.
+            var byCategory = await lines
+                .GroupBy(b => b.Category.CategoryCode)
+                .Select(g => new { category = g.Key, amount = g.Sum(x => x.Amount), lines = g.Count() })
+                .OrderByDescending(g => g.amount)
+                .ToListAsync(ct);
+
+            return Json(new
+            {
+                year,
+                activity = new { activity.code, activity.name, activity.program_code, activity.program, activity.department },
+                matched = true,
+                amount_unit = AmountUnit,
+                category_code = categoryCode,
+                line_count = lineCount,
+                returned_lines = rows.Count,
+                truncated = lineCount > rows.Count,
+                totals_by_category = byCategory,
+                hr_staff_cost_allocated = hrAllocated,
+                total_including_hr = byCategory.Sum(c => c.amount) + hrAllocated,
+                rows
+            });
         }
 
         private async Task<string> GetBudgetVsActualAsync(JsonElement args, AssistantUserContext user, CancellationToken ct)
