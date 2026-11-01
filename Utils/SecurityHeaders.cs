@@ -22,6 +22,7 @@ namespace GovBudget.Utils
             "style-src 'self' 'unsafe-inline'; " +
             "font-src 'self' data:; " +
             "img-src 'self' data:; " +
+            "media-src 'self' blob:; " +
             "connect-src 'self'; " +
             "frame-ancestors 'none'; " +
             "base-uri 'self'; " +
@@ -41,7 +42,7 @@ namespace GovBudget.Utils
                 headers["X-Content-Type-Options"] = "nosniff";
                 headers["X-Frame-Options"] = "DENY";
                 headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-                headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
+                headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=(), payment=()";
                 headers["Cross-Origin-Opener-Policy"] = "same-origin";
                 headers["X-Permitted-Cross-Domain-Policies"] = "none";
 

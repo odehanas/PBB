@@ -28,6 +28,15 @@ namespace GovBudget.Services.Assistant
         /// <summary>Maximum rows any data tool returns to the model.</summary>
         public int MaxRows { get; set; } = 200;
 
+        /// <summary>Shows the microphone and read-aloud buttons. Uses the same API key as the chat.</summary>
+        public bool VoiceEnabled { get; set; } = true;
+
+        public string TranscriptionModel { get; set; } = "gpt-4o-mini-transcribe";
+
+        public string SpeechModel { get; set; } = "gpt-4o-mini-tts";
+
+        public string SpeechVoice { get; set; } = "alloy";
+
         public bool OecdLiveEnabled { get; set; } = true;
 
         /// <summary>SDMX REST endpoint of the OECD Data Explorer.</summary>

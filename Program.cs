@@ -107,6 +107,17 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0
         }));
+
+    // Voice calls are billed per use, so each client gets a modest allowance. Keyed by IP like
+    // "login": the limiter runs before authentication, so the user is not known yet.
+    options.AddPolicy("assistantVoice", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        }));
 });
 
 // The connection string is deliberately NOT in appsettings.json - that file is committed.
@@ -214,6 +225,7 @@ builder.Services.AddSingleton<GovBudget.Services.Assistant.AssistantWriteCatalog
 builder.Services.AddScoped<GovBudget.Services.Assistant.AssistantProposalCollector>();
 builder.Services.AddScoped<GovBudget.Services.Assistant.IAssistantToolProvider, GovBudget.Services.Assistant.DataEntryToolProvider>();
 builder.Services.AddScoped<GovBudget.Services.Assistant.IChatAssistantService, GovBudget.Services.Assistant.OpenAIChatAssistantService>();
+builder.Services.AddScoped<GovBudget.Services.Assistant.OpenAISpeechService>();
 
 // Password reset delivery. NoOp for now (admin shares the link manually);
 // swap for an SMTP implementation later without touching callers.

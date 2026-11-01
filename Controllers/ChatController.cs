@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Logging;
 
 namespace GovBudget.Controllers
 {
@@ -32,12 +35,26 @@ namespace GovBudget.Controllers
         private readonly IChatAssistantService _assistant;
         private readonly IPermissionService _permissions;
         private readonly AssistantProposalCollector _proposals;
+        private readonly OpenAISpeechService _speech;
+        private readonly ILogger<ChatController> _logger;
 
-        public ChatController(IChatAssistantService assistant, IPermissionService permissions, AssistantProposalCollector proposals)
+        public ChatController(
+            IChatAssistantService assistant,
+            IPermissionService permissions,
+            AssistantProposalCollector proposals,
+            OpenAISpeechService speech,
+            ILogger<ChatController> logger)
         {
             _assistant = assistant;
             _permissions = permissions;
             _proposals = proposals;
+            _speech = speech;
+            _logger = logger;
+        }
+
+        public sealed class SpeakRequest
+        {
+            public string? Text { get; set; }
         }
 
         public sealed class AskRequest
@@ -145,6 +162,69 @@ namespace GovBudget.Controllers
                 $"[Confirmed change \"{Clip(request?.Title, 200)}\": {(request?.Ok == true ? "saved" : "not saved")} - {Clip(request?.Message, 500)}]"));
             WriteHistory(history);
             return Json(new { ok = true });
+        }
+
+        /// <summary>
+        /// Turns a recording from the microphone button into text. The widget then sends that
+        /// text through AskStream like a typed question.
+        /// </summary>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [EnableRateLimiting("assistantVoice")]
+        [RequestSizeLimit(10 * 1024 * 1024)]
+        public async Task<IActionResult> Transcribe(IFormFile? audio, CancellationToken ct)
+        {
+            if (!await _permissions.CanViewAsync(User, AppForms.Assistant) || !_speech.IsConfigured)
+            {
+                return Json(new { ok = false, error = "Voice input is not available." });
+            }
+
+            if (audio is null || audio.Length == 0)
+            {
+                return Json(new { ok = false, error = "No audio was received. Please try again." });
+            }
+
+            try
+            {
+                await using var stream = audio.OpenReadStream();
+                var text = await _speech.TranscribeAsync(stream, audio.FileName, audio.ContentType, ct);
+                return text.Length == 0
+                    ? Json(new { ok = false, error = "I could not hear anything. Please try again." })
+                    : Json(new { ok = true, text = text.Length > 2000 ? text[..2000] : text });
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "Speech-to-text failed");
+                return Json(new { ok = false, error = "Voice input failed. Please type your question instead." });
+            }
+        }
+
+        /// <summary>Reads an answer aloud: returns it as MP3 audio.</summary>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [EnableRateLimiting("assistantVoice")]
+        public async Task<IActionResult> Speak([FromBody] SpeakRequest request, CancellationToken ct)
+        {
+            if (!await _permissions.CanViewAsync(User, AppForms.Assistant) || !_speech.IsConfigured)
+            {
+                return NotFound();
+            }
+
+            var text = (request?.Text ?? "").Trim();
+            if (text.Length == 0)
+            {
+                return BadRequest();
+            }
+
+            try
+            {
+                return File(await _speech.SynthesizeAsync(text, ct), "audio/mpeg");
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "Text-to-speech failed");
+                return StatusCode(StatusCodes.Status502BadGateway);
+            }
         }
 
         private async Task WriteEventAsync(string name, object data, CancellationToken ct)
