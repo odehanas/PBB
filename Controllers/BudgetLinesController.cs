@@ -24,6 +24,7 @@ namespace GovBudget.Controllers
 
         // Session key holding the parsed bulk-upload rows awaiting overwrite confirmation.
         private const string PendingBulkKey = "PendingBulkBudgetUpload";
+        private const string UploadMissedContextKey = "UploadMissedContext";
 
         // How a budget line was created. Used so bulk uploads only replace uploaded data
         // and leave manually-entered lines untouched unless the user confirms otherwise.
@@ -175,6 +176,14 @@ namespace GovBudget.Controllers
                 }
             ).Take(100).ToListAsync();
 
+            // Uploaded rows are saved under the Year/EntityCode/DeptCode in the file, which may
+            // not be the context on screen. Point the user at them rather than show an empty list.
+            var uploadMissedContext = TempData[UploadMissedContextKey] != null;
+            if (uploadMissedContext || (int)ViewBag.LineCount == 0)
+            {
+                ViewBag.UploadsElsewhere = await GetUploadsElsewhereAsync(cat.CategoryId, year, entityId.Value, deptId.Value);
+            }
+
             var canManageItems = IsGlobalAdmin();
             ViewBag.CanManageItems = canManageItems;
             var canManageMaster = User.IsInRole("ADMIN") || User.IsInRole("SYSADMIN");
@@ -197,6 +206,52 @@ namespace GovBudget.Controllers
             }
 
             return View(vm);
+        }
+
+        // The contexts, other than the current one, that hold lines this user uploaded for the
+        // category. Most recently uploaded first.
+        private async Task<List<UploadedContext>> GetUploadsElsewhereAsync(int categoryId, int year, int entityId, int deptId)
+        {
+            var (_, entityScope, deptScope) = GetScope();
+            var userName = User.Identity?.Name ?? "Unknown";
+
+            var q = _db.BudgetLines.AsNoTracking().Where(b => b.CategoryId == categoryId
+                && b.EntrySource == EntrySourceUpload
+                && b.CreatedBy == userName
+                && !(b.BudgetYear == year && b.EntityId == entityId && b.DepartmentId == deptId));
+            if (entityScope.HasValue) q = q.Where(b => b.EntityId == entityScope.Value);
+            if (deptScope.HasValue) q = q.Where(b => b.DepartmentId == deptScope.Value);
+
+            var groups = await q
+                .GroupBy(b => new { b.BudgetYear, b.EntityId, b.DepartmentId })
+                .Select(g => new { g.Key.BudgetYear, g.Key.EntityId, g.Key.DepartmentId, LineCount = g.Count(), Latest = g.Max(b => b.BudgetLineId) })
+                .OrderByDescending(g => g.Latest)
+                .Take(10)
+                .ToListAsync();
+
+            var result = new List<UploadedContext>();
+            foreach (var g in groups)
+            {
+                result.Add(new UploadedContext
+                {
+                    BudgetYear = g.BudgetYear,
+                    EntityId = g.EntityId,
+                    DepartmentId = g.DepartmentId,
+                    LineCount = g.LineCount,
+                    Label = await ScopeLabelAsync(g.BudgetYear, g.DepartmentId)
+                });
+            }
+            return result;
+        }
+
+        // Flags the next Entry page to list where the rows went if any fell outside the context.
+        private void FlagIfUploadMissedContext(List<BudgetLines> lines)
+        {
+            var year = HttpContext.Session.GetInt("ctxYear") ?? DateTime.Now.Year;
+            var entityId = HttpContext.Session.GetInt("ctxEntityId");
+            var deptId = HttpContext.Session.GetInt("ctxDeptId");
+            if (lines.Any(l => l.BudgetYear != year || l.EntityId != entityId || l.DepartmentId != deptId))
+                TempData[UploadMissedContextKey] = "1";
         }
 
         private bool IsGlobalAdmin()
@@ -1292,6 +1347,7 @@ WHERE b.BudgetYear = {year.Value}
             // No existing data for these scopes: straight insert (nothing to delete).
             await ApplyBulkAsync(toInsert, cat.CategoryId, scopes, deleteExisting: false, deleteManual: false, userName, category, file.FileName);
             TempData["Success"] = $"Imported {toInsert.Count} {category} budget line(s).";
+            FlagIfUploadMissedContext(toInsert);
             return RedirectToAction(nameof(Entry), new { category });
         }
 
@@ -1409,6 +1465,7 @@ WHERE b.BudgetYear = {year.Value}
             var manualNote = deleteManual ? " (including manually-entered lines)" : " (manually-entered lines kept)";
 
             TempData["Success"] = $"Replaced existing {category} data: deleted {deleted} transaction(s){manualNote} and imported {toInsert.Count} new line(s).";
+            FlagIfUploadMissedContext(toInsert);
             return RedirectToAction(nameof(Entry), new { category });
         }
 
@@ -1810,6 +1867,15 @@ WHERE b.BudgetYear = {year.Value}
         public List<BudgetLines> Lines { get; set; } = new();
         // The (year, entity, cost center) combinations that will be cleared on confirmation.
         public List<BulkScope> Scopes { get; set; } = new();
+    }
+
+    public class UploadedContext
+    {
+        public int BudgetYear { get; set; }
+        public int EntityId { get; set; }
+        public int DepartmentId { get; set; }
+        public int LineCount { get; set; }
+        public string Label { get; set; } = "";
     }
 
     public class BulkScope

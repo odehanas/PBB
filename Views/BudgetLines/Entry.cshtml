@@ -78,6 +78,27 @@
         <div class="alert alert-danger">@TempData["Error"]</div>
     }
 
+    @if (ViewBag.UploadsElsewhere is List<GovBudget.Controllers.UploadedContext> uploadsElsewhere && uploadsElsewhere.Count > 0)
+    {
+        <div class="alert alert-warning" id="uploadsElsewhere">
+            <div class="fw-bold">Your uploaded @category lines are under a different budget context</div>
+            <div class="small mb-2">
+                Each row is saved under the Year, EntityCode and DeptCode in the Excel file. This page only lists lines for the context shown above.
+            </div>
+            @foreach (var u in uploadsElsewhere)
+            {
+                <form asp-controller="Context" asp-action="Select" method="post" class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                    <input type="hidden" name="BudgetYear" value="@u.BudgetYear" />
+                    <input type="hidden" name="EntityId" value="@u.EntityId" />
+                    <input type="hidden" name="DepartmentId" value="@u.DepartmentId" />
+                    <input type="hidden" name="returnUrl" value="@Url.Action("Entry", "BudgetLines", new { category })" />
+                    <span>@u.Label: <strong>@u.LineCount.ToString("N0") line(s)</strong></span>
+                    <button type="submit" class="btn btn-sm btn-outline-dark">Switch to this context</button>
+                </form>
+            }
+        </div>
+    }
+
     @if (string.Equals(submissionStatus, "Returned", StringComparison.OrdinalIgnoreCase))
     {
         <div class="alert alert-warning d-flex justify-content-between align-items-start">
