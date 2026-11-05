@@ -1,0 +1,115 @@
+@model GovBudget.Models.UploadPreviewVm
+@{
+    ViewData["Title"] = Model.Title;
+    const int maxRows = 500;
+    var hasB = !string.IsNullOrEmpty(Model.ValueBHeader);
+    var hasKey2 = !string.IsNullOrEmpty(Model.Key2Header);
+    var ordered = Model.Rows
+        .OrderBy(r => r.Status == "Changed" ? 0 : r.Status == "New" ? 1 : 2)
+        .ThenBy(r => r.Key2).ThenBy(r => r.Key)
+        .ToList();
+    string Money(decimal? v) => v.HasValue ? v.Value.ToString("#,##0.00") : "—";
+    string Delta(decimal before, decimal after)
+    {
+        var d = after - before;
+        return d == 0 ? "no change" : (d > 0 ? "+" : "") + d.ToString("#,##0.00");
+    }
+}
+
+<div class="container py-3">
+    <h1 class="mb-0">@Model.Title</h1>
+    <div class="text-muted small mb-3">@Model.Subtitle @(Model.FileName != null ? "· File: " + Model.FileName : "")</div>
+
+    <div class="alert alert-warning">
+        <strong>Nothing has been saved yet.</strong> Check the summary below, then confirm to save the upload, or cancel to discard it.
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body py-2">
+            <div class="small text-muted">New rows</div><div class="fs-4 fw-bold">@Model.NewCount</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card h-100 border-warning"><div class="card-body py-2">
+            <div class="small text-muted">Rows that change</div><div class="fs-4 fw-bold">@Model.ChangedCount</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body py-2">
+            <div class="small text-muted">Same as stored</div><div class="fs-4 fw-bold">@Model.UnchangedCount</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body py-2">
+            <div class="small text-muted">Stored, not in file (kept)</div><div class="fs-4 fw-bold">@Model.KeptCount</div></div></div></div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2">
+            <table class="table table-sm mb-0">
+                <thead><tr><th></th><th class="text-end">Before</th><th class="text-end">After</th><th class="text-end">Difference</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>Total @Model.ValueAHeader</td>
+                        <td class="text-end">@Money(Model.TotalABefore)</td>
+                        <td class="text-end fw-bold">@Money(Model.TotalAAfter)</td>
+                        <td class="text-end">@Delta(Model.TotalABefore, Model.TotalAAfter)</td>
+                    </tr>
+                    @if (hasB)
+                    {
+                        <tr>
+                            <td>Total @Model.ValueBHeader</td>
+                            <td class="text-end">@Money(Model.TotalBBefore)</td>
+                            <td class="text-end fw-bold">@Money(Model.TotalBAfter)</td>
+                            <td class="text-end">@Delta(Model.TotalBBefore ?? 0m, Model.TotalBAfter ?? 0m)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2 mb-3">
+        <form asp-controller="@Model.ConfirmController" asp-action="@Model.ConfirmAction" method="post" class="mb-0">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-success">Confirm and save</button>
+        </form>
+        <form asp-controller="@Model.ConfirmController" asp-action="@Model.CancelAction" method="post" class="mb-0">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-outline-secondary">Cancel</button>
+        </form>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-white fw-bold">Rows in the file@(ordered.Count > maxRows ? $" (first {maxRows} of {ordered.Count}, changes first)" : "")</div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            @if (hasKey2) { <th>@Model.Key2Header</th> }
+                            <th>@Model.KeyHeader</th>
+                            <th>Status</th>
+                            <th class="text-end">@Model.ValueAHeader before</th>
+                            <th class="text-end">@Model.ValueAHeader after</th>
+                            @if (hasB)
+                            {
+                                <th class="text-end">@Model.ValueBHeader before</th>
+                                <th class="text-end">@Model.ValueBHeader after</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in ordered.Take(maxRows))
+                        {
+                            var badge = r.Status == "Changed" ? "bg-warning text-dark" : r.Status == "New" ? "bg-primary" : "bg-light text-muted";
+                            <tr>
+                                @if (hasKey2) { <td class="text-nowrap">@r.Key2</td> }
+                                <td class="text-nowrap">@r.Key</td>
+                                <td><span class="badge @badge">@r.Status</span></td>
+                                <td class="text-end">@Money(r.ABefore)</td>
+                                <td class="text-end @(r.ABefore != r.AAfter ? "fw-bold" : "")">@Money(r.AAfter)</td>
+                                @if (hasB)
+                                {
+                                    <td class="text-end">@Money(r.BBefore)</td>
+                                    <td class="text-end @(r.BBefore != r.BAfter ? "fw-bold" : "")">@Money(r.BAfter)</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

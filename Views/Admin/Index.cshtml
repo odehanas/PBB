@@ -181,6 +181,16 @@
                 }
 
                 <div class="col">
+                    <div class="card h-100 border-dark">
+                        <div class="card-body">
+                            <h5 class="card-title">Upload History</h5>
+                            <p class="card-text">Every Excel upload: who, when, which file and what changed. Undo the latest upload when needed.</p>
+                            <a asp-controller="ImportHistory" asp-action="Index" class="btn btn-outline-dark">Open</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col">
                     <div class="card h-100 border-primary">
                         <div class="card-body">
                             <h5 class="card-title">Budget Entry</h5>
@@ -343,6 +353,13 @@
                                 </td>
                             </tr>
                         }
+                        <tr>
+                            <td>Upload History</td>
+                            <td>Every Excel upload: who, when, which file and what changed. Undo the latest upload when needed.</td>
+                            <td class="text-end">
+                                <a asp-controller="ImportHistory" asp-action="Index" class="btn btn-sm btn-outline-dark">Open</a>
+                            </td>
+                        </tr>
                         <tr>
                             <td>Budget Entry</td>
                             <td>Add OPEX, CAPEX, and Revenue lines with monthly and forecast splits.</td>

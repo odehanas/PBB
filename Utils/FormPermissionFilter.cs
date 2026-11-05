@@ -47,6 +47,7 @@ namespace GovBudget.Utils
                 ["GLAccounts"] = new[] { AppForms.GlAccounts },
                 ["Guides"] = new[] { AppForms.Guides },
                 ["HrCosts"] = new[] { AppForms.HrCosts, AppForms.HrAllocation },
+                ["ImportHistory"] = new[] { AppForms.AdminRoom },
                 ["InternalMessages"] = new[] { AppForms.Requests },
                 ["Items"] = new[] { AppForms.Items },
                 ["ManagementReview"] = new[] { AppForms.ManagementReview },

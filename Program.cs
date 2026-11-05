@@ -183,6 +183,7 @@ builder.Services.AddAuthorization(options =>
 // whenever an administrator saves the matrix.
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<GovBudget.Services.IPermissionService, GovBudget.Services.PermissionService>();
+builder.Services.AddScoped<GovBudget.Services.ImportHistoryService>();
 
 // Session for holding the selected Year/Entity/Department
 builder.Services.AddSession(options =>
@@ -267,6 +268,22 @@ try
 catch (Exception ex)
 {
     app.Logger.LogError(ex, "Allocation scenario upgrade failed at startup.");
+}
+
+// Upload history: create the import log tables used by Admin > Upload History (and undo)
+// when they are missing. Idempotent; also available as docs/AddImportHistory.sql.
+try
+{
+    using var importScope = app.Services.CreateScope();
+    var importDb = importScope.ServiceProvider.GetRequiredService<GovBudgetContext>();
+    if (importDb.Database.CanConnect())
+    {
+        GovBudget.Services.ImportHistoryUpgrade.Run(importDb, app.Logger);
+    }
+}
+catch (Exception ex)
+{
+    app.Logger.LogError(ex, "Import history upgrade failed at startup.");
 }
 
 // Ensure the core budget categories always exist (Budget Entry relies on these codes).

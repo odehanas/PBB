@@ -23,9 +23,13 @@ namespace GovBudget.Controllers
         // Session key holding the parsed rows awaiting overwrite confirmation.
         private const string PendingImportKey = "PendingItemImport";
 
-        public ItemsController(GovBudgetContext context)
+        private readonly GovBudget.Services.ImportHistoryService _history;
+        private const string PendingImportFileKey = "PendingItemImportFile";
+
+        public ItemsController(GovBudgetContext context, GovBudget.Services.ImportHistoryService history)
         {
             _context = context;
+            _history = history;
         }
 
         private bool IsGlobalAdmin()
@@ -290,6 +294,7 @@ namespace GovBudget.Controllers
             if (conflicts.Count > 0)
             {
                 HttpContext.Session.SetString(PendingImportKey, JsonSerializer.Serialize(rows));
+                HttpContext.Session.SetString(PendingImportFileKey, file.FileName);
 
                 var vm = new ItemImportConfirmVm
                 {
@@ -313,7 +318,7 @@ namespace GovBudget.Controllers
             }
 
             // No conflicts: only new items are added; existing items stay untouched.
-            var (created, updated) = await ApplyItemImportAsync(rows);
+            var (created, updated) = await ApplyItemImportAsync(rows, file.FileName);
             TempData["Success"] = $"Upload complete. Created: {created}. Updated: {updated}.";
             return RedirectToAction(nameof(Index));
         }
@@ -324,7 +329,9 @@ namespace GovBudget.Controllers
         public async Task<IActionResult> ConfirmUpload()
         {
             var json = HttpContext.Session.GetString(PendingImportKey);
+            var pendingFile = HttpContext.Session.GetString(PendingImportFileKey);
             HttpContext.Session.Remove(PendingImportKey);
+            HttpContext.Session.Remove(PendingImportFileKey);
             if (string.IsNullOrEmpty(json))
             {
                 TempData["Error"] = "Your import session expired. Please upload the file again.";
@@ -338,7 +345,7 @@ namespace GovBudget.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
-            var (created, updated) = await ApplyItemImportAsync(rows);
+            var (created, updated) = await ApplyItemImportAsync(rows, pendingFile);
             TempData["Success"] = $"Import confirmed. Created: {created}. Overwritten: {updated}.";
             return RedirectToAction(nameof(Index));
         }
@@ -366,8 +373,12 @@ namespace GovBudget.Controllers
 
         // Applies parsed rows: overwrites items whose ItemCode already exists, inserts the rest.
         // Existing items NOT present in the file are never modified.
-        private async Task<(int created, int updated)> ApplyItemImportAsync(List<ItemImportRow> rows)
+        private Task<(int created, int updated)> ApplyItemImportAsync(List<ItemImportRow> rows, string? sourceFile)
         {
+            // Data change and upload log in one transaction (see ImportHistoryService).
+            return _history.RunInTransactionAsync(async () =>
+            {
+            var rec = new GovBudget.Services.ImportRecorder();
             var existingByCode = await BuildExistingItemMapAsync();
             var created = 0;
             var updated = 0;
@@ -376,6 +387,7 @@ namespace GovBudget.Controllers
             {
                 if (existingByCode.TryGetValue(x.ItemCode.Trim(), out var existing))
                 {
+                    rec.AddUpdated(GovBudget.Services.ImportTables.Items, existing.ItemId, existing);
                     existing.ItemName = x.ItemName;
                     existing.GLAccountId = x.GLAccountId;
                     existing.IsActive = x.IsActive;
@@ -383,19 +395,24 @@ namespace GovBudget.Controllers
                 }
                 else
                 {
-                    _context.Items.Add(new Items
+                    var item = new Items
                     {
                         ItemCode = x.ItemCode,
                         ItemName = x.ItemName,
                         GLAccountId = x.GLAccountId,
                         IsActive = x.IsActive
-                    });
+                    };
+                    _context.Items.Add(item);
+                    rec.AddCreated(GovBudget.Services.ImportTables.Items, () => item.ItemId);
                     created++;
                 }
             }
 
             await _context.SaveChangesAsync();
+            await _history.SaveBatchAsync(rec, GovBudget.Services.ImportTypes.Items, null, null,
+                "Items master", sourceFile, User.Identity?.Name);
             return (created, updated);
+            });
         }
 
         [HttpPost]
