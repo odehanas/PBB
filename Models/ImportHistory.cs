@@ -63,6 +63,12 @@ public partial class ImportBatchChanges
     public long RecordId { get; set; }
 
     public string? BeforeJson { get; set; }
+
+    /// <summary>
+    /// The record as the upload left it, kept for tables with no "last updated" column (items)
+    /// so an undo can detect later hand edits. Null otherwise.
+    /// </summary>
+    public string? AfterJson { get; set; }
 }
 
 public partial class GovBudgetContext

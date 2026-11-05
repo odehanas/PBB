@@ -387,7 +387,8 @@ namespace GovBudget.Controllers
             {
                 if (existingByCode.TryGetValue(x.ItemCode.Trim(), out var existing))
                 {
-                    rec.AddUpdated(GovBudget.Services.ImportTables.Items, existing.ItemId, existing);
+                    var updatedItem = existing;
+                    rec.AddUpdated(GovBudget.Services.ImportTables.Items, existing.ItemId, existing, () => GovBudget.Services.ImportSnapshot.Take(updatedItem));
                     existing.ItemName = x.ItemName;
                     existing.GLAccountId = x.GLAccountId;
                     existing.IsActive = x.IsActive;
@@ -403,7 +404,7 @@ namespace GovBudget.Controllers
                         IsActive = x.IsActive
                     };
                     _context.Items.Add(item);
-                    rec.AddCreated(GovBudget.Services.ImportTables.Items, () => item.ItemId);
+                    rec.AddCreated(GovBudget.Services.ImportTables.Items, () => item.ItemId, () => GovBudget.Services.ImportSnapshot.Take(item));
                     created++;
                 }
             }

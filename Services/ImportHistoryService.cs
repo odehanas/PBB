@@ -31,18 +31,22 @@ namespace GovBudget.Services
     /// </summary>
     public sealed class ImportRecorder
     {
-        internal readonly List<(string Table, string Type, Func<long> Id, string? Before)> Changes = new();
+        internal readonly List<(string Table, string Type, Func<long> Id, string? Before, Func<string?>? After)> Changes = new();
 
         public int Created => Changes.Count(c => c.Type == "CREATED");
         public int Updated => Changes.Count(c => c.Type == "UPDATED");
         public int Deleted => Changes.Count(c => c.Type == "DELETED");
 
-        /// <summary>A new record; its id is read after SaveChanges has assigned it.</summary>
-        public void AddCreated(string table, Func<long> idAfterSave) => Changes.Add((table, "CREATED", idAfterSave, null));
+        /// <summary>
+        /// A new record; its id is read after SaveChanges has assigned it. Pass an "after" snapshot
+        /// (here and in AddUpdated) for tables with no "last updated" column, so an undo can tell
+        /// whether the record was changed by hand since the upload.
+        /// </summary>
+        public void AddCreated(string table, Func<long> idAfterSave, Func<string?>? after = null) => Changes.Add((table, "CREATED", idAfterSave, null, after));
 
-        public void AddUpdated(string table, long id, object before) => Changes.Add((table, "UPDATED", () => id, ImportSnapshot.Take(before)));
+        public void AddUpdated(string table, long id, object before, Func<string?>? after = null) => Changes.Add((table, "UPDATED", () => id, ImportSnapshot.Take(before), after));
 
-        public void AddDeleted(string table, long id, object before) => Changes.Add((table, "DELETED", () => id, ImportSnapshot.Take(before)));
+        public void AddDeleted(string table, long id, object before) => Changes.Add((table, "DELETED", () => id, ImportSnapshot.Take(before), null));
     }
 
     /// <summary>Serialises the scalar columns of an entity (and a budget line's document).</summary>
@@ -163,7 +167,8 @@ namespace GovBudget.Services
                     TableName = c.Table,
                     ChangeType = c.Type,
                     RecordId = c.Id(),
-                    BeforeJson = c.Before
+                    BeforeJson = c.Before,
+                    AfterJson = c.After?.Invoke()
                 });
             }
             await _db.SaveChangesAsync();
@@ -201,12 +206,15 @@ namespace GovBudget.Services
             }
 
             // 2) Records edited by hand after the upload would silently lose those edits.
+            // BudgetLines.UpdatedAt is datetime2(0), so SQL Server can round the upload's own
+            // stamp up past ImportedAt; only a time beyond that rounding counts as a later edit.
+            var editedAfter = batch.ImportedAt.AddSeconds(1);
             var touched = changes.Where(c => c.ChangeType != "DELETED").ToList();
             var midIds = touched.Where(c => c.TableName == ImportTables.MidYear).Select(c => c.RecordId).ToList();
             if (midIds.Count > 0)
             {
                 var edited = await _db.MidYearGlActualForecasts.AsNoTracking()
-                    .CountAsync(x => midIds.Contains(x.MidYearId) && x.ForecastUpdatedAt > batch.ImportedAt);
+                    .CountAsync(x => midIds.Contains(x.MidYearId) && x.ForecastUpdatedAt > editedAfter);
                 if (edited > 0) return $"{edited} mid-year row(s) had their H2 forecast edited on screen after this upload. Undo would discard those edits.";
             }
 
@@ -214,8 +222,25 @@ namespace GovBudget.Services
             if (lineIds.Count > 0)
             {
                 var edited = await _db.BudgetLines.AsNoTracking()
-                    .CountAsync(x => lineIds.Contains(x.BudgetLineId) && x.UpdatedAt > batch.ImportedAt);
+                    .CountAsync(x => lineIds.Contains(x.BudgetLineId) && x.UpdatedAt > editedAfter);
                 if (edited > 0) return $"{edited} budget line(s) were edited after this upload. Undo would discard those edits.";
+            }
+
+            // Items have no "last updated" column, so compare them with what the upload wrote.
+            var itemAfter = await _db.ImportBatchChanges.AsNoTracking()
+                .Where(c => c.ImportBatchId == batchId && c.TableName == ImportTables.Items && c.AfterJson != null)
+                .Select(c => new { c.RecordId, c.AfterJson })
+                .ToListAsync();
+            if (itemAfter.Count > 0)
+            {
+                var itemIds = itemAfter.Select(c => (int)c.RecordId).ToList();
+                var currentItems = await _db.Items.AsNoTracking().Where(x => itemIds.Contains(x.ItemId)).ToListAsync();
+                var afterById = itemAfter.ToDictionary(c => c.RecordId, c => c.AfterJson);
+                var editedItems = currentItems.Where(x => ImportSnapshot.Take(x) != afterById[x.ItemId]).ToList();
+                if (editedItems.Count > 0)
+                {
+                    return $"{editedItems.Count} item(s) were edited after this upload ({string.Join(", ", editedItems.Take(5).Select(x => x.ItemCode))}). Undo would discard those edits.";
+                }
             }
 
             // 3) Budget lines in a submitted / locked budget must not change.
@@ -277,6 +302,7 @@ namespace GovBudget.Services
                     .ToListAsync();
 
                 int removed = 0, restored = 0, reinserted = 0, missing = 0;
+                var putBack = new List<(long OldId, BudgetLines Line)>();
 
                 foreach (var c in changes)
                 {
@@ -318,6 +344,7 @@ namespace GovBudget.Services
                                 var document = ImportSnapshot.RestoreDocument(c.BeforeJson!);
                                 if (document != null) line.BudgetLineDocuments = document;
                                 _db.BudgetLines.Add(line);
+                                putBack.Add((c.RecordId, line));
                                 reinserted++;
                             }
                             break;
@@ -340,6 +367,22 @@ namespace GovBudget.Services
                 });
 
                 await _db.SaveChangesAsync();
+
+                // Lines put back get new ids. Point other uploads' log rows at them, otherwise
+                // undoing the upload that originally created these lines would find nothing.
+                if (putBack.Count > 0)
+                {
+                    var newIdByOld = putBack.ToDictionary(p => p.OldId, p => p.Line.BudgetLineId);
+                    var oldIds = newIdByOld.Keys.ToList();
+                    var otherLogRows = await _db.ImportBatchChanges
+                        .Where(x => x.ImportBatchId != batchId && x.TableName == ImportTables.BudgetLines && oldIds.Contains(x.RecordId))
+                        .ToListAsync();
+                    foreach (var logRow in otherLogRows)
+                    {
+                        logRow.RecordId = newIdByOld[logRow.RecordId];
+                    }
+                    await _db.SaveChangesAsync();
+                }
 
                 var msg = $"Upload #{batch.ImportBatchId} undone: {removed} added row(s) removed, {restored} changed row(s) restored, {reinserted} replaced row(s) put back.";
                 if (missing > 0) msg += $" {missing} row(s) no longer existed and were skipped.";

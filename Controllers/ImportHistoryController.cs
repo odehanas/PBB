@@ -55,13 +55,18 @@ namespace GovBudget.Controllers
                 .Where(e => entityIds.Contains(e.EntityId))
                 .ToDictionaryAsync(e => e.EntityId, e => e.EntityCode);
 
-            // Only the newest applied upload per type + year + entity is offered for undo here;
-            // the service re-checks everything (later uploads, on-screen edits, locks) on click.
-            var newestApplied = batches
-                .Where(b => b.Status == "APPLIED")
-                .GroupBy(b => (b.ImportType, b.BudgetYear, b.EntityId))
-                .Select(g => g.Max(b => b.ImportBatchId))
-                .ToHashSet();
+            // Undo is offered unless a later applied upload changed the same records (the same
+            // rule the service enforces). The service re-checks everything, including on-screen
+            // edits and locks, on click.
+            var appliedIds = batches.Where(b => b.Status == "APPLIED").Select(b => b.ImportBatchId).ToList();
+            var blockedByLater = (await (
+                from c in _db.ImportBatchChanges.AsNoTracking()
+                where appliedIds.Contains(c.ImportBatchId)
+                join l in _db.ImportBatchChanges.AsNoTracking()
+                    on new { c.TableName, c.RecordId } equals new { l.TableName, l.RecordId }
+                join b in _db.ImportBatches.AsNoTracking() on l.ImportBatchId equals b.ImportBatchId
+                where l.ImportBatchId > c.ImportBatchId && b.Status == "APPLIED"
+                select c.ImportBatchId).Distinct().ToListAsync()).ToHashSet();
 
             var vm = new ImportHistoryVm
             {
@@ -73,7 +78,7 @@ namespace GovBudget.Controllers
                 {
                     Batch = b,
                     EntityCode = b.EntityId.HasValue && entityCodes.TryGetValue(b.EntityId.Value, out var c) ? c : (b.EntityId.HasValue ? b.EntityId.ToString()! : "Several"),
-                    CanOfferUndo = newestApplied.Contains(b.ImportBatchId)
+                    CanOfferUndo = b.Status == "APPLIED" && !blockedByLater.Contains(b.ImportBatchId)
                 }).ToList(),
                 TypeOptions = new List<SelectListItem>
                 {

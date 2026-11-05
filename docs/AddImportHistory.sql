@@ -32,9 +32,16 @@ BEGIN
         TableName      NVARCHAR(60)  NOT NULL,
         ChangeType     NVARCHAR(10)  NOT NULL,
         RecordId       BIGINT        NOT NULL,
-        BeforeJson     NVARCHAR(MAX) NULL
+        BeforeJson     NVARCHAR(MAX) NULL,
+        AfterJson      NVARCHAR(MAX) NULL
     );
     CREATE INDEX IX_ImportBatchChanges_Batch ON core.ImportBatchChanges (ImportBatchId);
     CREATE INDEX IX_ImportBatchChanges_Record ON core.ImportBatchChanges (TableName, RecordId);
+END;
+GO
+
+IF COL_LENGTH(N'core.ImportBatchChanges', N'AfterJson') IS NULL
+BEGIN
+    ALTER TABLE core.ImportBatchChanges ADD AfterJson NVARCHAR(MAX) NULL;
 END;
 GO
