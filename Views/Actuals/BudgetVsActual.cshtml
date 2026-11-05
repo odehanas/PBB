@@ -13,7 +13,15 @@
     var grandFull = Model.Groups.Sum(g => g.FullYear);
     var grandVar = Model.Groups.Sum(g => g.Variance);
 
-    string VarClass(decimal v) => v < 0 ? "text-danger" : "text-success";
+    // Mid-year figures belong to the previous year, so no variance against this year's budget is shown.
+    var midYearActualYear = Model.MidYearActualYear;
+    var hideVariance = midYearActualYear.HasValue;
+    string VarClass(decimal v) => hideVariance ? "" : (v < 0 ? "text-danger" : "text-success");
+    string VarText(decimal v) => hideVariance ? "—" : v.ToString("N0");
+    string PctText(decimal? p) => hideVariance ? "—" : (p.HasValue ? p.Value.ToString("0.0") + "%" : "-");
+    var headActual = Model.MidYearOnly ? $"{midYearActualYear} H1 Actual" : "Actual YTD";
+    var headForecast = Model.MidYearOnly ? $"{midYearActualYear} H2 Forecast" : "Forecast";
+    var headFull = Model.MidYearOnly ? $"{midYearActualYear} Est. Full Year" : "Full Year";
 
     var dim = (ViewBag.Dim as string) ?? "gl";
     var breakdown = ViewBag.Breakdown as GovBudget.Controllers.BvaBreakdownVm;
@@ -78,6 +86,16 @@
         }
     </ul>
 
+    @if (hideVariance)
+    {
+        <div class="alert alert-info py-2 small">
+            <strong>Showing @midYearActualYear figures from the Mid-Year upload</strong> where nothing has been imported for @year:
+            H1 actuals, H2 forecast and their estimated full year.
+            Activity, programme and other breakdowns split each GL total by @year budget share, so they are estimates.
+            Variance is blank because these figures cover @midYearActualYear, not the @year budget.
+        </div>
+    }
+
     <div class="card shadow-sm">
         <div class="card-body p-0">
             @if (Model.Groups.Count == 0)
@@ -92,9 +110,9 @@
                             <tr>
                                 <th>GL</th>
                                 <th class="text-end num">Budget</th>
-                                <th class="text-end num">Actual YTD</th>
-                                <th class="text-end num">Forecast</th>
-                                <th class="text-end num">Full Year</th>
+                                <th class="text-end num">@headActual</th>
+                                <th class="text-end num">@headForecast</th>
+                                <th class="text-end num">@headFull</th>
                                 <th class="text-end num">Variance</th>
                                 <th class="text-end num">Var %</th>
                             </tr>
@@ -108,7 +126,7 @@
                                 <td class="text-end num">@g.ActualYtd.ToString("N0")</td>
                                 <td class="text-end num">@g.Forecast.ToString("N0")</td>
                                 <td class="text-end num">@g.FullYear.ToString("N0")</td>
-                                <td class="text-end num @VarClass(g.Variance)">@g.Variance.ToString("N0")</td>
+                                <td class="text-end num @VarClass(g.Variance)">@VarText(g.Variance)</td>
                                 <td class="text-end num"></td>
                             </tr>
                             foreach (var row in g.Rows)
@@ -119,8 +137,8 @@
                                     <td class="text-end num">@row.ActualYtd.ToString("N0")</td>
                                     <td class="text-end num">@row.Forecast.ToString("N0")</td>
                                     <td class="text-end num">@row.FullYear.ToString("N0")</td>
-                                    <td class="text-end num @VarClass(row.Variance)">@row.Variance.ToString("N0")</td>
-                                    <td class="text-end num">@(row.VariancePct.HasValue ? row.VariancePct.Value.ToString("0.0") + "%" : "-")</td>
+                                    <td class="text-end num @VarClass(row.Variance)">@VarText(row.Variance)</td>
+                                    <td class="text-end num">@PctText(row.VariancePct)</td>
                                 </tr>
                             }
                         }
@@ -132,7 +150,7 @@
                                 <td class="text-end num">@grandActual.ToString("N0")</td>
                                 <td class="text-end num">@grandForecast.ToString("N0")</td>
                                 <td class="text-end num">@grandFull.ToString("N0")</td>
-                                <td class="text-end num @VarClass(grandVar)">@grandVar.ToString("N0")</td>
+                                <td class="text-end num @VarClass(grandVar)">@VarText(grandVar)</td>
                                 <td class="text-end num"></td>
                             </tr>
                         </tfoot>
@@ -153,9 +171,9 @@
                                 <tr>
                                     <th>Programme / Activity</th>
                                     <th class="text-end num">Budget</th>
-                                    <th class="text-end num">Actual YTD</th>
-                                    <th class="text-end num">Forecast</th>
-                                    <th class="text-end num">Full Year</th>
+                                    <th class="text-end num">@headActual</th>
+                                    <th class="text-end num">@headForecast</th>
+                                    <th class="text-end num">@headFull</th>
                                     <th class="text-end num">Variance</th>
                                     <th class="text-end num">Var %</th>
                                 </tr>
@@ -169,8 +187,8 @@
                                     <td class="text-end num">@p.ActualYtd.ToString("N0")</td>
                                     <td class="text-end num">@p.Forecast.ToString("N0")</td>
                                     <td class="text-end num">@p.FullYear.ToString("N0")</td>
-                                    <td class="text-end num @VarClass(p.Variance)">@p.Variance.ToString("N0")</td>
-                                    <td class="text-end num">@(p.VariancePct.HasValue ? p.VariancePct.Value.ToString("0.0") + "%" : "-")</td>
+                                    <td class="text-end num @VarClass(p.Variance)">@VarText(p.Variance)</td>
+                                    <td class="text-end num">@PctText(p.VariancePct)</td>
                                 </tr>
                                 foreach (var a in p.Activities)
                                 {
@@ -180,8 +198,8 @@
                                         <td class="text-end num">@a.ActualYtd.ToString("N0")</td>
                                         <td class="text-end num">@a.Forecast.ToString("N0")</td>
                                         <td class="text-end num">@a.FullYear.ToString("N0")</td>
-                                        <td class="text-end num @VarClass(a.Variance)">@a.Variance.ToString("N0")</td>
-                                        <td class="text-end num">@(a.VariancePct.HasValue ? a.VariancePct.Value.ToString("0.0") + "%" : "-")</td>
+                                        <td class="text-end num @VarClass(a.Variance)">@VarText(a.Variance)</td>
+                                        <td class="text-end num">@PctText(a.VariancePct)</td>
                                     </tr>
                                 }
                             }
@@ -193,7 +211,7 @@
                                     <td class="text-end num">@tree.ActualYtd.ToString("N0")</td>
                                     <td class="text-end num">@tree.Forecast.ToString("N0")</td>
                                     <td class="text-end num">@tree.FullYear.ToString("N0")</td>
-                                    <td class="text-end num @VarClass(tree.Variance)">@tree.Variance.ToString("N0")</td>
+                                    <td class="text-end num @VarClass(tree.Variance)">@VarText(tree.Variance)</td>
                                     <td class="text-end num"></td>
                                 </tr>
                             </tfoot>
@@ -213,9 +231,9 @@
                             <tr>
                                 <th>@DimLabel(dim)</th>
                                 <th class="text-end num">Budget</th>
-                                <th class="text-end num">Actual YTD</th>
-                                <th class="text-end num">Forecast</th>
-                                <th class="text-end num">Full Year</th>
+                                <th class="text-end num">@headActual</th>
+                                <th class="text-end num">@headForecast</th>
+                                <th class="text-end num">@headFull</th>
                                 <th class="text-end num">Variance</th>
                                 <th class="text-end num">Var %</th>
                                 <th>Basis</th>
@@ -230,8 +248,8 @@
                                 <td class="text-end num">@row.ActualYtd.ToString("N0")</td>
                                 <td class="text-end num">@row.Forecast.ToString("N0")</td>
                                 <td class="text-end num">@row.FullYear.ToString("N0")</td>
-                                <td class="text-end num @VarClass(row.Variance)">@row.Variance.ToString("N0")</td>
-                                <td class="text-end num">@(row.VariancePct.HasValue ? row.VariancePct.Value.ToString("0.0") + "%" : "-")</td>
+                                <td class="text-end num @VarClass(row.Variance)">@VarText(row.Variance)</td>
+                                <td class="text-end num">@PctText(row.VariancePct)</td>
                                 <td>
                                     @if (row.IsDerived)
                                     {
@@ -252,7 +270,7 @@
                                 <td class="text-end num">@breakdown.ActualYtd.ToString("N0")</td>
                                 <td class="text-end num">@breakdown.Forecast.ToString("N0")</td>
                                 <td class="text-end num">@breakdown.FullYear.ToString("N0")</td>
-                                <td class="text-end num @VarClass(breakdown.Variance)">@breakdown.Variance.ToString("N0")</td>
+                                <td class="text-end num @VarClass(breakdown.Variance)">@VarText(breakdown.Variance)</td>
                                 <td class="text-end num"></td>
                                 <td></td>
                             </tr>
@@ -262,8 +280,15 @@
             }
         </div>
         <div class="card-footer py-2 text-muted small">
-            Variance = Budget &minus; Full Year (positive = under budget / favourable for costs).
-            @if (dim == "gl")
+            @if (!hideVariance)
+            {
+                <text>Variance = Budget &minus; Full Year (positive = under budget / favourable for costs).</text>
+            }
+            @if (hideVariance && dim == "gl")
+            {
+                <text>GL and Category totals come directly from the Mid-Year upload.</text>
+            }
+            else if (dim == "gl")
             {
                 <text>GL and Category totals are posted (exact) from the SAP GL import.</text>
             }

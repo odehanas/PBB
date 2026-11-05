@@ -1038,7 +1038,7 @@ namespace GovBudget.Controllers
             dim = (dim ?? "gl").Trim().ToLowerInvariant();
             if (!BvaDims.Contains(dim)) dim = "gl";
 
-            var vm = await BuildBudgetVsActual(selectedYear, entityId);
+            var vm = await BuildBudgetVsActual(selectedYear, entityId, includeMidYear: true);
             ViewBag.Year = selectedYear;
             ViewBag.YearOptions = YearOptions(selectedYear);
             ViewBag.EntityOptions = await EntityOptions(entityId);
@@ -1053,11 +1053,14 @@ namespace GovBudget.Controllers
         public async Task<IActionResult> BudgetVsActualExport(int? year = null, int? entityId = null)
         {
             var selectedYear = ResolveYear(year);
-            var vm = await BuildBudgetVsActual(selectedYear, entityId);
+            var vm = await BuildBudgetVsActual(selectedYear, entityId, includeMidYear: true);
+            var showVariance = !vm.MidYearActualYear.HasValue;
 
             using var wb = new XLWorkbook();
             var ws = wb.Worksheets.Add("Budget vs Actual");
-            var headers = new[] { "Category", "GL Code", "GL Name", "Budget", "Actual YTD", "Forecast", "Full Year", "Variance", "Variance %" };
+            var headers = vm.MidYearOnly
+                ? new[] { "Category", "GL Code", "GL Name", $"{selectedYear} Budget", $"{vm.MidYearActualYear} H1 Actual", $"{vm.MidYearActualYear} H2 Forecast", $"{vm.MidYearActualYear} Est. Full Year", "Variance", "Variance %" }
+                : new[] { "Category", "GL Code", "GL Name", "Budget", "Actual YTD", "Forecast", "Full Year", "Variance", "Variance %" };
             WriteHeader(ws, headers);
             int r = 2;
             foreach (var g in vm.Groups)
@@ -1071,8 +1074,8 @@ namespace GovBudget.Controllers
                     ws.Cell(r, 5).Value = row.ActualYtd;
                     ws.Cell(r, 6).Value = row.Forecast;
                     ws.Cell(r, 7).Value = row.FullYear;
-                    ws.Cell(r, 8).Value = row.Variance;
-                    if (row.VariancePct.HasValue) ws.Cell(r, 9).Value = row.VariancePct.Value / 100m;
+                    if (showVariance) ws.Cell(r, 8).Value = row.Variance;
+                    if (showVariance && row.VariancePct.HasValue) ws.Cell(r, 9).Value = row.VariancePct.Value / 100m;
                     ws.Cell(r, 9).Style.NumberFormat.Format = "0.0%";
                     r++;
                 }
@@ -1082,7 +1085,7 @@ namespace GovBudget.Controllers
                 ws.Cell(r, 5).Value = g.ActualYtd;
                 ws.Cell(r, 6).Value = g.Forecast;
                 ws.Cell(r, 7).Value = g.FullYear;
-                ws.Cell(r, 8).Value = g.Variance;
+                if (showVariance) ws.Cell(r, 8).Value = g.Variance;
                 ws.Range(r, 1, r, 9).Style.Font.Bold = true;
                 r++;
             }
@@ -1091,9 +1094,13 @@ namespace GovBudget.Controllers
             ws.Cell(r, 5).Value = vm.Groups.Sum(g => g.ActualYtd);
             ws.Cell(r, 6).Value = vm.Groups.Sum(g => g.Forecast);
             ws.Cell(r, 7).Value = vm.Groups.Sum(g => g.FullYear);
-            ws.Cell(r, 8).Value = vm.Groups.Sum(g => g.Variance);
+            if (showVariance) ws.Cell(r, 8).Value = vm.Groups.Sum(g => g.Variance);
             ws.Range(r, 1, r, 9).Style.Font.Bold = true;
             ws.Range(r, 1, r, 9).Style.Fill.BackgroundColor = XLColor.FromHtml(GovBudget.Utils.BrandColors.SubtotalHex);
+            if (!showVariance)
+            {
+                ws.Cell(r + 2, 1).Value = $"Where nothing is imported for {selectedYear}, actual and forecast are {vm.MidYearActualYear} figures from the Mid-Year upload. Variance is left blank because they cover a different year from the {selectedYear} budget.";
+            }
             ws.Column(4).Style.NumberFormat.Format = "#,##0";
             ws.Column(5).Style.NumberFormat.Format = "#,##0";
             ws.Column(6).Style.NumberFormat.Format = "#,##0";
@@ -1101,11 +1108,14 @@ namespace GovBudget.Controllers
             ws.Column(8).Style.NumberFormat.Format = "#,##0";
             ws.SheetView.FreezeRows(1);
             ws.Columns().AdjustToContents();
+            if (!showVariance) ws.Column(1).Width = 24; // the note above shouldn't stretch the column
 
             return WorkbookFile(wb, $"BudgetVsActual_{selectedYear}.xlsx");
         }
 
-        private async Task<BudgetVsActualVm> BuildBudgetVsActual(int year, int? entityId)
+        // includeMidYear is only for the read-only report and its export. The Forecast screens also build
+        // on this and must keep seeing only figures that belong to the budget year.
+        private async Task<BudgetVsActualVm> BuildBudgetVsActual(int year, int? entityId, bool includeMidYear = false)
         {
             var vm = new BudgetVsActualVm { Year = year };
             var scope = EffectiveEntityId(entityId);
@@ -1153,6 +1163,22 @@ namespace GovBudget.Controllers
             var fcByGl = (await fcQ.Select(f => new { f.GLCode, f.ForecastRemaining }).ToListAsync())
                 .GroupBy(x => x.GLCode)
                 .ToDictionary(g => g.Key, g => g.Sum(x => x.ForecastRemaining), StringComparer.OrdinalIgnoreCase);
+
+            if (includeMidYear)
+            {
+                var scopeIds = scope.HasValue ? new List<int> { scope.Value } : null;
+                var midYear = await GovBudget.Services.MidYearActualsFallback.LoadAsync(_db, year, scopeIds);
+                if (midYear.Count > 0)
+                {
+                    foreach (var m in midYear)
+                    {
+                        actByGl[m.GLCode] = actByGl.GetValueOrDefault(m.GLCode) + m.ActualH1;
+                        if (m.ForecastH2.HasValue) fcByGl[m.GLCode] = fcByGl.GetValueOrDefault(m.GLCode) + m.ForecastH2.Value;
+                    }
+                    vm.MidYearActualYear = year - 1;
+                    vm.MidYearOnly = !await GovBudget.Services.MidYearActualsFallback.HasImportedAsync(_db, year, scopeIds);
+                }
+            }
 
             // Union of all GL codes seen
             var allCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1250,13 +1276,17 @@ namespace GovBudget.Controllers
             // Actuals (with optional ItemId) and forecast-to-complete, by GL.
             var actQ = _db.ActualPostings.AsNoTracking().Where(p => p.BudgetYear == year);
             if (scope.HasValue) actQ = actQ.Where(p => p.EntityId == scope.Value);
-            var actList = await actQ.Select(p => new { p.GLCode, p.ItemId, p.Amount }).ToListAsync();
+            var actList = await actQ.Select(p => new { p.EntityId, p.GLCode, p.ItemId, p.Amount }).ToListAsync();
+
+            // Amounts are held per entity and GL: entities share GL codes, and each entity's figure is
+            // split only by that entity's own budget.
+            static (int, string) EntityGl(int entityId, string gl) => (entityId, gl.ToUpperInvariant());
 
             var fcQ = _db.ActualForecasts.AsNoTracking().Where(f => f.BudgetYear == year);
             if (scope.HasValue) fcQ = fcQ.Where(f => f.EntityId == scope.Value);
-            var fcByGl = (await fcQ.Select(f => new { f.GLCode, f.ForecastRemaining }).ToListAsync())
-                .GroupBy(x => x.GLCode, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.ForecastRemaining), StringComparer.OrdinalIgnoreCase);
+            var fcByEntityGl = (await fcQ.Select(f => new { f.EntityId, f.GLCode, f.ForecastRemaining }).ToListAsync())
+                .GroupBy(x => EntityGl(x.EntityId, x.GLCode))
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.ForecastRemaining));
 
             bool isItem = dim == "item";
             // For item, actuals tagged with an ItemId are exact; only the untagged remainder is derived.
@@ -1266,16 +1296,28 @@ namespace GovBudget.Controllers
                 : new Dictionary<int, decimal>();
             var postedItems = new HashSet<int>(exactByKey.Keys);
             var actForDerive = (isItem ? actList.Where(x => x.ItemId == null) : actList)
-                .GroupBy(x => x.GLCode, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount), StringComparer.OrdinalIgnoreCase);
+                .GroupBy(x => EntityGl(x.EntityId, x.GLCode))
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
 
-            // Build budget-by-(key -> gl).
-            var budgetByKeyGl = new Dictionary<int, Dictionary<string, decimal>>();
-            void AddBudget(int key, string? gl, decimal amt)
+            // Mid-year GL totals go through the same budget-share split as posted actuals.
+            var midYear = await GovBudget.Services.MidYearActualsFallback.LoadAsync(_db, year, scope.HasValue ? new List<int> { scope.Value } : null);
+            foreach (var m in midYear)
+            {
+                var k = EntityGl(m.EntityId, m.GLCode);
+                actForDerive[k] = actForDerive.GetValueOrDefault(k) + m.ActualH1;
+                if (m.ForecastH2.HasValue) fcByEntityGl[k] = fcByEntityGl.GetValueOrDefault(k) + m.ForecastH2.Value;
+            }
+
+            // Budget per dimension member (for display), and per entity + GL (for the split).
+            var budgetByKey = new Dictionary<int, decimal>();
+            var shareByEntityGl = new Dictionary<(int, string), Dictionary<int, decimal>>();
+            void AddBudget(int entityId, int key, string? gl, decimal amt)
             {
                 if (string.IsNullOrWhiteSpace(gl) || amt == 0m) return;
-                if (!budgetByKeyGl.TryGetValue(key, out var m)) { m = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase); budgetByKeyGl[key] = m; }
-                m[gl!] = m.GetValueOrDefault(gl!) + amt;
+                budgetByKey[key] = budgetByKey.GetValueOrDefault(key) + amt;
+                var k = EntityGl(entityId, gl!);
+                if (!shareByEntityGl.TryGetValue(k, out var shares)) { shares = new Dictionary<int, decimal>(); shareByEntityGl[k] = shares; }
+                shares[key] = shares.GetValueOrDefault(key) + amt;
             }
             foreach (var x in blRows)
             {
@@ -1288,7 +1330,7 @@ namespace GovBudget.Controllers
                     "project" => x.ProjectId ?? Unassigned,
                     _ => Unassigned
                 };
-                AddBudget(key, x.GLCode, x.Amount);
+                AddBudget(x.EntityId, key, x.GLCode, x.Amount);
             }
             if (!isItem)
             {
@@ -1302,34 +1344,28 @@ namespace GovBudget.Controllers
                         "project" => x.ProjectId ?? Unassigned,
                         _ => Unassigned
                     };
-                    AddBudget(key, x.GLCode, x.AllocatedAmount);
+                    AddBudget(x.EntityId, key, x.GLCode, x.AllocatedAmount);
                 }
             }
-
-            // Per-GL total budget for the share denominator.
-            var totalBudgetByGl = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-            foreach (var kv in budgetByKeyGl)
-                foreach (var g in kv.Value)
-                    totalBudgetByGl[g.Key] = totalBudgetByGl.GetValueOrDefault(g.Key) + g.Value;
 
             var actualDerived = new Dictionary<int, decimal>();
             var fcDerived = new Dictionary<int, decimal>();
             decimal unattributedActual = 0m, unattributedFc = 0m;
 
-            var glUnion = new HashSet<string>(actForDerive.Keys, StringComparer.OrdinalIgnoreCase);
-            foreach (var k in fcByGl.Keys) glUnion.Add(k);
-            foreach (var gl in glUnion)
+            var entityGlUnion = new HashSet<(int, string)>(actForDerive.Keys);
+            entityGlUnion.UnionWith(fcByEntityGl.Keys);
+            foreach (var entityGl in entityGlUnion)
             {
-                var aAmt = actForDerive.GetValueOrDefault(gl);
-                var fAmt = fcByGl.GetValueOrDefault(gl);
-                var totB = totalBudgetByGl.GetValueOrDefault(gl);
+                var aAmt = actForDerive.GetValueOrDefault(entityGl);
+                var fAmt = fcByEntityGl.GetValueOrDefault(entityGl);
+                var totB = shareByEntityGl.TryGetValue(entityGl, out var shares) ? shares.Values.Sum() : 0m;
                 if (totB <= 0m) { unattributedActual += aAmt; unattributedFc += fAmt; continue; }
-                foreach (var kv in budgetByKeyGl)
+                foreach (var share in shares!)
                 {
-                    if (!kv.Value.TryGetValue(gl, out var kb) || kb == 0m) continue;
-                    var ratio = kb / totB;
-                    actualDerived[kv.Key] = actualDerived.GetValueOrDefault(kv.Key) + aAmt * ratio;
-                    fcDerived[kv.Key] = fcDerived.GetValueOrDefault(kv.Key) + fAmt * ratio;
+                    if (share.Value == 0m) continue;
+                    var ratio = share.Value / totB;
+                    actualDerived[share.Key] = actualDerived.GetValueOrDefault(share.Key) + aAmt * ratio;
+                    fcDerived[share.Key] = fcDerived.GetValueOrDefault(share.Key) + fAmt * ratio;
                 }
             }
 
@@ -1344,7 +1380,7 @@ namespace GovBudget.Controllers
             fcDerived[Unassigned] = fcDerived.GetValueOrDefault(Unassigned) + unattributedFc;
 
             // Resolve labels for the keys present.
-            var keys = new HashSet<int>(budgetByKeyGl.Keys);
+            var keys = new HashSet<int>(budgetByKey.Keys);
             foreach (var k in actualDerived.Keys) keys.Add(k);
             foreach (var k in fcDerived.Keys) keys.Add(k);
             foreach (var k in exactByKey.Keys) keys.Add(k);
@@ -1354,7 +1390,7 @@ namespace GovBudget.Controllers
             var rows = new List<(int Key, BvaBreakdownRow Row)>();
             void EmitRow(int key, string label, bool derived)
             {
-                var budget = budgetByKeyGl.TryGetValue(key, out var gm) ? gm.Values.Sum() : 0m;
+                var budget = budgetByKey.GetValueOrDefault(key);
                 var actual = Math.Round(actualDerived.GetValueOrDefault(key) + exactByKey.GetValueOrDefault(key), 2, MidpointRounding.AwayFromZero);
                 var forecast = Math.Round(fcDerived.GetValueOrDefault(key), 2, MidpointRounding.AwayFromZero);
                 if (budget == 0m && actual == 0m && forecast == 0m) return;
@@ -1748,6 +1784,10 @@ namespace GovBudget.Controllers
     {
         public int Year { get; set; }
         public List<BvaCategoryGroup> Groups { get; set; } = new();
+        // Set when an entity with nothing imported for Year shows mid-year figures from this earlier year.
+        public int? MidYearActualYear { get; set; }
+        // True when every entity in scope is on mid-year figures, so the columns can be relabelled.
+        public bool MidYearOnly { get; set; }
     }
 
     public class BvaBreakdownRow

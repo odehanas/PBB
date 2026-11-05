@@ -636,7 +636,11 @@
                 {
                     <span class="badge bg-secondary">Direct cost only</span>
                 }
-                @if (!Model.ActualsUploaded)
+                @if (Model.MidYearActualYear.HasValue)
+                {
+                    <span class="badge bg-info text-dark">@Model.MidYearActualYear H1 mid-year actuals</span>
+                }
+                else if (!Model.ActualsUploaded)
                 {
                     <span class="badge bg-warning text-dark">Actuals not uploaded</span>
                 }
@@ -665,7 +669,17 @@
                         Run it from <a asp-controller="Allocation" asp-action="Index" asp-route-year="@Model.Year" asp-route-entityId="@Model.EntityId">Cost Allocation</a> to distribute support-programme costs.
                     </div>
                 }
-                @if (!Model.ActualsUploaded)
+                @if (Model.MidYearActualYear.HasValue)
+                {
+                    <div class="alert alert-info m-3 mb-0 py-2 small">
+                        <strong>Actual shows @Model.MidYearActualYear H1 actuals from the Mid-Year upload</strong>, because nothing has been imported for @Model.Year.
+                        Each GL total is split across activities by their share of the @Model.Year budget on that GL, so activity figures are estimates.
+                        Variance is blank because six months of @Model.MidYearActualYear can't be compared with a full-year @Model.Year budget.
+                        Assigned to activities: @Model.MidYearActualSplit.ToString("N2") of @Model.MidYearActualTotal.ToString("N2") (excluding revenue).
+                        Any remainder is on GLs with no @Model.Year activity budget.
+                    </div>
+                }
+                else if (!Model.ActualsUploaded)
                 {
                     <div class="alert alert-warning m-3 mb-0 py-2 small">
                         <strong>Actuals have not been uploaded</strong> for this year and scope, so Actual and Variance are blank.
@@ -686,7 +700,7 @@
                                 <th class="text-end">Direct</th>
                                 <th class="text-end">Allocated</th>
                                 <th class="text-end">Total</th>
-                                <th class="text-end">Actual</th>
+                                <th class="text-end">@(Model.MidYearActualYear.HasValue && !Model.ActualsUploaded ? $"{Model.MidYearActualYear} H1 Actual" : "Actual")</th>
                                 <th class="text-end">Variance</th>
                                 <th>Output Measure</th>
                                 <th class="text-end">Output Volume</th>
