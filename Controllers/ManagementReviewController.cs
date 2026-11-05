@@ -79,6 +79,13 @@ namespace GovBudget.Controllers
                 ? new List<int>()
                 : (await EntityScopeList(effectiveEntityId)).Select(e => e.EntityId).ToList();
             vm.ActualsUploaded = await HasActualsForScope(selectedYear, scopeEntityIds);
+            var midYearActuals = await ComputeMidYearActivityActuals(selectedYear, scopeEntityIds);
+            if (midYearActuals.EntityIds.Count > 0)
+            {
+                vm.MidYearActualYear = selectedYear - 1;
+                vm.MidYearActualTotal = midYearActuals.Total;
+                vm.MidYearActualSplit = midYearActuals.Map.Values.Sum();
+            }
             vm.AllocationPosted = await HasPostedAllocation(selectedYear, scopeEntityIds);
 
             vm.EntityProfiles = await BuildEntityProfiles(selectedYear, effectiveEntityId,
@@ -932,6 +939,7 @@ namespace GovBudget.Controllers
 
             var actualMap = await ComputeActivityActualMap(year, entityIds);
             var hasActuals = await HasActualsForScope(year, entityIds);
+            var midYear = await ComputeMidYearActivityActuals(year, entityIds);
 
             var activityIds = costMap.Keys.ToList();
             var activities = await (
@@ -966,10 +974,15 @@ namespace GovBudget.Controllers
                 var total = totalCostMap.TryGetValue(kv.Key, out var tv) ? tv : direct;
                 var allocated = total - direct;
 
-                decimal? actualCost = hasActuals
-                    ? Math.Round(actualMap.TryGetValue(kv.Key, out var av) ? av : 0m, 2, MidpointRounding.AwayFromZero)
-                    : (decimal?)null;
-                decimal? variance = actualCost.HasValue ? actualCost.Value - direct : (decimal?)null;
+                // Mid-year actuals are from the previous year and cover six months, so they are shown
+                // for reference with no variance against this year's full budget.
+                var fromMidYear = midYear.EntityIds.Contains(a.EntityId);
+                decimal? actualCost = fromMidYear
+                    ? Math.Round(midYear.Map.GetValueOrDefault(kv.Key), 2, MidpointRounding.AwayFromZero)
+                    : hasActuals
+                        ? Math.Round(actualMap.TryGetValue(kv.Key, out var av) ? av : 0m, 2, MidpointRounding.AwayFromZero)
+                        : (decimal?)null;
+                decimal? variance = !fromMidYear && actualCost.HasValue ? actualCost.Value - direct : (decimal?)null;
                 rows.Add(new ActivityUnitCostRowVm
                 {
                     EntityCode = ent?.EntityCode ?? "",
@@ -980,6 +993,7 @@ namespace GovBudget.Controllers
                     AllocatedCost = allocated,
                     TotalCost = total,
                     ActualCost = actualCost,
+                    ActualIsMidYear = fromMidYear,
                     Variance = variance,
                     OutputMeasure = o?.OutputMeasure ?? "",
                     OutputVolume = volume,
@@ -1176,12 +1190,93 @@ namespace GovBudget.Controllers
 
         // Derived actual per activity. Actuals are posted at GL level, so we split each GL's actual
         // across the activities that budgeted on that GL, proportional to their budget share on that GL.
+        // The split is per entity: entities share GL codes, and one entity's actual never lands on another's activities.
         // Non-HR budget-by-GL comes from BudgetLines -> Items -> GLAccounts; HR from allocations x employee GL.
         private async Task<Dictionary<int, decimal>> ComputeActivityActualMap(int year, List<int> entityIds)
         {
             var result = new Dictionary<int, decimal>();
             if (entityIds.Count == 0) return result;
 
+            var postings = await _db.ActualPostings.AsNoTracking()
+                .Where(p => p.BudgetYear == year && entityIds.Contains(p.EntityId))
+                .Select(p => new { p.EntityId, p.GLCode, p.Amount }).ToListAsync();
+
+            foreach (var entityPostings in postings.GroupBy(p => p.EntityId))
+            {
+                var budgetActByGl = await LoadActivityBudgetByGl(year, new List<int> { entityPostings.Key });
+                foreach (var gl in entityPostings.GroupBy(p => p.GLCode, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (!budgetActByGl.TryGetValue(gl.Key, out var actMap)) continue; // GL not tied to any activity budget
+                    var totalBudget = actMap.Values.Sum();
+                    if (totalBudget <= 0) continue;
+                    var amount = gl.Sum(p => p.Amount);
+                    foreach (var ab in actMap)
+                    {
+                        var share = amount * (ab.Value / totalBudget);
+                        result[ab.Key] = result.GetValueOrDefault(ab.Key) + share;
+                    }
+                }
+            }
+
+            // EXACT HR: per-employee HR actuals split to activities by budgeted allocation share.
+            var hrActList = await _db.HrActualPostings.AsNoTracking()
+                .Where(p => p.BudgetYear == year && entityIds.Contains(p.EntityId) && p.EmployeeCostId != null)
+                .Select(p => new { EmployeeCostId = p.EmployeeCostId!.Value, p.Amount })
+                .ToListAsync();
+            if (hrActList.Count > 0)
+            {
+                var empActual = hrActList.GroupBy(x => x.EmployeeCostId).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+                var empIds = empActual.Keys.ToList();
+                var allocByEmp = (await _db.HrEmployeeCostAllocations.AsNoTracking()
+                        .Where(a => empIds.Contains(a.EmployeeCostId))
+                        .Select(a => new { a.EmployeeCostId, a.ActivityId, a.AllocatedAmount }).ToListAsync())
+                    .GroupBy(a => a.EmployeeCostId).ToDictionary(g => g.Key, g => g.ToList());
+                foreach (var kv in empActual)
+                {
+                    if (!allocByEmp.TryGetValue(kv.Key, out var allocs)) continue;
+                    var totalAlloc = allocs.Sum(a => a.AllocatedAmount);
+                    if (totalAlloc <= 0m) continue;
+                    foreach (var a in allocs)
+                        result[a.ActivityId] = result.GetValueOrDefault(a.ActivityId) + kv.Value * (a.AllocatedAmount / totalAlloc);
+                }
+            }
+            return result;
+        }
+
+        // Mid-year H1 actuals (stored under year - 1) split across activities by each activity's share
+        // of THIS year's budget on the GL, entity by entity. Only entities with nothing imported for the
+        // year take part. Revenue is left out, as it is from activity cost. Total is the non-revenue H1
+        // amount before the split, so the page can show how much had no activity budget to land on.
+        private async Task<(Dictionary<int, decimal> Map, HashSet<int> EntityIds, decimal Total)> ComputeMidYearActivityActuals(int year, List<int> entityIds)
+        {
+            var map = new Dictionary<int, decimal>();
+            var usedEntities = new HashSet<int>();
+            var total = 0m;
+            if (entityIds.Count == 0) return (map, usedEntities, total);
+
+            var rows = await GovBudget.Services.MidYearActualsFallback.LoadAsync(_db, year, entityIds);
+            foreach (var entityRows in rows.GroupBy(r => r.EntityId))
+            {
+                usedEntities.Add(entityRows.Key);
+                var budgetActByGl = await LoadActivityBudgetByGl(year, new List<int> { entityRows.Key });
+                foreach (var gl in entityRows.Where(r => NormalizeCategory(r.GLType) != "REVENUE")
+                             .GroupBy(r => r.GLCode, StringComparer.OrdinalIgnoreCase))
+                {
+                    var amount = gl.Sum(r => r.ActualH1);
+                    total += amount;
+                    if (!budgetActByGl.TryGetValue(gl.Key, out var actMap)) continue;
+                    var totalBudget = actMap.Values.Sum();
+                    if (totalBudget <= 0) continue;
+                    foreach (var ab in actMap)
+                        map[ab.Key] = map.GetValueOrDefault(ab.Key) + amount * (ab.Value / totalBudget);
+                }
+            }
+            return (map, usedEntities, total);
+        }
+
+        // Budget share table: GLCode -> (ActivityId -> budget), non-revenue lines plus HR allocations.
+        private async Task<Dictionary<string, Dictionary<int, decimal>>> LoadActivityBudgetByGl(int year, List<int> entityIds)
+        {
             var budgetByActGl = await (
                 from b in _db.BudgetLines.AsNoTracking()
                 join cat in _db.Categories.AsNoTracking() on b.CategoryId equals cat.CategoryId
@@ -1211,48 +1306,7 @@ namespace GovBudget.Controllers
             }
             foreach (var x in budgetByActGl) AddBudget(x.GLCode, x.ActivityId, x.Amount);
             foreach (var x in hrByActGl) AddBudget(x.GLCode, x.ActivityId, x.Amount);
-
-            var actualByGl = (await _db.ActualPostings.AsNoTracking()
-                    .Where(p => p.BudgetYear == year && entityIds.Contains(p.EntityId))
-                    .Select(p => new { p.GLCode, p.Amount }).ToListAsync())
-                .GroupBy(x => x.GLCode, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount), StringComparer.OrdinalIgnoreCase);
-
-            foreach (var kv in actualByGl)
-            {
-                if (!budgetActByGl.TryGetValue(kv.Key, out var actMap)) continue; // GL not tied to any activity budget
-                var totalBudget = actMap.Values.Sum();
-                if (totalBudget <= 0) continue;
-                foreach (var ab in actMap)
-                {
-                    var share = kv.Value * (ab.Value / totalBudget);
-                    result[ab.Key] = result.GetValueOrDefault(ab.Key) + share;
-                }
-            }
-
-            // EXACT HR: per-employee HR actuals split to activities by budgeted allocation share.
-            var hrActList = await _db.HrActualPostings.AsNoTracking()
-                .Where(p => p.BudgetYear == year && entityIds.Contains(p.EntityId) && p.EmployeeCostId != null)
-                .Select(p => new { EmployeeCostId = p.EmployeeCostId!.Value, p.Amount })
-                .ToListAsync();
-            if (hrActList.Count > 0)
-            {
-                var empActual = hrActList.GroupBy(x => x.EmployeeCostId).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
-                var empIds = empActual.Keys.ToList();
-                var allocByEmp = (await _db.HrEmployeeCostAllocations.AsNoTracking()
-                        .Where(a => empIds.Contains(a.EmployeeCostId))
-                        .Select(a => new { a.EmployeeCostId, a.ActivityId, a.AllocatedAmount }).ToListAsync())
-                    .GroupBy(a => a.EmployeeCostId).ToDictionary(g => g.Key, g => g.ToList());
-                foreach (var kv in empActual)
-                {
-                    if (!allocByEmp.TryGetValue(kv.Key, out var allocs)) continue;
-                    var totalAlloc = allocs.Sum(a => a.AllocatedAmount);
-                    if (totalAlloc <= 0m) continue;
-                    foreach (var a in allocs)
-                        result[a.ActivityId] = result.GetValueOrDefault(a.ActivityId) + kv.Value * (a.AllocatedAmount / totalAlloc);
-                }
-            }
-            return result;
+            return budgetActByGl;
         }
 
         // KPI <-> cost linkage: ties each KPI to the cost of its tagged activity (preferred) or programme,
@@ -1688,7 +1742,11 @@ namespace GovBudget.Controllers
         private static void BuildActivityUnitCostSheet(XLWorkbook wb, List<ActivityUnitCostRowVm> rows, int year, string entityLabel)
         {
             var ws = wb.Worksheets.Add("Activity Unit Cost");
-            TitleRows(ws, "Activity Cost after Allocation (Total = Direct + Allocated; variance = Actual - Direct)", year, entityLabel, 11);
+            var usesMidYear = rows.Any(x => x.ActualIsMidYear);
+            var sheetTitle = usesMidYear
+                ? $"Activity Cost after Allocation (Total = Direct + Allocated; Actual = {year - 1} H1 mid-year actuals split by {year} budget share, where nothing is imported for {year}; no variance on those rows)"
+                : "Activity Cost after Allocation (Total = Direct + Allocated; variance = Actual - Direct)";
+            TitleRows(ws, sheetTitle, year, entityLabel, 11);
             var r = 4;
             string[] headers = { "Entity", "Programme", "Activity", "Direct", "Allocated", "Total", "Actual (derived)", "Variance", "Output Measure", "Output Volume", "Cost / Output" };
             for (var i = 0; i < headers.Length; i++) ws.Cell(r, i + 1).Value = headers[i];
@@ -1910,6 +1968,10 @@ namespace GovBudget.Controllers
         public List<MaturityRowVm> MaturityLadder { get; set; } = new();
         public List<ActivityUnitCostRowVm> ActivityUnitCosts { get; set; } = new();
         public bool ActualsUploaded { get; set; }
+        // Set when the activity table shows mid-year actuals for an entity with nothing imported this year.
+        public int? MidYearActualYear { get; set; }
+        public decimal MidYearActualTotal { get; set; }
+        public decimal MidYearActualSplit { get; set; }
         // True when a step-down allocation run has been posted for the scope, so activity costs
         // include allocated cost. False => the figures are direct costs only.
         public bool AllocationPosted { get; set; }
@@ -2093,6 +2155,7 @@ namespace GovBudget.Controllers
         public decimal TotalCost { get; set; }
         // Derived actual (budget-share of GL actuals). Null when no actuals have been imported.
         public decimal? ActualCost { get; set; }
+        public bool ActualIsMidYear { get; set; }
         // Variance = Actual - Budget (negative = under budget).
         public decimal? Variance { get; set; }
         public string OutputMeasure { get; set; } = "";
