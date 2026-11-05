@@ -34,8 +34,13 @@ namespace GovBudget.Controllers
             var entity = await _db.Entities.AsNoTracking().FirstOrDefaultAsync(e => e.EntityId == entityId.Value);
             var entityLabel = entity == null ? $"Entity {entityId.Value}" : $"{entity.EntityCode} - {entity.EntityName}";
 
+            // Mid-year actuals are stored under the year they belong to (current year),
+            // and are reviewed while preparing the NEXT budget year — same rule as
+            // ReportsController (actualYear = year - 1).
+            var actualYear = selectedYear - 1;
+
             var rows = await _db.MidYearGlActualForecasts.AsNoTracking()
-                .Where(x => x.BudgetYear == selectedYear && x.EntityId == entityId.Value)
+                .Where(x => x.BudgetYear == actualYear && x.EntityId == entityId.Value)
                 .OrderBy(x => x.GLType)
                 .ThenBy(x => x.GLCode)
                 .Select(x => new MidYearRowVm
@@ -51,6 +56,7 @@ namespace GovBudget.Controllers
             var vm = new MidYearIndexVm
             {
                 Year = selectedYear,
+                ActualYear = actualYear,
                 EntityLabel = entityLabel,
                 Rows = rows
             };
@@ -78,8 +84,9 @@ namespace GovBudget.Controllers
                 return RedirectToAction(nameof(Index), new { year = selectedYear });
             }
 
+            var actualYear = selectedYear - 1;
             var dbRows = await _db.MidYearGlActualForecasts
-                .Where(x => x.BudgetYear == selectedYear && x.EntityId == entityId.Value && ids.Contains(x.MidYearId))
+                .Where(x => x.BudgetYear == actualYear && x.EntityId == entityId.Value && ids.Contains(x.MidYearId))
                 .ToListAsync();
 
             var byId = dbRows.ToDictionary(x => x.MidYearId, x => x);
@@ -112,6 +119,7 @@ namespace GovBudget.Controllers
         public class MidYearIndexVm
         {
             public int Year { get; set; }
+            public int ActualYear { get; set; }
             public string EntityLabel { get; set; } = "";
             public List<MidYearRowVm> Rows { get; set; } = new List<MidYearRowVm>();
         }
