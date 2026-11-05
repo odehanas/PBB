@@ -34,7 +34,8 @@ namespace GovBudget.Controllers
         // Both are treated as "manual" (protected) by the bulk-upload overwrite logic.
         private const string EntrySourceEdited = "EDITED";
 
-        public BudgetLinesController(GovBudgetContext db) { _db = db; }
+        private readonly GovBudget.Services.ImportHistoryService _history;
+        public BudgetLinesController(GovBudgetContext db, GovBudget.Services.ImportHistoryService history) { _db = db; _history = history; }
 
         // ---------- GET ----------
         public async Task<IActionResult> Entry(string category = "OPEX", long? editId = null)
@@ -1273,6 +1274,7 @@ WHERE b.BudgetYear = {year.Value}
                 HttpContext.Session.SetString(PendingBulkKey, JsonSerializer.Serialize(new PendingBulkUpload
                 {
                     Category = category,
+                    SourceFile = file.FileName,
                     Lines = toInsert,
                     Scopes = scopes.Select(s => new BulkScope
                     {
@@ -1288,7 +1290,7 @@ WHERE b.BudgetYear = {year.Value}
             }
 
             // No existing data for these scopes: straight insert (nothing to delete).
-            await ApplyBulkAsync(toInsert, cat.CategoryId, scopes, deleteExisting: false, deleteManual: false, userName, category);
+            await ApplyBulkAsync(toInsert, cat.CategoryId, scopes, deleteExisting: false, deleteManual: false, userName, category, file.FileName);
             TempData["Success"] = $"Imported {toInsert.Count} {category} budget line(s).";
             return RedirectToAction(nameof(Entry), new { category });
         }
@@ -1396,7 +1398,7 @@ WHERE b.BudgetYear = {year.Value}
             int deleted;
             try
             {
-                deleted = await ApplyBulkAsync(toInsert, cat.CategoryId, scopes, deleteExisting: true, deleteManual, userName, category);
+                deleted = await ApplyBulkAsync(toInsert, cat.CategoryId, scopes, deleteExisting: true, deleteManual, userName, category, pending.SourceFile);
             }
             catch (Exception)
             {
@@ -1511,7 +1513,7 @@ WHERE b.BudgetYear = {year.Value}
         private async Task<int> ApplyBulkAsync(
             List<BudgetLines> toInsert, int categoryId,
             List<(int BudgetYear, int EntityId, int DepartmentId)> scopes,
-            bool deleteExisting, bool deleteManual, string userName, string category)
+            bool deleteExisting, bool deleteManual, string userName, string category, string? sourceFile = null)
         {
             var deleted = 0;
             var strategy = _db.Database.CreateExecutionStrategy();
@@ -1519,6 +1521,7 @@ WHERE b.BudgetYear = {year.Value}
             {
                 deleted = 0;
                 _db.ChangeTracker.Clear(); // keep idempotent across retry attempts
+                var rec = new GovBudget.Services.ImportRecorder();
 
                 await using var tx = await _db.Database.BeginTransactionAsync();
 
@@ -1536,6 +1539,12 @@ WHERE b.BudgetYear = {year.Value}
 
                         var scopeLineIds = scopeLines.Select(b => b.BudgetLineId);
 
+                        // Snapshot the lines (and their documents) before they are deleted so the
+                        // upload can be undone from Admin > Upload History.
+                        var doomed = await scopeLines.AsNoTracking().Include(b => b.BudgetLineDocuments).ToListAsync();
+                        foreach (var d in doomed)
+                            rec.AddDeleted(GovBudget.Services.ImportTables.BudgetLines, d.BudgetLineId, d);
+
                         // Remove dependent documents first to satisfy the FK.
                         await _db.BudgetLineDocuments
                             .Where(d => scopeLineIds.Contains(d.BudgetLineId))
@@ -1547,6 +1556,18 @@ WHERE b.BudgetYear = {year.Value}
 
                 _db.BudgetLines.AddRange(toInsert);
                 await _db.SaveChangesAsync();
+
+                foreach (var line in toInsert)
+                {
+                    var l = line;
+                    rec.AddCreated(GovBudget.Services.ImportTables.BudgetLines, () => l.BudgetLineId);
+                }
+                var years = scopes.Select(x => x.BudgetYear).Distinct().ToList();
+                var ents = scopes.Select(x => x.EntityId).Distinct().ToList();
+                await _history.SaveBatchAsync(rec, GovBudget.Services.ImportTypes.BudgetLines,
+                    years.Count == 1 ? years[0] : null, ents.Count == 1 ? ents[0] : null,
+                    category + (deleteExisting ? (deleteManual ? " (replace incl. manual)" : " (replace)") : " (add)"),
+                    sourceFile, userName);
 
                 _db.AuditLogs.Add(new AuditLogs
                 {
@@ -1785,6 +1806,7 @@ WHERE b.BudgetYear = {year.Value}
     public class PendingBulkUpload
     {
         public string Category { get; set; } = "";
+        public string? SourceFile { get; set; }
         public List<BudgetLines> Lines { get; set; } = new();
         // The (year, entity, cost center) combinations that will be cleared on confirmation.
         public List<BulkScope> Scopes { get; set; } = new();

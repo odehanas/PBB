@@ -301,8 +301,10 @@ namespace GovBudget.Controllers
             ).ToListAsync();
             var budgetMap = budget.ToDictionary(x => x.EntityId);
 
+            // Budget year (year) vs the current year's mid-year actuals, stored under year - 1.
+            var midYearActualYear = year - 1;
             var midYear = await _db.MidYearGlActualForecasts.AsNoTracking()
-                .Where(x => x.BudgetYear == year && entityIds.Contains(x.EntityId))
+                .Where(x => x.BudgetYear == midYearActualYear && entityIds.Contains(x.EntityId))
                 .Select(x => new { x.EntityId, x.GLType, x.ActualH1Amount })
                 .ToListAsync();
 

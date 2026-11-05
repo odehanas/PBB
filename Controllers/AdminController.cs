@@ -22,11 +22,15 @@ namespace GovBudget.Controllers
         private readonly IHostEnvironment _env;
         private readonly GovBudget.Services.IPasswordResetNotifier _resetNotifier;
 
-        public AdminController(GovBudgetContext db, IHostEnvironment env, GovBudget.Services.IPasswordResetNotifier resetNotifier)
+        private readonly GovBudget.Services.ImportHistoryService _history;
+
+        public AdminController(GovBudgetContext db, IHostEnvironment env, GovBudget.Services.IPasswordResetNotifier resetNotifier,
+            GovBudget.Services.ImportHistoryService history)
         {
             _db = db;
             _env = env;
             _resetNotifier = resetNotifier;
+            _history = history;
         }
 
         private int? GetAdminScopedEntityId()
@@ -567,8 +571,6 @@ namespace GovBudget.Controllers
             }
 
             var errors = new List<string>();
-            var created = 0;
-            var updated = 0;
             var latestYear = (int?)null;
             var userName = User.Identity?.Name;
 
@@ -716,10 +718,45 @@ namespace GovBudget.Controllers
                 return RedirectToAction(nameof(HistoricalActuals));
             }
 
+            // Nothing is saved yet: keep the parsed rows in the session and show what would change.
+            HttpContext.Session.SetString(PendingHistoricalKey, System.Text.Json.JsonSerializer.Serialize(
+                new PendingAdminUpload<HistoricalGlActuals> { FileName = file.FileName, LatestYear = latestYear, Rows = parsed }, PendingJson));
+            return View("UploadPreview", await BuildHistoricalPreviewAsync(parsed, file.FileName));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ConfirmHistoricalUpload()
+        {
+            var json = HttpContext.Session.GetString(PendingHistoricalKey);
+            HttpContext.Session.Remove(PendingHistoricalKey);
+            var pending = string.IsNullOrEmpty(json) ? null
+                : System.Text.Json.JsonSerializer.Deserialize<PendingAdminUpload<HistoricalGlActuals>>(json, PendingJson);
+            if (pending == null || pending.Rows.Count == 0)
+            {
+                TempData["Error"] = "Your upload session expired. Please upload the file again.";
+                return RedirectToAction(nameof(HistoricalActuals));
+            }
+            var adminEntityId = GetAdminScopedEntityId();
+            if (adminEntityId.HasValue && pending.Rows.Any(r => r.EntityId != adminEntityId.Value))
+            {
+                return Forbid();
+            }
+
+            var parsed = pending.Rows;
+            var latestYear = pending.LatestYear;
+            var userName = User.Identity?.Name;
+            var created = 0;
+            var updated = 0;
+
             var yearsInFile = parsed.Select(x => x.BudgetYear).Distinct().ToList();
             var entityIdsInFile = parsed.Select(x => x.EntityId).Distinct().ToList();
             var deptIdsInFile = parsed.Select(x => x.DepartmentId).Distinct().ToList();
 
+            await _history.RunInTransactionAsync(async () =>
+            {
+            created = 0; updated = 0;
+            var rec = new GovBudget.Services.ImportRecorder();
             var existing = await _db.HistoricalGlActuals
                 .Where(x => yearsInFile.Contains(x.BudgetYear)
                             && entityIdsInFile.Contains(x.EntityId)
@@ -735,6 +772,7 @@ namespace GovBudget.Controllers
                 var key = (row.BudgetYear, row.EntityId, row.DepartmentId, (row.GLCode ?? "").Trim().ToUpperInvariant());
                 if (existingByKey.TryGetValue(key, out var ex))
                 {
+                    rec.AddUpdated(GovBudget.Services.ImportTables.Historical, ex.HistoricalActualId, ex);
                     ex.Amount = row.Amount;
                     ex.GLType = row.GLType;
                     ex.CreatedBy = row.CreatedBy;
@@ -744,14 +782,31 @@ namespace GovBudget.Controllers
                 else
                 {
                     _db.HistoricalGlActuals.Add(row);
+                    rec.AddCreated(GovBudget.Services.ImportTables.Historical, () => row.HistoricalActualId);
                     created++;
                 }
             }
 
             await _db.SaveChangesAsync();
+            await _history.SaveBatchAsync(rec, GovBudget.Services.ImportTypes.Historical,
+                yearsInFile.Count == 1 ? yearsInFile[0] : null,
+                entityIdsInFile.Count == 1 ? entityIdsInFile[0] : null,
+                "Admin upload", pending.FileName, userName);
+            return true;
+            });
+
             TempData["Success"] = $"Upload complete. Created: {created}. Updated: {updated}.";
 
             return RedirectToAction(nameof(HistoricalActuals), new { year = latestYear });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult CancelHistoricalUpload()
+        {
+            HttpContext.Session.Remove(PendingHistoricalKey);
+            TempData["Success"] = "Upload cancelled. Nothing was saved.";
+            return RedirectToAction(nameof(HistoricalActuals));
         }
 
         [HttpPost]
@@ -866,8 +921,9 @@ namespace GovBudget.Controllers
             ws.Cell(1, 3).Value = "GLCode";
             ws.Cell(1, 4).Value = "GLType";
             ws.Cell(1, 5).Value = "ActualH1Amount";
-            ws.Range(1, 1, 1, 5).Style.Font.Bold = true;
-            ws.Columns(1, 5).AdjustToContents();
+            ws.Cell(1, 6).Value = "ForecastH2Amount";
+            ws.Range(1, 1, 1, 6).Style.Font.Bold = true;
+            ws.Columns(1, 6).AdjustToContents();
 
             using var stream = new MemoryStream();
             wb.SaveAs(stream);
@@ -899,8 +955,6 @@ namespace GovBudget.Controllers
             }
 
             var errors = new List<string>();
-            var created = 0;
-            var updated = 0;
             var latestYear = (int?)null;
             var userName = User.Identity?.Name;
 
@@ -936,6 +990,8 @@ namespace GovBudget.Controllers
             var hasGlCol = colMap.TryGetValue("glcode", out var glCol) || colMap.TryGetValue("gl", out glCol) || colMap.TryGetValue("glaccountcode", out glCol);
             var hasGlTypeCol = colMap.TryGetValue("gltype", out var glTypeCol) || colMap.TryGetValue("type", out glTypeCol);
             var hasActualCol = colMap.TryGetValue("actualh1amount", out var actualCol) || colMap.TryGetValue("h1amount", out actualCol) || colMap.TryGetValue("actual", out actualCol);
+            // Optional: H2 forecast. Blank cells leave any existing forecast untouched.
+            var hasForecastCol = colMap.TryGetValue("forecasth2amount", out var forecastCol) || colMap.TryGetValue("h2amount", out forecastCol) || colMap.TryGetValue("forecasth2", out forecastCol);
 
             if (!hasYearCol || !hasEntityCol || !hasGlCol || !hasGlTypeCol || !hasActualCol)
             {
@@ -1005,6 +1061,21 @@ namespace GovBudget.Controllers
                     continue;
                 }
 
+                decimal? forecastAmount = null;
+                if (hasForecastCol)
+                {
+                    var forecastRaw = row.Cell(forecastCol).GetValue<string>().Trim();
+                    if (!string.IsNullOrWhiteSpace(forecastRaw))
+                    {
+                        if (!TryParseDecimal(forecastRaw, out var f))
+                        {
+                            errors.Add($"Row {r}: Invalid ForecastH2Amount '{forecastRaw}'.");
+                            continue;
+                        }
+                        forecastAmount = f;
+                    }
+                }
+
                 latestYear = !latestYear.HasValue ? budgetYear : Math.Max(latestYear.Value, budgetYear);
 
                 parsed.Add(new MidYearGlActualForecasts
@@ -1014,6 +1085,9 @@ namespace GovBudget.Controllers
                     GLCode = glCode,
                     GLType = normalizedGlType,
                     ActualH1Amount = actualAmount,
+                    ForecastH2Amount = forecastAmount,
+                    ForecastUpdatedAt = forecastAmount.HasValue ? DateTime.UtcNow : null,
+                    ForecastUpdatedBy = forecastAmount.HasValue ? userName : null,
                     CreatedBy = userName,
                     SourceFile = file.FileName
                 });
@@ -1031,9 +1105,44 @@ namespace GovBudget.Controllers
                 return RedirectToAction(nameof(MidYearActuals));
             }
 
+            // Nothing is saved yet: keep the parsed rows in the session and show what would change.
+            HttpContext.Session.SetString(PendingMidYearKey, System.Text.Json.JsonSerializer.Serialize(
+                new PendingAdminUpload<MidYearGlActualForecasts> { FileName = file.FileName, LatestYear = latestYear, Rows = parsed }, PendingJson));
+            return View("UploadPreview", await BuildMidYearPreviewAsync(parsed, file.FileName));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ConfirmMidYearUpload()
+        {
+            var json = HttpContext.Session.GetString(PendingMidYearKey);
+            HttpContext.Session.Remove(PendingMidYearKey);
+            var pending = string.IsNullOrEmpty(json) ? null
+                : System.Text.Json.JsonSerializer.Deserialize<PendingAdminUpload<MidYearGlActualForecasts>>(json, PendingJson);
+            if (pending == null || pending.Rows.Count == 0)
+            {
+                TempData["Error"] = "Your upload session expired. Please upload the file again.";
+                return RedirectToAction(nameof(MidYearActuals));
+            }
+            var adminEntityId = GetAdminScopedEntityId();
+            if (adminEntityId.HasValue && pending.Rows.Any(r => r.EntityId != adminEntityId.Value))
+            {
+                return Forbid();
+            }
+
+            var parsed = pending.Rows;
+            var latestYear = pending.LatestYear;
+            var userName = User.Identity?.Name;
+            var created = 0;
+            var updated = 0;
+
             var yearsInFile = parsed.Select(x => x.BudgetYear).Distinct().ToList();
             var entityIdsInFile = parsed.Select(x => x.EntityId).Distinct().ToList();
 
+            await _history.RunInTransactionAsync(async () =>
+            {
+            created = 0; updated = 0;
+            var rec = new GovBudget.Services.ImportRecorder();
             var existing = await _db.MidYearGlActualForecasts
                 .Where(x => yearsInFile.Contains(x.BudgetYear) && entityIdsInFile.Contains(x.EntityId))
                 .ToListAsync();
@@ -1047,8 +1156,15 @@ namespace GovBudget.Controllers
                 var key = (row.BudgetYear, row.EntityId, (row.GLCode ?? "").Trim().ToUpperInvariant());
                 if (existingByKey.TryGetValue(key, out var ex))
                 {
+                    rec.AddUpdated(GovBudget.Services.ImportTables.MidYear, ex.MidYearId, ex);
                     ex.GLType = row.GLType;
                     ex.ActualH1Amount = row.ActualH1Amount;
+                    if (row.ForecastH2Amount.HasValue)
+                    {
+                        ex.ForecastH2Amount = row.ForecastH2Amount;
+                        ex.ForecastUpdatedAt = row.ForecastUpdatedAt;
+                        ex.ForecastUpdatedBy = row.ForecastUpdatedBy;
+                    }
                     ex.CreatedBy = row.CreatedBy;
                     ex.SourceFile = row.SourceFile;
                     updated++;
@@ -1056,14 +1172,31 @@ namespace GovBudget.Controllers
                 else
                 {
                     _db.MidYearGlActualForecasts.Add(row);
+                    rec.AddCreated(GovBudget.Services.ImportTables.MidYear, () => row.MidYearId);
                     created++;
                 }
             }
 
             await _db.SaveChangesAsync();
+            await _history.SaveBatchAsync(rec, GovBudget.Services.ImportTypes.MidYear,
+                yearsInFile.Count == 1 ? yearsInFile[0] : null,
+                entityIdsInFile.Count == 1 ? entityIdsInFile[0] : null,
+                "Admin upload", pending.FileName, userName);
+            return true;
+            });
+
             TempData["Success"] = $"Upload complete. Created: {created}. Updated: {updated}.";
 
             return RedirectToAction(nameof(MidYearActuals), new { year = latestYear });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult CancelMidYearUpload()
+        {
+            HttpContext.Session.Remove(PendingMidYearKey);
+            TempData["Success"] = "Upload cancelled. Nothing was saved.";
+            return RedirectToAction(nameof(MidYearActuals));
         }
 
         [HttpPost]
@@ -1126,6 +1259,123 @@ namespace GovBudget.Controllers
 
             s = s.Replace(",", "");
             return decimal.TryParse(s, NumberStyles.Number | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out value);
+        }
+
+        // ---------- upload preview (nothing is saved until the user confirms) ----------
+        private const string PendingHistoricalKey = "PendingHistoricalUpload";
+        private const string PendingMidYearKey = "PendingAdminMidYearUpload";
+        private static readonly System.Text.Json.JsonSerializerOptions PendingJson = new()
+        {
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles
+        };
+
+        public class PendingAdminUpload<T>
+        {
+            public string FileName { get; set; } = "";
+            public int? LatestYear { get; set; }
+            public List<T> Rows { get; set; } = new();
+        }
+
+        private async Task<UploadPreviewVm> BuildMidYearPreviewAsync(List<MidYearGlActualForecasts> parsed, string fileName)
+        {
+            var years = parsed.Select(x => x.BudgetYear).Distinct().ToList();
+            var ents = parsed.Select(x => x.EntityId).Distinct().ToList();
+            var existing = await _db.MidYearGlActualForecasts.AsNoTracking()
+                .Where(x => years.Contains(x.BudgetYear) && ents.Contains(x.EntityId)).ToListAsync();
+            var codes = await _db.Entities.AsNoTracking().Where(e => ents.Contains(e.EntityId))
+                .ToDictionaryAsync(e => e.EntityId, e => e.EntityCode);
+            var byKey = existing.GroupBy(x => (x.BudgetYear, x.EntityId, (x.GLCode ?? "").Trim().ToUpperInvariant()))
+                .ToDictionary(g => g.Key, g => g.First());
+            var inFile = parsed.Select(x => (x.BudgetYear, x.EntityId, (x.GLCode ?? "").Trim().ToUpperInvariant())).ToHashSet();
+
+            var vm = new UploadPreviewVm
+            {
+                Title = "Review mid-year actuals upload",
+                Subtitle = $"Year(s) {string.Join(", ", years.OrderBy(y => y))} · entity {string.Join(", ", ents.Select(e => codes.TryGetValue(e, out var c) ? c : e.ToString()))}.",
+                FileName = fileName,
+                ConfirmController = "Admin",
+                ConfirmAction = nameof(ConfirmMidYearUpload),
+                CancelAction = nameof(CancelMidYearUpload),
+                KeyHeader = "GL",
+                Key2Header = "Year / entity",
+                ValueAHeader = "H1 actual",
+                ValueBHeader = "H2 forecast",
+                KeptCount = existing.Count(x => !inFile.Contains((x.BudgetYear, x.EntityId, (x.GLCode ?? "").Trim().ToUpperInvariant()))),
+                TotalABefore = existing.Sum(x => x.ActualH1Amount),
+                TotalBBefore = existing.Sum(x => x.ForecastH2Amount ?? 0m)
+            };
+            decimal aAfter = vm.TotalABefore, bAfter = vm.TotalBBefore ?? 0m;
+            foreach (var r in parsed)
+            {
+                byKey.TryGetValue((r.BudgetYear, r.EntityId, (r.GLCode ?? "").Trim().ToUpperInvariant()), out var ex);
+                var newB = r.ForecastH2Amount ?? ex?.ForecastH2Amount;
+                var status = ex == null ? "New"
+                    : (ex.ActualH1Amount == r.ActualH1Amount && ex.ForecastH2Amount == newB && ex.GLType == r.GLType) ? "Unchanged" : "Changed";
+                if (status == "New") vm.NewCount++; else if (status == "Changed") vm.ChangedCount++; else vm.UnchangedCount++;
+                aAfter += r.ActualH1Amount - (ex?.ActualH1Amount ?? 0m);
+                bAfter += (newB ?? 0m) - (ex?.ForecastH2Amount ?? 0m);
+                vm.Rows.Add(new UploadPreviewRow
+                {
+                    Key = r.GLCode ?? "",
+                    Key2 = $"{r.BudgetYear} / {(codes.TryGetValue(r.EntityId, out var c) ? c : r.EntityId.ToString())}",
+                    Status = status,
+                    ABefore = ex?.ActualH1Amount,
+                    AAfter = r.ActualH1Amount,
+                    BBefore = ex?.ForecastH2Amount,
+                    BAfter = newB
+                });
+            }
+            vm.TotalAAfter = aAfter;
+            vm.TotalBAfter = bAfter;
+            return vm;
+        }
+
+        private async Task<UploadPreviewVm> BuildHistoricalPreviewAsync(List<HistoricalGlActuals> parsed, string fileName)
+        {
+            var years = parsed.Select(x => x.BudgetYear).Distinct().ToList();
+            var ents = parsed.Select(x => x.EntityId).Distinct().ToList();
+            var depts = parsed.Select(x => x.DepartmentId).Distinct().ToList();
+            var existing = await _db.HistoricalGlActuals.AsNoTracking()
+                .Where(x => years.Contains(x.BudgetYear) && ents.Contains(x.EntityId) && depts.Contains(x.DepartmentId)).ToListAsync();
+            var deptCodes = await _db.Departments.AsNoTracking().Where(d => depts.Contains(d.DepartmentId))
+                .ToDictionaryAsync(d => d.DepartmentId, d => d.DeptCode);
+            var byKey = existing.GroupBy(x => (x.BudgetYear, x.EntityId, x.DepartmentId, (x.GLCode ?? "").Trim().ToUpperInvariant()))
+                .ToDictionary(g => g.Key, g => g.First());
+            var inFile = parsed.Select(x => (x.BudgetYear, x.EntityId, x.DepartmentId, (x.GLCode ?? "").Trim().ToUpperInvariant())).ToHashSet();
+
+            var vm = new UploadPreviewVm
+            {
+                Title = "Review historical actuals upload",
+                Subtitle = $"Year(s) {string.Join(", ", years.OrderBy(y => y))}.",
+                FileName = fileName,
+                ConfirmController = "Admin",
+                ConfirmAction = nameof(ConfirmHistoricalUpload),
+                CancelAction = nameof(CancelHistoricalUpload),
+                KeyHeader = "GL",
+                Key2Header = "Year / cost center",
+                ValueAHeader = "Amount",
+                KeptCount = existing.Count(x => !inFile.Contains((x.BudgetYear, x.EntityId, x.DepartmentId, (x.GLCode ?? "").Trim().ToUpperInvariant()))),
+                TotalABefore = existing.Sum(x => x.Amount)
+            };
+            decimal aAfter = vm.TotalABefore;
+            foreach (var r in parsed)
+            {
+                byKey.TryGetValue((r.BudgetYear, r.EntityId, r.DepartmentId, (r.GLCode ?? "").Trim().ToUpperInvariant()), out var ex);
+                var status = ex == null ? "New" : (ex.Amount == r.Amount && ex.GLType == r.GLType) ? "Unchanged" : "Changed";
+                if (status == "New") vm.NewCount++; else if (status == "Changed") vm.ChangedCount++; else vm.UnchangedCount++;
+                aAfter += r.Amount - (ex?.Amount ?? 0m);
+                vm.Rows.Add(new UploadPreviewRow
+                {
+                    Key = r.GLCode ?? "",
+                    Key2 = $"{r.BudgetYear} / {(deptCodes.TryGetValue(r.DepartmentId, out var d) ? d : r.DepartmentId.ToString())}",
+                    Status = status,
+                    ABefore = ex?.Amount,
+                    AAfter = r.Amount
+                });
+            }
+            vm.TotalAAfter = aAfter;
+            return vm;
         }
 
         private static bool TryNormalizeGlType(string raw, out string normalized)

@@ -1540,10 +1540,13 @@ namespace GovBudget.Controllers
 
             // Mid-Year Actual (H1) is captured at entity x GL grain; allocate it down to
             // each line proportionally to that line's budget so it aggregates correctly at any grouping.
+            // The budget being prepared (year) is compared with the CURRENT year's mid-year
+            // actuals, which are stored under year - 1 (same rule as BuildTrendSummary / MidYear).
             if (entityIds.Count > 0)
             {
+                var midYearActualYear = year - 1;
                 var actuals = await _db.MidYearGlActualForecasts.AsNoTracking()
-                    .Where(m => m.BudgetYear == year && entityIds.Contains(m.EntityId))
+                    .Where(m => m.BudgetYear == midYearActualYear && entityIds.Contains(m.EntityId))
                     .GroupBy(m => new { m.EntityId, m.GLCode })
                     .Select(g => new { g.Key.EntityId, g.Key.GLCode, Actual = g.Sum(x => x.ActualH1Amount) })
                     .ToListAsync();
