@@ -130,17 +130,19 @@ namespace GovBudget.Controllers
             });
             await _db.SaveChangesAsync();
 
+            // Every sign-in starts by choosing the year. Signing out does not clear the session,
+            // so drop any year left behind by an earlier sign-in in this browser.
+            HttpContext.Session.Remove("ctxYear");
+
             if (u.MustChangePassword)
             {
                 return RedirectToAction(nameof(ChangePassword), new { forced = 1 });
             }
 
-            if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
+            return RedirectToAction("Year", "Context", new
             {
-                return LocalRedirect(returnUrl);
-            }
-
-            return RedirectToAction("Index", "Home");
+                returnUrl = !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl) ? returnUrl : null
+            });
         }
 
         // Issues the auth cookie for a verified user. Also used after a password change so
