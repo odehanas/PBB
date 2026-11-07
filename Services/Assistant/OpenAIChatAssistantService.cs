@@ -346,6 +346,13 @@ namespace GovBudget.Services.Assistant
                or approving records for the user. Use list_write_actions to see what the user
                may do, describe_write_action for an action's fields, find_records and
                list_master_data to look up ids, then propose_change.
+            4. Opening screens - when the user asks to open, show or go to a screen, call
+               list_screens for its path and then open_screen. The conversation carries on
+               on the new screen. Pass query values (year, entityId, category, report, dim)
+               when the user named them. When the user wants to do an entry on the screen
+               themselves, open it with fields filled in (names from describe_write_action);
+               they check and save it. Otherwise prefer propose_change for data entry.
+               Open one screen per request, and only after answering any lookup first.
 
             Data entry rules:
             - propose_change does not save anything. It shows the user a confirmation card and

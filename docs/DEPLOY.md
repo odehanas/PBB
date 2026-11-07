@@ -132,6 +132,12 @@ Limits (also in the `Assistant` section): `RealtimeMaxSessionMinutes` (15),
 `RealtimeMaxToolCalls` (60 lookups per conversation), `RealtimeDailySessionsPerUser` (40).
 Model and voice: `RealtimeModel` (`gpt-realtime-2.1-mini`), `RealtimeVoice` (`marin`).
 
+When the assistant opens a screen during a live conversation, the page reloads and the
+conversation reconnects on the new screen. Each reconnect counts as one conversation toward
+`RealtimeDailySessionsPerUser`. Firefox may ask for the microphone again on the new page unless
+the user ticked "Remember this decision"; if the browser holds back the sound, the panel shows
+a **Continue talking** button.
+
 **HTTP 500.30 after a deploy.**
 Start-up crash. Set `stdoutLogEnabled="true"` in `web.config`, reproduce, read
 `logs/stdout_*.log`, then set it back to `false` (the file grows without limit). Usual

@@ -120,7 +120,7 @@ namespace GovBudget.Controllers
                 WriteHistory(history);
             }
 
-            return Json(new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed, proposals = _proposals.Proposals });
+            return Json(new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed, proposals = _proposals.Proposals, openScreen = _proposals.OpenScreen });
         }
 
         /// <summary>
@@ -169,7 +169,7 @@ namespace GovBudget.Controllers
                 WriteHistory(history);
             }
 
-            await WriteEventAsync("done", new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed, proposals = _proposals.Proposals }, ct);
+            await WriteEventAsync("done", new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed, proposals = _proposals.Proposals, openScreen = _proposals.OpenScreen }, ct);
         }
 
         /// <summary>
@@ -377,7 +377,7 @@ namespace GovBudget.Controllers
                 output = output[..12000] + "…(cut short; ask for fewer rows)";
             }
 
-            return Json(new { output, proposals = _proposals.Proposals });
+            return Json(new { output, proposals = _proposals.Proposals, openScreen = _proposals.OpenScreen });
         }
 
         /// <summary>

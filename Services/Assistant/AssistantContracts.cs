@@ -56,10 +56,15 @@ namespace GovBudget.Services.Assistant
         IReadOnlyList<KeyValuePair<string, string>> Form,
         IReadOnlyList<AssistantProposalField> Changes);
 
-    /// <summary>Per-request list the propose tool fills and the chat endpoint hands to the widget.</summary>
+    /// <summary>
+    /// Per-request results the tools hand to the widget: change cards to confirm, and the screen
+    /// to open (the last open_screen call wins).
+    /// </summary>
     public sealed class AssistantProposalCollector
     {
         public List<AssistantProposal> Proposals { get; } = new();
+
+        public AssistantScreenOpen? OpenScreen { get; set; }
     }
 
     public enum AssistantStreamEventKind
