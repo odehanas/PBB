@@ -171,3 +171,19 @@
 .assistant-continue {
     margin-top: 0.25rem;
 }
+
+/* A file being dragged onto the panel, and the attached-file chip in the conversation. */
+.assistant-panel.assistant-dropping {
+    outline: 3px dashed var(--bs-primary, #0d6efd);
+    outline-offset: -6px;
+}
+
+.assistant-attachment {
+    font-style: italic;
+}
+
+/* Keep the field names on a card readable when a value is long. */
+.assistant-proposal td:first-child {
+    white-space: nowrap;
+    font-weight: 500;
+}

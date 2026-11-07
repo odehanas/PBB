@@ -54,7 +54,11 @@ namespace GovBudget.Services.Assistant
         string Url,
         string? Record,
         IReadOnlyList<KeyValuePair<string, string>> Form,
-        IReadOnlyList<AssistantProposalField> Changes);
+        IReadOnlyList<AssistantProposalField> Changes,
+        string? AttachmentId = null);
+
+    /// <summary>A file the widget should download for the user (an import template).</summary>
+    public sealed record AssistantDownload(string Url, string Name);
 
     /// <summary>
     /// Per-request results the tools hand to the widget: change cards to confirm, and the screen
@@ -65,6 +69,8 @@ namespace GovBudget.Services.Assistant
         public List<AssistantProposal> Proposals { get; } = new();
 
         public AssistantScreenOpen? OpenScreen { get; set; }
+
+        public AssistantDownload? Download { get; set; }
     }
 
     public enum AssistantStreamEventKind

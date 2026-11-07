@@ -44,6 +44,7 @@ namespace GovBudget.Controllers
         private readonly OpenAIRealtimeService _realtime;
         private readonly IEnumerable<IAssistantToolProvider> _toolProviders;
         private readonly IMemoryCache _cache;
+        private readonly AssistantAttachmentStore _attachments;
         private readonly ILogger<ChatController> _logger;
 
         public ChatController(
@@ -54,6 +55,7 @@ namespace GovBudget.Controllers
             OpenAIRealtimeService realtime,
             IEnumerable<IAssistantToolProvider> toolProviders,
             IMemoryCache cache,
+            AssistantAttachmentStore attachments,
             ILogger<ChatController> logger)
         {
             _assistant = assistant;
@@ -63,6 +65,7 @@ namespace GovBudget.Controllers
             _realtime = realtime;
             _toolProviders = toolProviders;
             _cache = cache;
+            _attachments = attachments;
             _logger = logger;
         }
 
@@ -91,6 +94,9 @@ namespace GovBudget.Controllers
         public sealed class AskRequest
         {
             public string? Message { get; set; }
+
+            /// <summary>A file attached in the panel for this question (from Attach).</summary>
+            public string? AttachmentId { get; set; }
         }
 
         public sealed class OutcomeRequest
@@ -120,7 +126,7 @@ namespace GovBudget.Controllers
                 WriteHistory(history);
             }
 
-            return Json(new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed, proposals = _proposals.Proposals, openScreen = _proposals.OpenScreen });
+            return Json(new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed, proposals = _proposals.Proposals, openScreen = _proposals.OpenScreen, download = _proposals.Download });
         }
 
         /// <summary>
@@ -169,7 +175,7 @@ namespace GovBudget.Controllers
                 WriteHistory(history);
             }
 
-            await WriteEventAsync("done", new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed, proposals = _proposals.Proposals, openScreen = _proposals.OpenScreen }, ct);
+            await WriteEventAsync("done", new { ok = answer.Success, reply = answer.Reply, tools = answer.ToolsUsed, proposals = _proposals.Proposals, openScreen = _proposals.OpenScreen, download = _proposals.Download }, ct);
         }
 
         /// <summary>
@@ -261,6 +267,56 @@ namespace GovBudget.Controllers
                 return StatusCode(StatusCodes.Status502BadGateway);
             }
         }
+
+        // ---- Files attached in the panel ----
+
+        /// <summary>
+        /// Reads a workbook the user attached and keeps only its summary (layout, counts, totals,
+        /// entity and cost-center names). The file itself stays in the browser: an import happens
+        /// only when the user confirms the card and the browser posts it to the import screen.
+        /// </summary>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [EnableRateLimiting("assistantVoice")]
+        [RequestSizeLimit(MaxAttachmentBytes + 64 * 1024)]
+        public async Task<IActionResult> Attach(IFormFile? file)
+        {
+            if (!await _permissions.CanViewAsync(User, AppForms.Assistant))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { ok = false, error = "You do not have access to the assistant." });
+            }
+            if (file is null || file.Length == 0)
+            {
+                return Json(new { ok = false, error = "No file was received." });
+            }
+            if (!string.Equals(System.IO.Path.GetExtension(file.FileName), ".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                return Json(new { ok = false, error = "Only Excel .xlsx files can be attached." });
+            }
+            if (file.Length > MaxAttachmentBytes)
+            {
+                return Json(new { ok = false, error = "The file is larger than 10 MB." });
+            }
+
+            SpreadsheetInspector.Result inspected;
+            try
+            {
+                await using var stream = file.OpenReadStream();
+                inspected = SpreadsheetInspector.Inspect(stream);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInformation(ex, "Assistant could not read an attached workbook.");
+                return Json(new { ok = false, error = "The file could not be read as an Excel workbook." });
+            }
+
+            var name = System.IO.Path.GetFileName(file.FileName);
+            if (name.Length > 120) name = name[..120];
+            var attachment = _attachments.Add(User.Identity?.Name ?? "", name, file.Length, inspected);
+            return Json(new { ok = true, id = attachment.Id, fileName = attachment.FileName, layout = attachment.Layout, note = attachment.Note });
+        }
+
+        private const long MaxAttachmentBytes = 10 * 1024 * 1024;
 
         // ---- Live voice (OpenAI Realtime) ----
 
@@ -377,7 +433,7 @@ namespace GovBudget.Controllers
                 output = output[..12000] + "…(cut short; ask for fewer rows)";
             }
 
-            return Json(new { output, proposals = _proposals.Proposals, openScreen = _proposals.OpenScreen });
+            return Json(new { output, proposals = _proposals.Proposals, openScreen = _proposals.OpenScreen, download = _proposals.Download });
         }
 
         /// <summary>
@@ -426,7 +482,16 @@ namespace GovBudget.Controllers
                 return ("", "Please type a question.");
             }
 
-            return (question.Length > 2000 ? question[..2000] : question, null);
+            question = question.Length > 2000 ? question[..2000] : question;
+
+            // The attachment's summary goes into the question, so it also stays in the history.
+            var attachment = _attachments.Get(User.Identity?.Name ?? "", request?.AttachmentId);
+            if (attachment is not null)
+            {
+                question += "\n\n" + attachment.Note;
+            }
+
+            return (question, null);
         }
 
         [HttpPost]

@@ -353,6 +353,16 @@ namespace GovBudget.Services.Assistant
                themselves, open it with fields filled in (names from describe_write_action);
                they check and save it. Otherwise prefer propose_change for data entry.
                Open one screen per request, and only after answering any lookup first.
+            5. File imports - the user can attach an Excel file with the paperclip; it then
+               appears as an "[Attached file ...]" note with its attachment_id, layout and a
+               summary. Use list_file_imports to see which imports the user may run, pick the
+               one that matches the layout and the user's words (HR costs for the entity, HR
+               budget for the working cost center, or HR actuals), confirm the year if it is not
+               clear, then call propose_file_import. It only shows a card: say the card is ready
+               and point out any "Check" lines, never say the file was imported. The import runs
+               when the user clicks Confirm, the page changes to the result, and a note like
+               "[Import ... the screen shows: ...]" tells you the outcome. If the layout is not
+               recognised, say which columns the import expects and offer get_import_template.
 
             Data entry rules:
             - propose_change does not save anything. It shows the user a confirmation card and

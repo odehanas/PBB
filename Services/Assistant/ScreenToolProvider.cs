@@ -2,16 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Security.Claims;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using GovBudget.Utils;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc.Controllers;
-using Microsoft.AspNetCore.Mvc.Infrastructure;
-using Microsoft.AspNetCore.Routing;
 
 namespace GovBudget.Services.Assistant
 {
@@ -105,28 +99,14 @@ namespace GovBudget.Services.Assistant
 
         private const int MaxFields = 40;
 
-        private readonly IPermissionService _permissions;
-        private readonly IHttpContextAccessor _http;
+        private readonly AssistantAccess _access;
         private readonly AssistantProposalCollector _collector;
-        private readonly IActionDescriptorCollectionProvider _actions;
-        private readonly IAuthorizationPolicyProvider _policies;
-        private readonly IAuthorizationService _authorization;
         private List<Screen>? _allowed;
 
-        public ScreenToolProvider(
-            IPermissionService permissions,
-            IHttpContextAccessor http,
-            AssistantProposalCollector collector,
-            IActionDescriptorCollectionProvider actions,
-            IAuthorizationPolicyProvider policies,
-            IAuthorizationService authorization)
+        public ScreenToolProvider(AssistantAccess access, AssistantProposalCollector collector)
         {
-            _permissions = permissions;
-            _http = http;
+            _access = access;
             _collector = collector;
-            _actions = actions;
-            _policies = policies;
-            _authorization = authorization;
         }
 
         public IEnumerable<AssistantToolDefinition> GetTools()
@@ -158,40 +138,24 @@ namespace GovBudget.Services.Assistant
         {
             if (_allowed is not null) return _allowed;
 
-            var principal = _http.HttpContext?.User;
-            if (principal?.Identity?.IsAuthenticated != true) return _allowed = new List<Screen>();
-
-            var rights = await _permissions.GetAllRightsAsync(principal);
             var allowed = new List<Screen>();
+            if (_access.User is null) return _allowed = allowed;
+
             foreach (var s in Screens)
             {
                 if (s.FormKey is not null
-                    && !(rights.TryGetValue(s.FormKey, out var r) && (s.Need == Need.Add ? r.CanAdd : r.CanView)))
+                    && !await _access.HasRightAsync(new[] { s.FormKey }, s.Need == Need.Add ? AssistantAccess.Right.Add : AssistantAccess.Right.View))
                 {
                     continue;
                 }
-                if (await PassesActionAuthorizationAsync(s.Path, principal)) allowed.Add(s);
+
+                var parts = s.Path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+                if (await _access.PassesAuthorizeAsync(parts.Length > 0 ? parts[0] : "Home", parts.Length > 1 ? parts[1] : "Index"))
+                {
+                    allowed.Add(s);
+                }
             }
             return _allowed = allowed;
-        }
-
-        private async Task<bool> PassesActionAuthorizationAsync(string path, ClaimsPrincipal principal)
-        {
-            var parts = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-            var controller = parts.Length > 0 ? parts[0] : "Home";
-            var action = parts.Length > 1 ? parts[1] : "Index";
-
-            var descriptor = _actions.ActionDescriptors.Items
-                .OfType<ControllerActionDescriptor>()
-                .Where(d => d.ControllerName.Equals(controller, StringComparison.OrdinalIgnoreCase)
-                    && d.ActionName.Equals(action, StringComparison.OrdinalIgnoreCase))
-                .FirstOrDefault(d => d.EndpointMetadata.OfType<IHttpMethodMetadata>()
-                    .All(m => m.HttpMethods.Count == 0 || m.HttpMethods.Contains("GET", StringComparer.OrdinalIgnoreCase)));
-            if (descriptor is null) return false; // the catalog names a screen that no longer exists
-
-            if (descriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any()) return true;
-            var policy = await AuthorizationPolicy.CombineAsync(_policies, descriptor.EndpointMetadata.OfType<IAuthorizeData>());
-            return policy is null || (await _authorization.AuthorizeAsync(principal, policy)).Succeeded;
         }
 
         private async Task<string> ListAsync(JsonElement args, AssistantUserContext user, CancellationToken ct)
@@ -247,7 +211,7 @@ namespace GovBudget.Services.Assistant
                 }
             }
 
-            var url = (_http.HttpContext?.Request.PathBase.Value ?? "") + screen.Path + (kept.Count > 0 ? "?" + string.Join("&", kept) : "");
+            var url = _access.PathBase + screen.Path + (kept.Count > 0 ? "?" + string.Join("&", kept) : "");
             _collector.OpenScreen = new AssistantScreenOpen(url, screen.Name, fields);
 
             return JsonSerializer.Serialize(new

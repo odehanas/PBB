@@ -323,8 +323,22 @@
         oecd_data_query: 'Querying OECD data',
         oecd_read_page: 'Reading an OECD page',
         list_screens: 'Finding the screen',
-        open_screen: 'Opening the screen'
+        open_screen: 'Opening the screen',
+        list_file_imports: 'Checking the imports you can run',
+        propose_file_import: 'Preparing the import',
+        get_import_template: 'Getting the template'
     };
+
+    // Downloads an import template the assistant fetched, without leaving the page.
+    function downloadFile(download) {
+        if (!download || typeof download.url !== 'string' || download.url.charAt(0) !== '/' || download.url.charAt(1) === '/') return;
+        var link = document.createElement('a');
+        link.href = download.url;
+        link.setAttribute('download', '');
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    }
 
     function showStatus(div, text) {
         div.className = 'assistant-msg assistant-msg-bot assistant-typing';
@@ -470,6 +484,15 @@
         card.run = function () {
             if (card.dataset.done) return Promise.resolve();
             confirm.disabled = cancel.disabled = true;
+            if (proposal.attachmentId) {
+                // A file import: the screen's own form takes the file, and the page changes to its result.
+                var problem = submitImport(proposal, card, result, actions);
+                if (problem) {
+                    finish({ ok: false, message: problem });
+                    reportOutcome(proposal, false, problem);
+                }
+                return new Promise(function () { /* the page is changing */ });
+            }
             result.textContent = 'Saving…';
             return execute(proposal).then(function (outcome) {
                 finish(outcome);
@@ -484,6 +507,160 @@
         });
 
         return card;
+    }
+
+    // ---- Attaching files ----
+    //
+    // The server only reads a summary of the file (layout, counts, totals). The file itself stays
+    // here, in this page, until the user confirms an import card; then it is posted to the
+    // import screen exactly as if the user had picked it on that screen.
+
+    var attachUrl = widget.getAttribute('data-attach-url');
+    var attachBtn = document.getElementById('assistantAttach');
+    var fileInput = document.getElementById('assistantFile');
+    var attachedFiles = {};
+    var MAX_ATTACH_BYTES = 10 * 1024 * 1024;
+
+    function attachFile(file) {
+        if (!file) return;
+        if (!/\.xlsx$/i.test(file.name)) {
+            append('Only Excel .xlsx files can be attached.', 'assistant-msg-error', false);
+            return;
+        }
+        if (file.size > MAX_ATTACH_BYTES) {
+            append('The file is larger than 10 MB.', 'assistant-msg-error', false);
+            return;
+        }
+        if (busy) return;
+
+        var pending = append('Reading ' + file.name + '…', 'assistant-msg-bot assistant-typing', false);
+        var body = new FormData();
+        body.append('file', file, file.name);
+        fetch(attachUrl, { method: 'POST', headers: { 'RequestVerificationToken': token }, body: body })
+            .then(function (response) {
+                if (response.status === 429) return { ok: false, error: 'Too many requests. Please wait a minute.' };
+                return response.json();
+            })
+            .then(function (data) {
+                pending.remove();
+                if (!data.ok) {
+                    append(data.error || 'The file could not be attached.', 'assistant-msg-error', false);
+                    return;
+                }
+                attachedFiles[data.id] = file;
+                append('📎 ' + data.fileName, 'assistant-msg-user assistant-attachment', false);
+                if (live) {
+                    // The live model hears the summary as part of what the user said.
+                    var said = input.value.trim();
+                    input.value = '';
+                    var text = (said ? said + '\n\n' : 'I attached a file.\n\n') + data.note;
+                    sendLive({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: text }] } });
+                    sendLive({ type: 'response.create' });
+                    logLive('user', text);
+                } else {
+                    ask(input.value.trim() || 'I attached ' + data.fileName + '.', false, data.id);
+                }
+            })
+            .catch(function () {
+                pending.remove();
+                append('The file could not be attached. Check your connection and try again.', 'assistant-msg-error', false);
+            });
+    }
+
+    if (attachBtn && fileInput && attachUrl) {
+        attachBtn.addEventListener('click', function () { fileInput.click(); });
+        fileInput.addEventListener('change', function () {
+            var file = fileInput.files && fileInput.files[0];
+            fileInput.value = '';
+            attachFile(file);
+        });
+        panel.addEventListener('dragover', function (event) {
+            if (event.dataTransfer && Array.prototype.indexOf.call(event.dataTransfer.types || [], 'Files') >= 0) {
+                event.preventDefault();
+                panel.classList.add('assistant-dropping');
+            }
+        });
+        panel.addEventListener('dragleave', function () { panel.classList.remove('assistant-dropping'); });
+        panel.addEventListener('drop', function (event) {
+            panel.classList.remove('assistant-dropping');
+            var file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+            if (!file) return;
+            event.preventDefault();
+            attachFile(file);
+        });
+    }
+
+    // Posts the confirmed import the way the screen's own form does, then the page changes to
+    // the screen's result. Returns a message when it cannot.
+    function submitImport(proposal, card, result, actions) {
+        var file = attachedFiles[proposal.attachmentId];
+        if (!file) return 'The file is no longer in this page (it was attached on another screen). Attach it again with the paperclip.';
+        if (typeof proposal.url !== 'string' || proposal.url.charAt(0) !== '/' || proposal.url.charAt(1) === '/') return 'The import could not be started.';
+
+        var post = document.createElement('form');
+        post.method = 'post';
+        post.action = proposal.url;
+        post.enctype = 'multipart/form-data';
+        post.hidden = true;
+        function field(name, value) {
+            var node = document.createElement('input');
+            node.type = 'hidden';
+            node.name = name;
+            node.value = value;
+            post.appendChild(node);
+        }
+        proposal.form.forEach(function (pair) { field(pair.key, pair.value); });
+        field('__RequestVerificationToken', token);
+        var picker = document.createElement('input');
+        picker.type = 'file';
+        picker.name = 'file';
+        try {
+            var transfer = new DataTransfer();
+            transfer.items.add(file);
+            picker.files = transfer.files;
+        } catch (e) {
+            return 'This browser cannot hand the file to the import screen. Open the screen and choose the file there.';
+        }
+        if (!picker.files || !picker.files.length) return 'This browser cannot hand the file to the import screen. Open the screen and choose the file there.';
+        post.appendChild(picker);
+
+        actions.remove();
+        result.textContent = 'Sent to the import screen. The result follows below.';
+        result.className = 'assistant-proposal-result text-muted';
+        card.dataset.done = '1';
+
+        try {
+            sessionStorage.setItem(CARRY_KEY, JSON.stringify({
+                at: Date.now(),
+                kind: 'import',
+                url: proposal.url,
+                name: proposal.title,
+                fileName: file.name,
+                fields: [],
+                live: !!live,
+                log: snapshotLog()
+            }));
+        } catch (e) { /* the import still runs; the panel starts fresh on the result page */ }
+        if (live) endLive();
+        document.body.appendChild(post);
+        post.submit();
+        return null;
+    }
+
+    // The messages an import screen shows after a post: its success, warning and error boxes.
+    function screenMessages() {
+        var root = document.getElementById('appContent') || document.body;
+        var seen = {};
+        return Array.prototype.slice.call(root.querySelectorAll('.alert-success, .alert-danger, .alert-warning, .validation-summary-errors'))
+            .map(function (node) { return (node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim(); })
+            .filter(function (text) {
+                if (!text || seen[text]) return false;
+                seen[text] = true;
+                return true;
+            })
+            .slice(0, 6)
+            .join(' | ')
+            .slice(0, 1500);
     }
 
     function showProposals(proposals) {
@@ -509,7 +686,7 @@
         log.scrollTop = log.scrollHeight;
     }
 
-    function ask(question, spoken) {
+    function ask(question, spoken, attachmentId) {
         if (busy || !question) return;
         stopSpeaking();
         append(question, 'assistant-msg-user', false);
@@ -523,7 +700,7 @@
         fetch(streamUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
-            body: JSON.stringify({ message: question })
+            body: JSON.stringify({ message: question, attachmentId: attachmentId || null })
         }).then(function (response) {
             if (!response.ok || !response.body) throw new Error('HTTP ' + response.status);
             return readEvents(response, function (name, data) {
@@ -539,6 +716,7 @@
                     finished = true;
                     showReply(pending, data.reply, data.ok ? 'assistant-msg-bot' : 'assistant-msg-error');
                     showProposals(data.proposals || []);
+                    if (data.ok && data.download) downloadFile(data.download);
                     if (data.ok && data.openScreen) {
                         // Give the user a moment to read the reply before the page changes.
                         stopSpeaking();
@@ -790,6 +968,7 @@
                 .then(function (result) {
                     if (result.proposals && result.proposals.length) showProposals(result.proposals);
                     if (result.openScreen) screen = result.openScreen;
+                    if (result.download) downloadFile(result.download);
                     return { call: call, output: result.output || '{}' };
                 })
                 .catch(function (error) {
@@ -991,6 +1170,26 @@
 
         if (typeof carry.log === 'string' && carry.log) log.innerHTML = carry.log;
         openPanel();
+
+        if (carry.kind === 'import') {
+            // Tell the user, and the assistant, what the import screen answered.
+            var shownText = screenMessages();
+            var fileName = String(carry.fileName || 'the file');
+            append(shownText
+                ? 'Uploaded ' + fileName + '. The screen says: ' + shownText
+                : 'Uploaded ' + fileName + '. The screen shows no message; check the page.', 'assistant-msg-bot', false);
+            var importNote = '[Import of "' + fileName + '" into "' + (carry.name || 'the import') + '" submitted by the user; the page is now "' +
+                document.title + '" (' + window.location.pathname + '); the screen shows: ' + (shownText || 'no message') + ']';
+            logLive('assistant', importNote);
+            if (!carry.live) {
+                input.focus();
+            } else if (liveAvailable) {
+                startLive('The import was submitted: ' + importNote + '. Tell the user the result in one or two short sentences, then carry on.');
+            } else {
+                append('Tap the microphone to keep talking.', 'assistant-msg-bot', false);
+            }
+            return;
+        }
 
         var arrived = samePage(carry.url);
         var name = carry.name || 'the screen';
