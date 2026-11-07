@@ -29,11 +29,20 @@ namespace GovBudget.Utils
             "form-action 'self'; " +
             "object-src 'none'";
 
-        public static IApplicationBuilder UseSecurityHeaders(this IApplicationBuilder app, string? contentSecurityPolicy = null)
+        /// <param name="extraConnectSource">
+        /// One more origin pages may contact, added to the default policy only. Used for the
+        /// assistant's live voice, which connects the browser to OpenAI directly.
+        /// </param>
+        public static IApplicationBuilder UseSecurityHeaders(this IApplicationBuilder app, string? contentSecurityPolicy = null, string? extraConnectSource = null)
         {
             var csp = string.IsNullOrWhiteSpace(contentSecurityPolicy)
                 ? DefaultContentSecurityPolicy
                 : contentSecurityPolicy!;
+
+            if (string.IsNullOrWhiteSpace(contentSecurityPolicy) && !string.IsNullOrWhiteSpace(extraConnectSource))
+            {
+                csp = csp.Replace("connect-src 'self';", $"connect-src 'self' {extraConnectSource};");
+            }
 
             return app.Use(async (context, next) =>
             {

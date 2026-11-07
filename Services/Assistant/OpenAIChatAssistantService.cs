@@ -69,7 +69,7 @@ namespace GovBudget.Services.Assistant
 
             var messages = new JsonArray
             {
-                new JsonObject { ["role"] = "system", ["content"] = SystemPrompt(user) }
+                new JsonObject { ["role"] = "system", ["content"] = BuildSystemPrompt(user) }
             };
 
             foreach (var turn in history.TakeLast(_options.MaxHistoryMessages))
@@ -330,7 +330,8 @@ namespace GovBudget.Services.Assistant
             return new StreamedMessage(content.ToString(), toolCalls);
         }
 
-        private static string SystemPrompt(AssistantUserContext user) => $"""
+        /// <summary>Shared with the live voice conversation, so both answer by the same rules.</summary>
+        internal static string BuildSystemPrompt(AssistantUserContext user) => $"""
             You are the GovBudget assistant inside a performance-based budgeting (PBB) application
             used by a government department of finance.
 

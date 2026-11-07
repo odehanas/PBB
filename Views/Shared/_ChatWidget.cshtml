@@ -1,9 +1,11 @@
 @* Floating assistant. Rendered from _Layout for signed-in users who hold the ASSISTANT right. *@
 @inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 @inject GovBudget.Services.Assistant.OpenAISpeechService Speech
+@inject GovBudget.Services.Assistant.OpenAIRealtimeService Realtime
 @{
     var tokens = Antiforgery.GetAndStoreTokens(Context);
     var voice = Speech.IsConfigured;
+    var live = voice && Realtime.IsConfigured;
 }
 <div id="assistantWidget" class="assistant-widget d-print-none"
      data-stream-url="@Url.Action("AskStream", "Chat")"
@@ -11,6 +13,11 @@
      data-outcome-url="@Url.Action("Outcome", "Chat")"
      data-transcribe-url="@Url.Action("Transcribe", "Chat")"
      data-speak-url="@Url.Action("Speak", "Chat")"
+     data-realtime="@(live ? "1" : "0")"
+     data-realtime-session-url="@Url.Action("RealtimeSession", "Chat")"
+     data-realtime-tool-url="@Url.Action("RealtimeTool", "Chat")"
+     data-realtime-log-url="@Url.Action("RealtimeLog", "Chat")"
+     data-realtime-calls-url="@(Realtime.Options.BaseUrl.TrimEnd('/'))/realtime/calls"
      data-token="@tokens.RequestToken">
     <button type="button" class="assistant-launcher btn btn-primary" id="assistantLauncher"
             title="Ask the assistant" aria-expanded="false" aria-controls="assistantPanel">
@@ -54,7 +61,7 @@
                 @if (voice)
                 {
                     <button type="button" class="btn btn-outline-primary" id="assistantMic"
-                            title="Speak your question" aria-pressed="false">
+                            title="@(live ? "Talk with the assistant" : "Speak your question")" aria-pressed="false">
                         <i class="bi bi-mic"></i>
                     </button>
                 }
@@ -62,7 +69,7 @@
                     <i class="bi bi-send"></i>
                 </button>
             </form>
-            <div class="small text-muted mt-1">Answers use your own data scope. Changes are saved only when you confirm them.</div>
+            <div class="small text-muted mt-1" id="assistantStatus" aria-live="polite">Answers use your own data scope. Changes are saved only when you confirm them.</div>
         </div>
     </div>
 </div>
