@@ -32,23 +32,9 @@ namespace GovBudget.Controllers
             _history = history;
         }
 
-        private bool IsGlobalAdmin()
-        {
-            var entityClaim = User.Claims.FirstOrDefault(c => c.Type == "EntityId")?.Value;
-            var hasEntityScope = int.TryParse(entityClaim, out var entityId) && entityId > 0;
-            return User.IsInRole("SYSADMIN") || (User.IsInRole("ADMIN") && !hasEntityScope);
-        }
-
-        public override void OnActionExecuting(ActionExecutingContext context)
-        {
-            if (!IsGlobalAdmin())
-            {
-                context.Result = Forbid();
-                return;
-            }
-
-            base.OnActionExecuting(context);
-        }
+        // Every admin may look at this catalogue (list, details, export) and ask for additions
+        // through Requests; adding, changing, deleting and uploading are for system admins only,
+        // which the [Authorize(Policy = "SysAdminOnly")] on each write action enforces.
 
         // GET: Items?q=...
         // Free-text filter over item code / name and the GL code or name behind the item.
@@ -75,6 +61,7 @@ namespace GovBudget.Controllers
         }
 
         [HttpGet]
+        [Authorize(Policy = "SysAdminOnly")]
         public IActionResult Template()
         {
             using var wb = new XLWorkbook();
@@ -155,6 +142,7 @@ namespace GovBudget.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Upload(IFormFile? file)
         {
             if (file == null || file.Length == 0)
@@ -326,6 +314,7 @@ namespace GovBudget.Controllers
         // Second step: the admin confirmed overwriting the existing item codes.
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> ConfirmUpload()
         {
             var json = HttpContext.Session.GetString(PendingImportKey);
@@ -353,6 +342,7 @@ namespace GovBudget.Controllers
         // The admin chose not to overwrite: discard the pending import, change nothing.
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public IActionResult CancelUpload()
         {
             HttpContext.Session.Remove(PendingImportKey);
@@ -418,6 +408,7 @@ namespace GovBudget.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> ActivateAll()
         {
             var affected = await _context.Items
@@ -442,6 +433,7 @@ namespace GovBudget.Controllers
         }
 
         // GET: Items/Create
+        [Authorize(Policy = "SysAdminOnly")]
         public IActionResult Create()
         {
             PopulateGLDropDown();
@@ -451,6 +443,7 @@ namespace GovBudget.Controllers
         // POST: Items/Create
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Create([Bind("ItemId,ItemCode,ItemName,GLAccountId,IsActive")] Items items)
         {
             // The GLAccount navigation is not posted; exclude it so the non-nullable
@@ -489,6 +482,7 @@ namespace GovBudget.Controllers
         }
 
         // GET: Items/Edit/5
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Edit(int? id)
         {
             if (id == null) return NotFound();
@@ -503,6 +497,7 @@ namespace GovBudget.Controllers
         // POST: Items/Edit/5
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Edit(int id, [Bind("ItemId,ItemCode,ItemName,GLAccountId,IsActive")] Items items)
         {
             if (id != items.ItemId) return NotFound();
@@ -541,6 +536,7 @@ namespace GovBudget.Controllers
         }
 
         // GET: Items/Delete/5
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Delete(int? id)
         {
             if (id == null) return NotFound();
@@ -556,6 +552,7 @@ namespace GovBudget.Controllers
         // POST: Items/Delete/5
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
             var items = await _context.Items.FindAsync(id);
@@ -571,6 +568,7 @@ namespace GovBudget.Controllers
         // an item inline without leaving the page. Returns JSON.
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> QuickCreate(string itemCode, string itemName, int glAccountId, string? category)
         {
             itemCode = (itemCode ?? "").Trim();
