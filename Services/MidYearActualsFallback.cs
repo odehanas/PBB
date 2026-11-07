@@ -28,6 +28,25 @@ namespace GovBudget.Services
                 .ToListAsync();
         }
 
+        // Last year's outturn for every entity in scope (H1 actual + H2 forecast from the Mid-Year
+        // upload), whatever has been imported for the budget year. Used when the user chooses to
+        // compare a budget with the previous year rather than with same-year actuals.
+        public static async Task<List<Row>> LoadPriorYearAsync(GovBudgetContext db, int year, IReadOnlyCollection<int>? entityIds)
+        {
+            var q = db.MidYearGlActualForecasts.AsNoTracking().Where(m => m.BudgetYear == year - 1);
+            if (entityIds != null) q = q.Where(m => entityIds.Contains(m.EntityId));
+            return await q
+                .Select(m => new Row(m.EntityId, m.GLCode, m.GLType, m.ActualH1Amount, m.ForecastH2Amount))
+                .ToListAsync();
+        }
+
+        public static Task<bool> HasPriorYearAsync(GovBudgetContext db, int year, IReadOnlyCollection<int>? entityIds)
+        {
+            var q = db.MidYearGlActualForecasts.AsNoTracking().Where(m => m.BudgetYear == year - 1);
+            if (entityIds != null) q = q.Where(m => entityIds.Contains(m.EntityId));
+            return q.AnyAsync();
+        }
+
         // True when something real has been imported for the year in this scope.
         public static async Task<bool> HasImportedAsync(GovBudgetContext db, int year, IReadOnlyCollection<int>? entityIds)
         {

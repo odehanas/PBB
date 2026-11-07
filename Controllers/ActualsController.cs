@@ -1031,35 +1031,63 @@ namespace GovBudget.Controllers
         // exact where the actuals file carried an ItemId).
         private static readonly string[] BvaDims = { "gl", "tree", "item", "activity", "program", "department", "project" };
 
+        // What the budget is compared with:
+        //   "actual" - the same year's imported actuals + forecast-to-complete (true budget vs actual);
+        //   "prior"  - last year's outturn (Mid-Year H1 actual + H2 forecast), to see how the budget moved.
+        public const string CompareActual = "actual";
+        public const string ComparePrior = "prior";
+
+        // An explicit choice wins. Otherwise: same-year actuals when any are imported, else last
+        // year's outturn when it was uploaded, else same-year (an empty comparison).
+        private async Task<(string Compare, bool HasActuals, bool HasPrior)> ResolveCompare(string? compare, int year, int? entityId)
+        {
+            var scope = EffectiveEntityId(entityId);
+            var scopeIds = scope.HasValue ? new List<int> { scope.Value } : null;
+            var hasActuals = await GovBudget.Services.MidYearActualsFallback.HasImportedAsync(_db, year, scopeIds);
+            var hasPrior = await GovBudget.Services.MidYearActualsFallback.HasPriorYearAsync(_db, year, scopeIds);
+            var choice = (compare ?? "").Trim().ToLowerInvariant();
+            if (choice != CompareActual && choice != ComparePrior)
+            {
+                choice = hasActuals || !hasPrior ? CompareActual : ComparePrior;
+            }
+            return (choice, hasActuals, hasPrior);
+        }
+
         [HttpGet]
-        public async Task<IActionResult> BudgetVsActual(int? year = null, int? entityId = null, string dim = "gl")
+        public async Task<IActionResult> BudgetVsActual(int? year = null, int? entityId = null, string dim = "gl", string? compare = null)
         {
             var selectedYear = ResolveYear(year);
             dim = (dim ?? "gl").Trim().ToLowerInvariant();
             if (!BvaDims.Contains(dim)) dim = "gl";
+            var (mode, hasActuals, hasPrior) = await ResolveCompare(compare, selectedYear, entityId);
 
-            var vm = await BuildBudgetVsActual(selectedYear, entityId, includeMidYear: true);
+            var vm = await BuildBudgetVsActual(selectedYear, entityId, mode);
             ViewBag.Year = selectedYear;
             ViewBag.YearOptions = YearOptions(selectedYear);
             ViewBag.EntityOptions = await EntityOptions(entityId);
             ViewBag.SelectedEntityId = entityId;
             ViewBag.Dim = dim;
-            ViewBag.Tree = dim == "tree" ? await BuildProgramActivityTree(selectedYear, entityId) : null;
-            ViewBag.Breakdown = (dim == "gl" || dim == "tree") ? null : await BuildDerivedBreakdown(dim, selectedYear, entityId);
+            ViewBag.Compare = mode;
+            ViewBag.HasActuals = hasActuals;
+            ViewBag.HasPrior = hasPrior;
+            ViewBag.Tree = dim == "tree" ? await BuildProgramActivityTree(selectedYear, entityId, mode) : null;
+            ViewBag.Breakdown = (dim == "gl" || dim == "tree") ? null : await BuildDerivedBreakdown(dim, selectedYear, entityId, mode);
             return View(vm);
         }
 
         [HttpGet]
-        public async Task<IActionResult> BudgetVsActualExport(int? year = null, int? entityId = null)
+        public async Task<IActionResult> BudgetVsActualExport(int? year = null, int? entityId = null, string? compare = null)
         {
             var selectedYear = ResolveYear(year);
-            var vm = await BuildBudgetVsActual(selectedYear, entityId, includeMidYear: true);
-            var showVariance = !vm.MidYearActualYear.HasValue;
+            var (mode, _, _) = await ResolveCompare(compare, selectedYear, entityId);
+            var vm = await BuildBudgetVsActual(selectedYear, entityId, mode);
+            var prior = mode == ComparePrior;
+            const bool showVariance = true;
 
             using var wb = new XLWorkbook();
             var ws = wb.Worksheets.Add("Budget vs Actual");
-            var headers = vm.MidYearOnly
-                ? new[] { "Category", "GL Code", "GL Name", $"{selectedYear} Budget", $"{vm.MidYearActualYear} H1 Actual", $"{vm.MidYearActualYear} H2 Forecast", $"{vm.MidYearActualYear} Est. Full Year", "Variance", "Variance %" }
+            var headers = prior
+                ? new[] { "Category", "GL Code", "GL Name", $"{selectedYear} Budget", $"{vm.MidYearActualYear} H1 Actual", $"{vm.MidYearActualYear} H2 Forecast", $"{vm.MidYearActualYear} Est. Full Year", $"Change vs {vm.MidYearActualYear}", "Change %" }
                 : new[] { "Category", "GL Code", "GL Name", "Budget", "Actual YTD", "Forecast", "Full Year", "Variance", "Variance %" };
             WriteHeader(ws, headers);
             int r = 2;
@@ -1097,9 +1125,9 @@ namespace GovBudget.Controllers
             if (showVariance) ws.Cell(r, 8).Value = vm.Groups.Sum(g => g.Variance);
             ws.Range(r, 1, r, 9).Style.Font.Bold = true;
             ws.Range(r, 1, r, 9).Style.Fill.BackgroundColor = XLColor.FromHtml(GovBudget.Utils.BrandColors.SubtotalHex);
-            if (!showVariance)
+            if (prior)
             {
-                ws.Cell(r + 2, 1).Value = $"Where nothing is imported for {selectedYear}, actual and forecast are {vm.MidYearActualYear} figures from the Mid-Year upload. Variance is left blank because they cover a different year from the {selectedYear} budget.";
+                ws.Cell(r + 2, 1).Value = $"Compared with {vm.MidYearActualYear} outturn: H1 actual + H2 forecast from the Mid-Year upload. Change = {selectedYear} Budget - {vm.MidYearActualYear} Est. Full Year (positive: the budget is higher than last year).";
             }
             ws.Column(4).Style.NumberFormat.Format = "#,##0";
             ws.Column(5).Style.NumberFormat.Format = "#,##0";
@@ -1108,16 +1136,19 @@ namespace GovBudget.Controllers
             ws.Column(8).Style.NumberFormat.Format = "#,##0";
             ws.SheetView.FreezeRows(1);
             ws.Columns().AdjustToContents();
-            if (!showVariance) ws.Column(1).Width = 24; // the note above shouldn't stretch the column
+            if (prior) ws.Column(1).Width = 24; // the note above shouldn't stretch the column
 
             return WorkbookFile(wb, $"BudgetVsActual_{selectedYear}.xlsx");
         }
 
         // includeMidYear is only for the read-only report and its export. The Forecast screens also build
         // on this and must keep seeing only figures that belong to the budget year.
-        private async Task<BudgetVsActualVm> BuildBudgetVsActual(int year, int? entityId, bool includeMidYear = false)
+        // compare: CompareActual (same-year actuals + forecast-to-complete; the Forecast screens use
+        // this) or ComparePrior (last year's Mid-Year outturn, for every entity in scope).
+        private async Task<BudgetVsActualVm> BuildBudgetVsActual(int year, int? entityId, string compare = CompareActual)
         {
-            var vm = new BudgetVsActualVm { Year = year };
+            var prior = compare == ComparePrior;
+            var vm = new BudgetVsActualVm { Year = year, Compare = prior ? ComparePrior : CompareActual };
             var scope = EffectiveEntityId(entityId);
             if (scope.HasValue && scope.Value <= 0) return vm; // entity admin with no entity
 
@@ -1143,41 +1174,37 @@ namespace GovBudget.Controllers
                 .GroupBy(x => x.GLCode)
                 .ToDictionary(g => g.Key, g => g.Sum(x => x.AnnualCost), StringComparer.OrdinalIgnoreCase);
 
-            // Actuals rolled to GL from ActualPostings
-            var actQ = _db.ActualPostings.AsNoTracking().Where(p => p.BudgetYear == year);
+            // Actuals rolled to GL from ActualPostings (none when comparing with last year).
+            var actQ = _db.ActualPostings.AsNoTracking().Where(p => p.BudgetYear == year && !prior);
             if (scope.HasValue) actQ = actQ.Where(p => p.EntityId == scope.Value);
             var actByGl = (await actQ.Select(p => new { p.GLCode, p.Amount }).ToListAsync())
                 .GroupBy(x => x.GLCode)
                 .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount), StringComparer.OrdinalIgnoreCase);
 
             // HR employee actuals roll up to their salary GL (kept separate from GL-view postings to avoid double counting).
-            var hrActQ = _db.HrActualPostings.AsNoTracking().Where(p => p.BudgetYear == year && p.GLCode != null);
+            var hrActQ = _db.HrActualPostings.AsNoTracking().Where(p => p.BudgetYear == year && p.GLCode != null && !prior);
             if (scope.HasValue) hrActQ = hrActQ.Where(p => p.EntityId == scope.Value);
             foreach (var g in (await hrActQ.Select(p => new { p.GLCode, p.Amount }).ToListAsync())
                          .GroupBy(x => x.GLCode!, StringComparer.OrdinalIgnoreCase))
                 actByGl[g.Key] = actByGl.GetValueOrDefault(g.Key) + g.Sum(x => x.Amount);
 
             // Forecast-to-complete
-            var fcQ = _db.ActualForecasts.AsNoTracking().Where(f => f.BudgetYear == year);
+            var fcQ = _db.ActualForecasts.AsNoTracking().Where(f => f.BudgetYear == year && !prior);
             if (scope.HasValue) fcQ = fcQ.Where(f => f.EntityId == scope.Value);
             var fcByGl = (await fcQ.Select(f => new { f.GLCode, f.ForecastRemaining }).ToListAsync())
                 .GroupBy(x => x.GLCode)
                 .ToDictionary(g => g.Key, g => g.Sum(x => x.ForecastRemaining), StringComparer.OrdinalIgnoreCase);
 
-            if (includeMidYear)
+            if (prior)
             {
                 var scopeIds = scope.HasValue ? new List<int> { scope.Value } : null;
-                var midYear = await GovBudget.Services.MidYearActualsFallback.LoadAsync(_db, year, scopeIds);
-                if (midYear.Count > 0)
+                foreach (var m in await GovBudget.Services.MidYearActualsFallback.LoadPriorYearAsync(_db, year, scopeIds))
                 {
-                    foreach (var m in midYear)
-                    {
-                        actByGl[m.GLCode] = actByGl.GetValueOrDefault(m.GLCode) + m.ActualH1;
-                        if (m.ForecastH2.HasValue) fcByGl[m.GLCode] = fcByGl.GetValueOrDefault(m.GLCode) + m.ForecastH2.Value;
-                    }
-                    vm.MidYearActualYear = year - 1;
-                    vm.MidYearOnly = !await GovBudget.Services.MidYearActualsFallback.HasImportedAsync(_db, year, scopeIds);
+                    actByGl[m.GLCode] = actByGl.GetValueOrDefault(m.GLCode) + m.ActualH1;
+                    if (m.ForecastH2.HasValue) fcByGl[m.GLCode] = fcByGl.GetValueOrDefault(m.GLCode) + m.ForecastH2.Value;
                 }
+                vm.MidYearActualYear = year - 1;
+                vm.MidYearOnly = true;
             }
 
             // Union of all GL codes seen
@@ -1240,8 +1267,9 @@ namespace GovBudget.Controllers
         // via employee cost allocations. Item is exact where the actuals carried an ItemId.
         // Keyed derived rows for one dimension (Key = dimension member id, or -1 for Unassigned).
         // Shared by the flat drill-down and the Programme -> Activity cascade.
-        private async Task<List<(int Key, BvaBreakdownRow Row)>> BuildDerivedRows(string dim, int year, int? entityId)
+        private async Task<List<(int Key, BvaBreakdownRow Row)>> BuildDerivedRows(string dim, int year, int? entityId, string compare = CompareActual)
         {
+            var prior = compare == ComparePrior;
             const int Unassigned = -1;
             var scope = EffectiveEntityId(entityId);
             if (scope.HasValue && scope.Value <= 0) return new List<(int Key, BvaBreakdownRow Row)>();
@@ -1274,7 +1302,7 @@ namespace GovBudget.Controllers
             var hrRows = await hrQ.ToListAsync();
 
             // Actuals (with optional ItemId) and forecast-to-complete, by GL.
-            var actQ = _db.ActualPostings.AsNoTracking().Where(p => p.BudgetYear == year);
+            var actQ = _db.ActualPostings.AsNoTracking().Where(p => p.BudgetYear == year && !prior);
             if (scope.HasValue) actQ = actQ.Where(p => p.EntityId == scope.Value);
             var actList = await actQ.Select(p => new { p.EntityId, p.GLCode, p.ItemId, p.Amount }).ToListAsync();
 
@@ -1282,7 +1310,7 @@ namespace GovBudget.Controllers
             // split only by that entity's own budget.
             static (int, string) EntityGl(int entityId, string gl) => (entityId, gl.ToUpperInvariant());
 
-            var fcQ = _db.ActualForecasts.AsNoTracking().Where(f => f.BudgetYear == year);
+            var fcQ = _db.ActualForecasts.AsNoTracking().Where(f => f.BudgetYear == year && !prior);
             if (scope.HasValue) fcQ = fcQ.Where(f => f.EntityId == scope.Value);
             var fcByEntityGl = (await fcQ.Select(f => new { f.EntityId, f.GLCode, f.ForecastRemaining }).ToListAsync())
                 .GroupBy(x => EntityGl(x.EntityId, x.GLCode))
@@ -1299,8 +1327,10 @@ namespace GovBudget.Controllers
                 .GroupBy(x => EntityGl(x.EntityId, x.GLCode))
                 .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
 
-            // Mid-year GL totals go through the same budget-share split as posted actuals.
-            var midYear = await GovBudget.Services.MidYearActualsFallback.LoadAsync(_db, year, scope.HasValue ? new List<int> { scope.Value } : null);
+            // Last year's Mid-Year GL totals go through the same budget-share split as posted actuals.
+            var midYear = prior
+                ? await GovBudget.Services.MidYearActualsFallback.LoadPriorYearAsync(_db, year, scope.HasValue ? new List<int> { scope.Value } : null)
+                : new List<GovBudget.Services.MidYearActualsFallback.Row>();
             foreach (var m in midYear)
             {
                 var k = EntityGl(m.EntityId, m.GLCode);
@@ -1370,7 +1400,10 @@ namespace GovBudget.Controllers
             }
 
             // EXACT HR: per-employee actuals x budgeted allocation rate (overrides budget-share for HR).
-            var (hrByKey, hrUnassigned) = await ComputeHrExactByDim(dim, year, scope, Unassigned);
+            // Same-year employee actuals only; last year's HR outturn is in the Mid-Year GL totals above.
+            var (hrByKey, hrUnassigned) = prior
+                ? (new Dictionary<int, decimal>(), 0m)
+                : await ComputeHrExactByDim(dim, year, scope, Unassigned);
             foreach (var kv in hrByKey)
                 actualDerived[kv.Key] = actualDerived.GetValueOrDefault(kv.Key) + kv.Value;
             unattributedActual += hrUnassigned;
@@ -1421,9 +1454,9 @@ namespace GovBudget.Controllers
             return rows;
         }
 
-        private async Task<BvaBreakdownVm> BuildDerivedBreakdown(string dim, int year, int? entityId)
+        private async Task<BvaBreakdownVm> BuildDerivedBreakdown(string dim, int year, int? entityId, string compare = CompareActual)
         {
-            var keyed = await BuildDerivedRows(dim, year, entityId);
+            var keyed = await BuildDerivedRows(dim, year, entityId, compare);
             return new BvaBreakdownVm
             {
                 Dim = dim,
@@ -1434,10 +1467,10 @@ namespace GovBudget.Controllers
 
         // Programme -> Activity cascade: activity-level variance rolled up into each programme.
         // Uses the activity-keyed derivation (HR exact by allocation rate; other categories by budget-share).
-        private async Task<BvaTreeVm> BuildProgramActivityTree(int year, int? entityId)
+        private async Task<BvaTreeVm> BuildProgramActivityTree(int year, int? entityId, string compare = CompareActual)
         {
             var tree = new BvaTreeVm();
-            var actRows = await BuildDerivedRows("activity", year, entityId);
+            var actRows = await BuildDerivedRows("activity", year, entityId, compare);
             if (actRows.Count == 0) return tree;
 
             var activityIds = actRows.Where(x => x.Key > 0).Select(x => x.Key).Distinct().ToList();
@@ -1786,6 +1819,9 @@ namespace GovBudget.Controllers
         public List<BvaCategoryGroup> Groups { get; set; } = new();
         // Set when an entity with nothing imported for Year shows mid-year figures from this earlier year.
         public int? MidYearActualYear { get; set; }
+
+        /// <summary>"actual" (same-year actuals) or "prior" (last year's outturn).</summary>
+        public string Compare { get; set; } = "actual";
         // True when every entity in scope is on mid-year figures, so the columns can be relabelled.
         public bool MidYearOnly { get; set; }
     }

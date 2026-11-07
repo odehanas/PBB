@@ -13,15 +13,22 @@
     var grandFull = Model.Groups.Sum(g => g.FullYear);
     var grandVar = Model.Groups.Sum(g => g.Variance);
 
-    // Mid-year figures belong to the previous year, so no variance against this year's budget is shown.
-    var midYearActualYear = Model.MidYearActualYear;
-    var hideVariance = midYearActualYear.HasValue;
-    string VarClass(decimal v) => hideVariance ? "" : (v < 0 ? "text-danger" : "text-success");
-    string VarText(decimal v) => hideVariance ? "—" : v.ToString("N0");
-    string PctText(decimal? p) => hideVariance ? "—" : (p.HasValue ? p.Value.ToString("0.0") + "%" : "-");
-    var headActual = Model.MidYearOnly ? $"{midYearActualYear} H1 Actual" : "Actual YTD";
-    var headForecast = Model.MidYearOnly ? $"{midYearActualYear} H2 Forecast" : "Forecast";
-    var headFull = Model.MidYearOnly ? $"{midYearActualYear} Est. Full Year" : "Full Year";
+    // Compare with the same year's actuals ("actual"), or with last year's outturn ("prior":
+    // Mid-Year H1 actual + H2 forecast). In "prior" the difference is a change, not a variance,
+    // so it is shown signed and without the favourable/unfavourable colours.
+    var compare = (ViewBag.Compare as string) ?? "actual";
+    var isPrior = compare == "prior";
+    var priorYear = year - 1;
+    var hasActuals = (bool)(ViewBag.HasActuals ?? false);
+    var hasPrior = (bool)(ViewBag.HasPrior ?? false);
+    string VarClass(decimal v) => isPrior ? "" : (v < 0 ? "text-danger" : "text-success");
+    string VarText(decimal v) => isPrior ? (v > 0 ? "+" : "") + v.ToString("N0") : v.ToString("N0");
+    string PctText(decimal? p) => p.HasValue ? (isPrior && p.Value > 0 ? "+" : "") + p.Value.ToString("0.0") + "%" : "-";
+    var headActual = isPrior ? $"{priorYear} H1 Actual" : "Actual YTD";
+    var headForecast = isPrior ? $"{priorYear} H2 Forecast" : "Forecast";
+    var headFull = isPrior ? $"{priorYear} Est. Full Year" : "Full Year";
+    var headVar = isPrior ? $"Change vs {priorYear}" : "Variance";
+    var headPct = isPrior ? "Change %" : "Var %";
 
     var dim = (ViewBag.Dim as string) ?? "gl";
     var breakdown = ViewBag.Breakdown as GovBudget.Controllers.BvaBreakdownVm;
@@ -47,12 +54,21 @@
     <div class="d-flex justify-content-between align-items-center mb-2">
         <div>
             <h4 class="mb-0">Budget vs Actual</h4>
-            <div class="text-muted small">FY @year &middot; @DimLabel(dim) view. Full year = Actual YTD + manual forecast-to-complete.</div>
+            <div class="text-muted small">
+                @if (isPrior)
+                {
+                    <text>FY @year budget compared with @priorYear outturn &middot; @DimLabel(dim) view. @priorYear full year = H1 actual + H2 forecast from the Mid-Year upload.</text>
+                }
+                else
+                {
+                    <text>FY @year &middot; @DimLabel(dim) view. Full year = Actual YTD + manual forecast-to-complete.</text>
+                }
+            </div>
         </div>
         <div class="d-flex gap-2">
             <a class="btn btn-sm btn-outline-secondary" asp-action="Index" asp-route-year="@year" asp-route-entityId="@entityRouteVal">Import</a>
             <a class="btn btn-sm btn-outline-primary" asp-action="Forecast" asp-route-year="@year" asp-route-entityId="@entityRouteVal">Forecast to complete</a>
-            <a class="btn btn-sm btn-outline-success" asp-action="BudgetVsActualExport" asp-route-year="@year" asp-route-entityId="@entityRouteVal">&#8681; Export Excel</a>
+            <a class="btn btn-sm btn-outline-success" asp-action="BudgetVsActualExport" asp-route-year="@year" asp-route-entityId="@entityRouteVal" asp-route-compare="@compare">&#8681; Export Excel</a>
             @* Export currently reflects the GL/Category view. *@
         </div>
     </div>
@@ -72,7 +88,20 @@
                     <button type="submit" class="btn btn-sm btn-primary">Apply</button>
                 </div>
                 <input type="hidden" name="dim" value="@dim" />
+                <input type="hidden" name="compare" value="@compare" />
             </form>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <span class="small text-muted">Compare the @year budget with:</span>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Compare the budget with">
+            <a class="btn @(isPrior ? "btn-outline-primary" : "btn-primary")" aria-pressed="@(isPrior ? "false" : "true")"
+               asp-action="BudgetVsActual" asp-route-year="@year" asp-route-entityId="@entityRouteVal" asp-route-dim="@dim" asp-route-compare="actual"
+               title="Budget vs actual for the same year: @year actuals + forecast-to-complete">@year actuals</a>
+            <a class="btn @(isPrior ? "btn-primary" : "btn-outline-primary")" aria-pressed="@(isPrior ? "true" : "false")"
+               asp-action="BudgetVsActual" asp-route-year="@year" asp-route-entityId="@entityRouteVal" asp-route-dim="@dim" asp-route-compare="prior"
+               title="How the @year budget compares with what @priorYear is expected to end at (Mid-Year H1 actual + H2 forecast)">@priorYear outturn (mid-year + forecast)</a>
         </div>
     </div>
 
@@ -81,18 +110,34 @@
         {
             <li class="nav-item">
                 <a class="nav-link py-1 px-3 @(d.Key == dim ? "active" : "")"
-                   asp-action="BudgetVsActual" asp-route-year="@year" asp-route-entityId="@entityRouteVal" asp-route-dim="@d.Key">@d.Label</a>
+                   asp-action="BudgetVsActual" asp-route-year="@year" asp-route-entityId="@entityRouteVal" asp-route-dim="@d.Key" asp-route-compare="@compare">@d.Label</a>
             </li>
         }
     </ul>
 
-    @if (hideVariance)
+    @if (isPrior)
     {
-        <div class="alert alert-info py-2 small">
-            <strong>Showing @midYearActualYear figures from the Mid-Year upload</strong> where nothing has been imported for @year:
-            H1 actuals, H2 forecast and their estimated full year.
-            Activity, programme and other breakdowns split each GL total by @year budget share, so they are estimates.
-            Variance is blank because these figures cover @midYearActualYear, not the @year budget.
+        <div class="alert @(hasPrior ? "alert-info" : "alert-warning") py-2 small">
+            @if (hasPrior)
+            {
+                <strong>Comparing the @year budget with @priorYear outturn</strong><text>: @priorYear H1 actuals plus the H2 forecast from the Mid-Year upload.
+                Change = @year budget &minus; @priorYear estimated full year, so a positive change means the budget is higher than last year.
+                Activity, programme and other breakdowns split each GL total by @year budget share, so they are estimates.</text>
+            }
+            else
+            {
+                <strong>No @priorYear Mid-Year figures have been uploaded</strong><text> for this selection, so there is nothing to compare the budget with yet.</text>
+            }
+        </div>
+    }
+    else if (!hasActuals)
+    {
+        <div class="alert alert-warning py-2 small">
+            <strong>No @year actuals or forecast have been imported yet</strong>, so the full year is zero and each variance equals its budget.
+            @if (hasPrior)
+            {
+                <text>Choose <strong>@priorYear outturn</strong> above to compare the budget with last year instead.</text>
+            }
         </div>
     }
 
@@ -113,8 +158,8 @@
                                 <th class="text-end num">@headActual</th>
                                 <th class="text-end num">@headForecast</th>
                                 <th class="text-end num">@headFull</th>
-                                <th class="text-end num">Variance</th>
-                                <th class="text-end num">Var %</th>
+                                <th class="text-end num">@headVar</th>
+                                <th class="text-end num">@headPct</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -174,8 +219,8 @@
                                     <th class="text-end num">@headActual</th>
                                     <th class="text-end num">@headForecast</th>
                                     <th class="text-end num">@headFull</th>
-                                    <th class="text-end num">Variance</th>
-                                    <th class="text-end num">Var %</th>
+                                    <th class="text-end num">@headVar</th>
+                                    <th class="text-end num">@headPct</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -234,8 +279,8 @@
                                 <th class="text-end num">@headActual</th>
                                 <th class="text-end num">@headForecast</th>
                                 <th class="text-end num">@headFull</th>
-                                <th class="text-end num">Variance</th>
-                                <th class="text-end num">Var %</th>
+                                <th class="text-end num">@headVar</th>
+                                <th class="text-end num">@headPct</th>
                                 <th>Basis</th>
                             </tr>
                         </thead>
@@ -280,13 +325,17 @@
             }
         </div>
         <div class="card-footer py-2 text-muted small">
-            @if (!hideVariance)
+            @if (isPrior)
+            {
+                <text>Change = @year Budget &minus; @priorYear Est. Full Year (positive = the budget is higher than last year's outturn).</text>
+            }
+            else
             {
                 <text>Variance = Budget &minus; Full Year (positive = under budget / favourable for costs).</text>
             }
-            @if (hideVariance && dim == "gl")
+            @if (isPrior && dim == "gl")
             {
-                <text>GL and Category totals come directly from the Mid-Year upload.</text>
+                <text>GL and Category totals come directly from the @priorYear Mid-Year upload.</text>
             }
             else if (dim == "gl")
             {
