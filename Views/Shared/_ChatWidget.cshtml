@@ -13,6 +13,7 @@
      data-outcome-url="@Url.Action("Outcome", "Chat")"
      data-transcribe-url="@Url.Action("Transcribe", "Chat")"
      data-speak-url="@Url.Action("Speak", "Chat")"
+     data-attach-url="@Url.Action("Attach", "Chat")"
      data-realtime="@(live ? "1" : "0")"
      data-realtime-session-url="@Url.Action("RealtimeSession", "Chat")"
      data-realtime-tool-url="@Url.Action("RealtimeTool", "Chat")"
@@ -59,6 +60,10 @@
             <form id="assistantForm" class="d-flex gap-2" autocomplete="off">
                 <input type="text" class="form-control" id="assistantInput" maxlength="2000"
                        placeholder="Ask a question…" aria-label="Ask a question" />
+                <button type="button" class="btn btn-outline-secondary" id="assistantAttach" title="Attach an Excel file to import">
+                    <i class="bi bi-paperclip"></i>
+                </button>
+                <input type="file" id="assistantFile" accept=".xlsx" hidden />
                 @if (voice)
                 {
                     <button type="button" class="btn btn-outline-primary" id="assistantMic"
