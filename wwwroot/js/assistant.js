@@ -321,7 +321,9 @@
         search_pbb_reference: 'Searching the PBB reference',
         oecd_find_dataflow: 'Searching OECD datasets',
         oecd_data_query: 'Querying OECD data',
-        oecd_read_page: 'Reading an OECD page'
+        oecd_read_page: 'Reading an OECD page',
+        list_screens: 'Finding the screen',
+        open_screen: 'Opening the screen'
     };
 
     function showStatus(div, text) {
@@ -537,7 +539,13 @@
                     finished = true;
                     showReply(pending, data.reply, data.ok ? 'assistant-msg-bot' : 'assistant-msg-error');
                     showProposals(data.proposals || []);
-                    if (data.ok) speak(data.reply, spoken);
+                    if (data.ok && data.openScreen) {
+                        // Give the user a moment to read the reply before the page changes.
+                        stopSpeaking();
+                        setTimeout(function () { goToScreen(data.openScreen, false); }, 1200);
+                    } else if (data.ok) {
+                        speak(data.reply, spoken);
+                    }
                 }
             });
         }).then(function () {
@@ -615,7 +623,8 @@
         logLive('user', text);
     }
 
-    function startLive() {
+    // resumeNote: set when the conversation continues on a screen the assistant just opened.
+    function startLive(resumeNote) {
         if (live || liveStarting || busy) return;
         liveStarting = true;
         var attempt = ++liveAttempt;
@@ -633,7 +642,12 @@
             pc = new RTCPeerConnection();
             var audio = document.createElement('audio');
             audio.autoplay = true;
-            pc.ontrack = function (event) { audio.srcObject = event.streams[0]; };
+            pc.ontrack = function (event) {
+                audio.srcObject = event.streams[0];
+                // After a page change the browser may hold back sound until the user clicks once.
+                var playing = audio.play();
+                if (playing && playing.catch) playing.catch(function () { offerToContinue(audio); });
+            };
             mic.getTracks().forEach(function (track) { pc.addTrack(track, mic); });
 
             var dc = pc.createDataChannel('oai-events');
@@ -680,6 +694,7 @@
                 }, info.maxMinutes * 60000);
                 showLiveState('on');
                 setLiveStatus('Listening… speak naturally. Tap the microphone to end.');
+                if (resumeNote) tellLive(resumeNote);
             });
         }).catch(function (error) {
             if (pc) { try { pc.close(); } catch (e) { /* already closed */ } }
@@ -768,11 +783,13 @@
         }
 
         var s = live;
+        var screen = null;
         setLiveStatus(toolLabels[calls[0].name] || 'Looking that up…');
         Promise.all(calls.map(function (call) {
             return postJson(widget.getAttribute('data-realtime-tool-url'), { name: call.name, arguments: call.arguments })
                 .then(function (result) {
                     if (result.proposals && result.proposals.length) showProposals(result.proposals);
+                    if (result.openScreen) screen = result.openScreen;
                     return { call: call, output: result.output || '{}' };
                 })
                 .catch(function (error) {
@@ -783,7 +800,227 @@
             results.forEach(function (r) {
                 sendLive({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: r.call.call_id, output: r.output } });
             });
-            sendLive({ type: 'response.create' });
+            // Opening a screen reloads the page; the conversation reconnects there instead of answering here.
+            if (screen) goToScreen(screen, true);
+            else sendLive({ type: 'response.create' });
+        });
+    }
+
+    // ---- Opening screens, with the conversation carried over ----
+    //
+    // Every screen is a full page load, so before leaving, the panel's messages (and whether a
+    // live conversation was on) are kept in this tab's sessionStorage. The next page picks
+    // them up, reopens the panel, fills any fields the assistant prepared, and reconnects
+    // the live conversation. Nothing on the screen is saved: the user checks it and clicks Save.
+
+    var CARRY_KEY = 'assistantCarry';
+    var CARRY_MAX_AGE_MS = 60000;
+    var CARRY_MAX_MESSAGES = 60;
+
+    function snapshotLog() {
+        var copy = log.cloneNode(true);
+        copy.querySelectorAll('.assistant-typing, .assistant-confirm-all, .assistant-continue, .assistant-proposal-result button')
+            .forEach(function (node) { node.remove(); });
+        // A card left unconfirmed cannot be confirmed from the copy; say so instead of showing dead buttons.
+        copy.querySelectorAll('.assistant-proposal:not([data-done])').forEach(function (card) {
+            var actions = card.querySelector('.assistant-proposal-actions');
+            if (actions) actions.remove();
+            var result = card.querySelector('.assistant-proposal-result');
+            if (result) {
+                result.textContent = 'Not confirmed before the screen changed. Ask again if you still want it.';
+                result.className = 'assistant-proposal-result text-muted';
+            }
+        });
+        while (copy.children.length > CARRY_MAX_MESSAGES) copy.removeChild(copy.firstElementChild);
+        return copy.innerHTML;
+    }
+
+    function goToScreen(screen, wasLive) {
+        if (!screen || typeof screen.url !== 'string' || screen.url.charAt(0) !== '/' || screen.url.charAt(1) === '/') return;
+        var carry = {
+            at: Date.now(),
+            url: screen.url,
+            name: String(screen.name || ''),
+            fields: Array.isArray(screen.fields) ? screen.fields.slice(0, 40) : [],
+            live: !!wasLive,
+            log: snapshotLog()
+        };
+        try {
+            sessionStorage.setItem(CARRY_KEY, JSON.stringify(carry));
+        } catch (e) { /* storage blocked: the screen still opens, the panel starts fresh */ }
+        append('Opening ' + (carry.name || screen.url) + '…', 'assistant-msg-bot assistant-typing', false);
+        if (wasLive) endLive();
+        window.location.assign(screen.url);
+    }
+
+    function readCarry() {
+        var carry = null;
+        try {
+            carry = JSON.parse(sessionStorage.getItem(CARRY_KEY) || 'null');
+            sessionStorage.removeItem(CARRY_KEY);
+        } catch (e) { return null; }
+        if (!carry || typeof carry.at !== 'number' || Date.now() - carry.at > CARRY_MAX_AGE_MS) return null;
+        return carry;
+    }
+
+    function samePage(url) {
+        var target;
+        try { target = new URL(url, window.location.href); } catch (e) { return false; }
+        function clean(path) { return path.toLowerCase().replace(/\/index$/, '').replace(/\/$/, '') || '/'; }
+        return target.origin === window.location.origin && clean(target.pathname) === clean(window.location.pathname);
+    }
+
+    function normalise(text) {
+        return String(text || '').replace(/[\s*:]+/g, ' ').trim().toLowerCase();
+    }
+
+    function screenRoot() {
+        return document.querySelector('#appContent main') || document.getElementById('appContent') || document.body;
+    }
+
+    function fillable(node) {
+        if (!node || node.disabled || node.readOnly || widget.contains(node)) return false;
+        var tag = node.tagName;
+        if (tag === 'SELECT' || tag === 'TEXTAREA') return true;
+        if (tag !== 'INPUT') return false;
+        return ['hidden', 'file', 'password', 'submit', 'button', 'reset', 'image'].indexOf((node.type || '').toLowerCase()) < 0;
+    }
+
+    // A field by its form name, its id, or the text of its label (or placeholder).
+    function findField(root, name) {
+        var wanted = normalise(name);
+        var controls = Array.prototype.filter.call(root.querySelectorAll('input, select, textarea'), fillable);
+        var match = controls.find(function (c) { return normalise(c.name) === wanted; })
+            || controls.find(function (c) { return normalise(c.id) === wanted; });
+        if (match) return match;
+
+        var labels = Array.prototype.slice.call(root.querySelectorAll('label'));
+        var label = labels.find(function (l) { return normalise(l.textContent) === wanted; })
+            || labels.find(function (l) { return wanted.length > 2 && normalise(l.textContent).indexOf(wanted) >= 0; });
+        if (label) {
+            var target = label.control || (label.htmlFor && document.getElementById(label.htmlFor));
+            // Most screens put the label beside its field without a "for": take the field in the same group.
+            if (!target && label.parentElement) {
+                target = Array.prototype.find.call(label.parentElement.querySelectorAll('input, select, textarea'), fillable);
+            }
+            if (fillable(target)) return target;
+        }
+        return controls.find(function (c) {
+            return normalise(c.getAttribute('placeholder')) === wanted || normalise(c.getAttribute('aria-label')) === wanted;
+        }) || null;
+    }
+
+    function setField(node, value) {
+        var text = String(value === null || value === undefined ? '' : value).trim();
+        if (node.tagName === 'SELECT') {
+            var wanted = normalise(text);
+            var options = Array.prototype.slice.call(node.options);
+            var option = options.find(function (o) { return normalise(o.value) === wanted; })
+                || options.find(function (o) { return normalise(o.textContent) === wanted; })
+                || options.find(function (o) { return wanted.length > 1 && normalise(o.textContent).indexOf(wanted) >= 0; });
+            if (!option) return false;
+            node.value = option.value;
+        } else if (node.type === 'checkbox') {
+            node.checked = /^(true|yes|1|on|checked)$/i.test(text);
+        } else if (node.type === 'radio') {
+            var group = node.form ? node.form.querySelectorAll('input[type=radio][name="' + CSS.escape(node.name) + '"]') : [node];
+            var radio = Array.prototype.find.call(group, function (r) { return normalise(r.value) === normalise(text); });
+            if (!radio) return false;
+            radio.checked = true;
+            node = radio;
+        } else {
+            node.value = text;
+        }
+        node.classList.add('assistant-filled');
+        node.dispatchEvent(new Event('input', { bubbles: true }));
+        node.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
+    // Fills in order, because one choice can load the options of the next (entity, then cost
+    // center). Fields whose choice is not there yet get one more try once the page has caught up.
+    function fillScreen(fields) {
+        var root = screenRoot();
+        var filled = [], notFound = [], retry = [];
+
+        fields.forEach(function (f) {
+            if (!f || typeof f.name !== 'string') return;
+            var node = findField(root, f.name);
+            if (!node) notFound.push(f.name);
+            else if (setField(node, f.value)) filled.push(f.name);
+            else retry.push(f);
+        });
+
+        return new Promise(function (resolve) {
+            setTimeout(function () {
+                var noChoice = [];
+                retry.forEach(function (f) {
+                    var node = findField(root, f.name);
+                    if (node && setField(node, f.value)) filled.push(f.name);
+                    else noChoice.push(f.name + ' ("' + f.value + '" is not one of the choices)');
+                });
+                var first = root.querySelector('.assistant-filled');
+                if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                resolve({ filled: filled, notFound: notFound, noChoice: noChoice });
+            }, retry.length ? 1200 : 0);
+        });
+    }
+
+    function openPanel() {
+        panel.removeAttribute('hidden');
+        document.getElementById('assistantLauncher').setAttribute('aria-expanded', 'true');
+    }
+
+    function offerToContinue(audio) {
+        if (log.querySelector('.assistant-continue')) return;
+        var button = el('button', 'btn btn-sm btn-primary assistant-continue', 'Continue talking');
+        button.type = 'button';
+        button.addEventListener('click', function () {
+            audio.play().catch(function () { /* still blocked; the user can type */ });
+            button.remove();
+        });
+        var wrap = el('div', 'assistant-msg assistant-msg-bot', 'Your browser paused the sound after the screen changed. ');
+        wrap.appendChild(button);
+        log.appendChild(wrap);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function resumeAfterScreenChange() {
+        var carry = readCarry();
+        if (!carry) return;
+
+        if (typeof carry.log === 'string' && carry.log) log.innerHTML = carry.log;
+        openPanel();
+
+        var arrived = samePage(carry.url);
+        var name = carry.name || 'the screen';
+        var fields = arrived && Array.isArray(carry.fields) ? carry.fields : [];
+
+        var filling = fields.length
+            ? new Promise(function (resolve) { setTimeout(function () { fillScreen(fields).then(resolve); }, 300); })
+            : Promise.resolve(null);
+
+        filling.then(function (result) {
+            var shown = arrived ? 'Opened ' + name + '.' : 'Could not open ' + name + '; this page opened instead.';
+            var note = '[Opened screen "' + name + '"' + (arrived ? '' : ' - the system showed ' + window.location.pathname + ' instead');
+            if (result) {
+                if (result.filled.length) shown += ' Filled ' + result.filled.length + ' field(s), highlighted in yellow. Check them, then click the screen\'s Save button. Nothing is saved yet.';
+                var missed = result.notFound.concat(result.noChoice);
+                if (missed.length) shown += ' Not filled: ' + missed.join(', ') + '.';
+                note += '; filled: ' + (result.filled.join(', ') || 'none') + (missed.length ? '; not filled: ' + missed.join(', ') : '') + '; not saved';
+            }
+            note += ']';
+            append(shown, 'assistant-msg-bot', false);
+            logLive('assistant', note);
+
+            if (!carry.live) {
+                input.focus();
+            } else if (liveAvailable) {
+                startLive('The page changed: ' + note + '. The user is now on ' + window.location.pathname +
+                    '. Tell them in one short sentence, then carry on with the conversation.');
+            } else {
+                append('Tap the microphone to keep talking.', 'assistant-msg-bot', false);
+            }
         });
     }
 
@@ -829,4 +1066,6 @@
         if (live) sendLiveText(text);
         else ask(text);
     });
+
+    resumeAfterScreenChange();
 })();
