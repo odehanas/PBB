@@ -4,6 +4,8 @@
     var hasEntityScope = int.TryParse(entityClaim, out var scopedEntityId) && scopedEntityId > 0;
     var isGlobalAdmin = User.IsInRole("SYSADMIN") || (User.IsInRole("ADMIN") && !hasEntityScope);
     var canManageHistorical = User.IsInRole("SYSADMIN") || User.IsInRole("ADMIN");
+    // Every admin can view GL accounts and items; only system admins change them.
+    var canManageCatalog = User.IsInRole("SYSADMIN");
 }
 
 <div class="container py-3">
@@ -61,28 +63,25 @@
                     </div>
                 </div>
 
-                @if (isGlobalAdmin)
-                {
-                    <div class="col">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h5 class="card-title">GL Accounts</h5>
-                                <p class="card-text">Chart of Accounts (Revenue, OPEX, CAPEX).</p>
-                                <a asp-controller="GLAccounts" asp-action="Index" class="btn btn-primary">Open</a>
-                            </div>
+                <div class="col">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">GL Accounts</h5>
+                            <p class="card-text">Chart of Accounts (Revenue, OPEX, CAPEX).@(canManageCatalog ? "" : " View only.")</p>
+                            <a asp-controller="GLAccounts" asp-action="Index" class="btn btn-primary">@(canManageCatalog ? "Open" : "View")</a>
                         </div>
                     </div>
+                </div>
 
-                    <div class="col">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h5 class="card-title">Items</h5>
-                                <p class="card-text">Items mapped to GL Accounts.</p>
-                                <a asp-controller="Items" asp-action="Index" class="btn btn-primary">Open</a>
-                            </div>
+                <div class="col">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">Items</h5>
+                            <p class="card-text">Items mapped to GL Accounts.@(canManageCatalog ? "" : " View only.")</p>
+                            <a asp-controller="Items" asp-action="Index" class="btn btn-primary">@(canManageCatalog ? "Open" : "View")</a>
                         </div>
                     </div>
-                }
+                </div>
 
                 <div class="col">
                     <div class="card h-100">
@@ -267,23 +266,20 @@
                                 <a asp-controller="AppUsers" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
                             </td>
                         </tr>
-                        @if (isGlobalAdmin)
-                        {
-                            <tr>
-                                <td>GL Accounts</td>
-                                <td>Chart of Accounts (Revenue, OPEX, CAPEX).</td>
-                                <td class="text-end">
-                                    <a asp-controller="GLAccounts" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td>Items</td>
-                                <td>Items mapped to GL Accounts.</td>
-                                <td class="text-end">
-                                    <a asp-controller="Items" asp-action="Index" class="btn btn-sm btn-primary">Open</a>
-                                </td>
-                            </tr>
-                        }
+                        <tr>
+                            <td>GL Accounts</td>
+                            <td>Chart of Accounts (Revenue, OPEX, CAPEX).@(canManageCatalog ? "" : " View only.")</td>
+                            <td class="text-end">
+                                <a asp-controller="GLAccounts" asp-action="Index" class="btn btn-sm btn-primary">@(canManageCatalog ? "Open" : "View")</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Items</td>
+                            <td>Items mapped to GL Accounts.@(canManageCatalog ? "" : " View only.")</td>
+                            <td class="text-end">
+                                <a asp-controller="Items" asp-action="Index" class="btn btn-sm btn-primary">@(canManageCatalog ? "Open" : "View")</a>
+                            </td>
+                        </tr>
                         <tr>
                             <td>Programs</td>
                             <td>Programs per Entity.</td>

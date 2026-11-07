@@ -23,23 +23,9 @@ namespace GovBudget.Controllers
             _context = context;
         }
 
-        private bool IsGlobalAdmin()
-        {
-            var entityClaim = User.Claims.FirstOrDefault(c => c.Type == "EntityId")?.Value;
-            var hasEntityScope = int.TryParse(entityClaim, out var entityId) && entityId > 0;
-            return User.IsInRole("SYSADMIN") || (User.IsInRole("ADMIN") && !hasEntityScope);
-        }
-
-        public override void OnActionExecuting(ActionExecutingContext context)
-        {
-            if (!IsGlobalAdmin())
-            {
-                context.Result = Forbid();
-                return;
-            }
-
-            base.OnActionExecuting(context);
-        }
+        // Every admin may look at this catalogue (list, details, export) and ask for additions
+        // through Requests; adding, changing, deleting and uploading are for system admins only,
+        // which the [Authorize(Policy = "SysAdminOnly")] on each write action enforces.
 
         // GET: GLAccounts
         public async Task<IActionResult> Index()
@@ -48,6 +34,7 @@ namespace GovBudget.Controllers
         }
 
         [HttpGet]
+        [Authorize(Policy = "SysAdminOnly")]
         public IActionResult Template()
         {
             using var wb = new XLWorkbook();
@@ -86,6 +73,7 @@ namespace GovBudget.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Upload(IFormFile? file)
         {
             if (file == null || file.Length == 0)
@@ -256,6 +244,7 @@ namespace GovBudget.Controllers
         }
 
         // GET: GLAccounts/Create
+        [Authorize(Policy = "SysAdminOnly")]
         public IActionResult Create()
         {
             return View();
@@ -266,6 +255,7 @@ namespace GovBudget.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Create([Bind("GLAccountId,GLCode,GLName,GLType")] GLAccounts gLAccounts)
         {
             if (ModelState.IsValid)
@@ -278,6 +268,7 @@ namespace GovBudget.Controllers
         }
 
         // GET: GLAccounts/Edit/5
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Edit(int? id)
         {
             if (id == null)
@@ -298,6 +289,7 @@ namespace GovBudget.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Edit(int id, [Bind("GLAccountId,GLCode,GLName,GLType")] GLAccounts gLAccounts)
         {
             if (id != gLAccounts.GLAccountId)
@@ -329,6 +321,7 @@ namespace GovBudget.Controllers
         }
 
         // GET: GLAccounts/Delete/5
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Delete(int? id)
         {
             if (id == null)
@@ -349,6 +342,7 @@ namespace GovBudget.Controllers
         // POST: GLAccounts/Delete/5
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
+        [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
             var gLAccounts = await _context.GLAccounts.FindAsync(id);

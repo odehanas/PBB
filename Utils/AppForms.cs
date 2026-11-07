@@ -83,8 +83,8 @@ namespace GovBudget.Utils
 
             new() { Key = Entities,    Group = GroupMasterData, Display = "Entities",     Description = "Government entities." },
             new() { Key = Departments, Group = GroupMasterData, Display = "Cost Centers", Description = "Departments / cost centers." },
-            new() { Key = GlAccounts,  Group = GroupMasterData, Display = "GL Accounts",  Description = "Chart of accounts." },
-            new() { Key = Items,       Group = GroupMasterData, Display = "Items",        Description = "Budget items linked to GL accounts." },
+            new() { Key = GlAccounts,  Group = GroupMasterData, Display = "GL Accounts",  Description = "Chart of accounts. Admins can view it; only system admins can add, change or delete." },
+            new() { Key = Items,       Group = GroupMasterData, Display = "Items",        Description = "Budget items linked to GL accounts. Admins can view them; only system admins can add, change or delete." },
             new() { Key = Programs,    Group = GroupMasterData, Display = "Programs",     Description = "Programs." },
             new() { Key = Activities,  Group = GroupMasterData, Display = "Activities",   Description = "Activities within programs." },
             new() { Key = Projects,    Group = GroupMasterData, Display = "Projects",     Description = "Projects." },

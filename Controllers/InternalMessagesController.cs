@@ -30,8 +30,9 @@ namespace GovBudget.Controllers
             return entityId;
         }
 
+        // subject: optional, pre-fills the request (e.g. from the view-only Items and GL screens).
         [HttpGet]
-        public async Task<IActionResult> Index()
+        public async Task<IActionResult> Index(string? subject = null)
         {
             var userName = User.Identity?.Name ?? "Unknown";
 
@@ -55,7 +56,8 @@ namespace GovBudget.Controllers
                 FromUser = userName,
                 FromEntityCode = dep?.Entity.EntityCode,
                 FromDeptCode = dep?.DeptCode,
-                Status = "Pending"
+                Status = "Pending",
+                Subject = string.IsNullOrWhiteSpace(subject) ? null! : subject.Trim()[..Math.Min(subject.Trim().Length, 200)]
             });
         }
 

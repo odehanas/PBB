@@ -223,6 +223,12 @@
                                        asp-controller="Items" asp-action="Index" target="_blank" title="Manage items (full details)">Manage</a>
                                 </span>
                             }
+                            else if (canManageMasterData)
+                            {
+                                <a class="btn btn-link btn-sm p-0 text-decoration-none text-muted"
+                                   asp-controller="Items" asp-action="Index" target="_blank"
+                                   title="See every item. To add one, send a request to the system administrator.">View items</a>
+                            }
                         </label>
                         <select asp-for="ItemId" class="form-select form-select-sm js-searchable" data-placeholder="Search item by code or name..." asp-items="ViewBag.ItemId">
                             <option value="0">...</option>

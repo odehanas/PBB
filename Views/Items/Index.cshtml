@@ -1,10 +1,12 @@
 @model IEnumerable<GovBudget.Models.Items>
 
 @{
-    ViewData["Title"] = "Index";
+    ViewData["Title"] = "Items";
+    // Every admin may view the items; adding, changing and uploading are for system admins only.
+    var canManage = User.IsInRole("SYSADMIN");
 }
 
-<h1>Index</h1>
+<h1>Items</h1>
 
 @{
     var query = ViewBag.Query as string ?? "";
@@ -16,10 +18,13 @@
 
 <div class="mb-3 d-flex flex-wrap gap-2">
     <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">&larr; Back to Admin Room</a>
-    <a asp-action="Create" class="btn btn-primary">Create New</a>
-    <a asp-action="Template" class="btn btn-outline-primary">Download Template</a>
+    @if (canManage)
+    {
+        <a asp-action="Create" class="btn btn-primary">Create New</a>
+        <a asp-action="Template" class="btn btn-outline-primary">Download Template</a>
+    }
     <a asp-action="Export" asp-route-q="@query" class="btn btn-success">Export to Excel@(isFiltered ? " (filtered)" : "")</a>
-    @if (inactiveCount > 0)
+    @if (canManage && inactiveCount > 0)
     {
         <form asp-action="ActivateAll" method="post" class="d-inline" onsubmit="return confirm('Activate all @inactiveCount inactive item(s)?');">
             @Html.AntiForgeryToken()
@@ -27,6 +32,14 @@
         </form>
     }
 </div>
+
+@if (!canManage)
+{
+    <div class="alert alert-info d-flex flex-wrap align-items-center gap-2">
+        <span><strong>View only.</strong> Items are managed by the system administrator. If one you need is missing or wrong, send a request.</span>
+        <a asp-controller="InternalMessages" asp-action="Index" asp-route-subject="Request: new or changed item" class="btn btn-sm btn-primary ms-auto">Request an addition or change</a>
+    </div>
+}
 
 <form asp-action="Index" method="get" class="mb-3">
     <div class="row g-2 align-items-center">
@@ -61,7 +74,7 @@
 @if (inactiveCount > 0)
 {
     <div class="alert alert-info">
-        @inactiveCount item(s) are currently <strong>inactive</strong> and will not appear in Budget Entry. Use <strong>Activate All</strong> above to enable them.
+        @inactiveCount item(s) are currently <strong>inactive</strong> and will not appear in Budget Entry.@(canManage ? " Use Activate All above to enable them." : "")
         Also confirm each item's <strong>GLType</strong> below is one of REVENUE, OPEX, CAPEX or HR &mdash; items on other types stay hidden.
     </div>
 }
@@ -75,6 +88,8 @@ else if (TempData["Error"] != null)
     <div class="alert alert-danger" style="white-space: pre-line;">@TempData["Error"]</div>
 }
 
+@if (canManage)
+{
 <form asp-action="Upload" method="post" enctype="multipart/form-data" class="mb-3">
     @Html.AntiForgeryToken()
     <div class="row g-2 align-items-center">
@@ -86,6 +101,7 @@ else if (TempData["Error"] != null)
         </div>
     </div>
 </form>
+}
 
 <table class="table">
     <thead>
@@ -136,9 +152,16 @@ else if (TempData["Error"] != null)
                 }
             </td>
             <td>
-                <a asp-action="Edit" asp-route-id="@item.ItemId">Edit</a> |
-                <a asp-action="Details" asp-route-id="@item.ItemId">Details</a> |
-                <a asp-action="Delete" asp-route-id="@item.ItemId">Delete</a>
+                @if (canManage)
+                {
+                    <a asp-action="Edit" asp-route-id="@item.ItemId">Edit</a> <span class="text-muted">|</span>
+                    <a asp-action="Details" asp-route-id="@item.ItemId">Details</a> <span class="text-muted">|</span>
+                    <a asp-action="Delete" asp-route-id="@item.ItemId">Delete</a>
+                }
+                else
+                {
+                    <a asp-action="Details" asp-route-id="@item.ItemId">Details</a>
+                }
             </td>
         </tr>
 }

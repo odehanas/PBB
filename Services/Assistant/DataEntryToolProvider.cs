@@ -35,6 +35,7 @@ namespace GovBudget.Services.Assistant
         private readonly LinkGenerator _links;
         private readonly AssistantProposalCollector _proposals;
         private readonly AssistantOptions _options;
+        private readonly AssistantAccess _access;
 
         public DataEntryToolProvider(
             GovBudgetContext db,
@@ -43,8 +44,10 @@ namespace GovBudget.Services.Assistant
             IHttpContextAccessor http,
             LinkGenerator links,
             AssistantProposalCollector proposals,
-            IOptions<AssistantOptions> options)
+            IOptions<AssistantOptions> options,
+            AssistantAccess access)
         {
+            _access = access;
             _db = db;
             _catalog = catalog;
             _permissions = permissions;
@@ -322,8 +325,11 @@ namespace GovBudget.Services.Assistant
         private async Task<bool> AllowedAsync(WriteAction action)
         {
             var user = _http.HttpContext?.User;
+            // Roles & Rights, and the action's own [Authorize] roles or policy (e.g. items and GL
+            // accounts are changed by system admins only), so no card is offered that would be refused.
             return user is not null
-                && await FormPermissionFilter.CanPostAsync(_permissions, user, action.Controller, action.Action);
+                && await FormPermissionFilter.CanPostAsync(_permissions, user, action.Controller, action.Action)
+                && await _access.PassesAuthorizeAsync(action.Controller, action.Action, "POST");
         }
 
         private async Task<(object? Record, string? Error)> LoadRecordAsync(Type type, long id, AssistantUserContext user, CancellationToken ct)

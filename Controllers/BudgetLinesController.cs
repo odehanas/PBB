@@ -184,7 +184,8 @@ namespace GovBudget.Controllers
                 ViewBag.UploadsElsewhere = await GetUploadsElsewhereAsync(cat.CategoryId, year, entityId.Value, deptId.Value);
             }
 
-            var canManageItems = IsGlobalAdmin();
+            // Items are created by system admins only; other admins can view the list and ask for one.
+            var canManageItems = User.IsInRole("SYSADMIN");
             ViewBag.CanManageItems = canManageItems;
             var canManageMaster = User.IsInRole("ADMIN") || User.IsInRole("SYSADMIN");
             ViewBag.CanManageMasterData = canManageMaster;
@@ -252,13 +253,6 @@ namespace GovBudget.Controllers
             var deptId = HttpContext.Session.GetInt("ctxDeptId");
             if (lines.Any(l => l.BudgetYear != year || l.EntityId != entityId || l.DepartmentId != deptId))
                 TempData[UploadMissedContextKey] = "1";
-        }
-
-        private bool IsGlobalAdmin()
-        {
-            var entityClaim = User.Claims.FirstOrDefault(c => c.Type == "EntityId")?.Value;
-            var hasEntityScope = int.TryParse(entityClaim, out var entityId) && entityId > 0;
-            return User.IsInRole("SYSADMIN") || (User.IsInRole("ADMIN") && !hasEntityScope);
         }
 
         // ---------- POST ----------
