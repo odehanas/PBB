@@ -287,8 +287,18 @@
         if (recorder && recorder.state !== 'inactive') recorder.stop();
     }
 
+    // Live conversation (OpenAI Realtime over WebRTC) when the server offers it and the browser
+    // can do it; otherwise the microphone records one question at a time.
+    var liveAvailable = widget.getAttribute('data-realtime') === '1' && !!window.RTCPeerConnection
+        && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
     if (micBtn) {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+        if (liveAvailable) {
+            micBtn.addEventListener('click', function () {
+                if (live || liveStarting) endLive();
+                else startLive();
+            });
+        } else if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
             micBtn.remove();
             micBtn = null;
         } else {
@@ -369,6 +379,9 @@
     }
 
     function reportOutcome(proposal, ok, message) {
+        // In a live conversation the model hears what happened, so it can tell the user.
+        tellLive('The user ' + (message === 'Cancelled by the user.' ? 'cancelled' : 'confirmed') + ' the card "' +
+            (proposal.summary || proposal.title) + '". Result: ' + (ok ? 'saved' : 'not saved') + ' - ' + message);
         return fetch(outcomeUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
@@ -537,6 +550,245 @@
         });
     }
 
+    // ---- Live voice conversation ----
+    //
+    // The server mints a short-lived key (/Chat/RealtimeSession); the browser then connects to
+    // OpenAI over WebRTC, so speech goes both ways in real time and the user can interrupt.
+    // Every tool the model calls comes back to /Chat/RealtimeTool, which runs it with the user's
+    // own scope. Changes still arrive as cards that only a click on Confirm saves.
+
+    var statusLine = document.getElementById('assistantStatus');
+    var statusDefault = statusLine ? statusLine.textContent : '';
+    var live = null;
+    var liveStarting = false;
+    var liveAttempt = 0; // bumped by endLive, so a connection still being set up is dropped
+    var liveBubble = null;
+    var liveText = '';
+
+    function setLiveStatus(text) {
+        if (statusLine) statusLine.textContent = text || statusDefault;
+    }
+
+    function showLiveState(state) {
+        if (!micBtn) return;
+        var on = state !== 'off';
+        micBtn.classList.toggle('assistant-recording', on);
+        micBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        micBtn.title = on ? 'End the conversation' : 'Talk with the assistant';
+        micBtn.innerHTML = '<i class="bi ' + (on ? 'bi-mic-fill' : 'bi-mic') + '"></i>';
+    }
+
+    function postJson(url, data) {
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+            body: JSON.stringify(data || {})
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (body) {
+                if (!response.ok) throw new Error(body.error || ('HTTP ' + response.status));
+                return body;
+            });
+        });
+    }
+
+    function logLive(role, text) {
+        if (text && text.trim()) {
+            postJson(widget.getAttribute('data-realtime-log-url'), { role: role, text: text.trim() }).catch(function () { /* best effort */ });
+        }
+    }
+
+    function sendLive(event) {
+        if (live && live.dc.readyState === 'open') live.dc.send(JSON.stringify(event));
+    }
+
+    function tellLive(text) {
+        if (!live) return;
+        sendLive({ type: 'conversation.item.create', item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: text }] } });
+        sendLive({ type: 'response.create' });
+    }
+
+    function sendLiveText(text) {
+        append(text, 'assistant-msg-user', false);
+        input.value = '';
+        sendLive({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: text }] } });
+        sendLive({ type: 'response.create' });
+        logLive('user', text);
+    }
+
+    function startLive() {
+        if (live || liveStarting || busy) return;
+        liveStarting = true;
+        var attempt = ++liveAttempt;
+        stopSpeaking();
+        showLiveState('connecting');
+        setLiveStatus('Connecting…');
+        var mic = null;
+        var pc = null;
+
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+            mic = stream;
+            if (attempt !== liveAttempt) throw new Error('cancelled');
+            return postJson(widget.getAttribute('data-realtime-session-url'), { screen: window.location.pathname });
+        }).then(function (info) {
+            pc = new RTCPeerConnection();
+            var audio = document.createElement('audio');
+            audio.autoplay = true;
+            pc.ontrack = function (event) { audio.srcObject = event.streams[0]; };
+            mic.getTracks().forEach(function (track) { pc.addTrack(track, mic); });
+
+            var dc = pc.createDataChannel('oai-events');
+            var s = { pc: pc, dc: dc, mic: mic, audio: audio, timer: null };
+
+            dc.addEventListener('message', function (event) {
+                var data;
+                try { data = JSON.parse(event.data); } catch (e) { return; }
+                if (live === s) handleLiveEvent(data);
+            });
+            pc.addEventListener('connectionstatechange', function () {
+                if ((pc.connectionState === 'failed' || pc.connectionState === 'disconnected') && live === s) {
+                    append('The live conversation dropped. Tap the microphone to start again.', 'assistant-msg-error', false);
+                    endLive();
+                }
+            });
+
+            return pc.createOffer().then(function (offer) {
+                return pc.setLocalDescription(offer).then(function () { return offer; });
+            }).then(function (offer) {
+                return fetch(widget.getAttribute('data-realtime-calls-url'), {
+                    method: 'POST',
+                    body: offer.sdp,
+                    headers: { 'Authorization': 'Bearer ' + info.clientSecret, 'Content-Type': 'application/sdp' }
+                });
+            }).then(function (response) {
+                if (!response.ok) throw new Error('OpenAI did not accept the connection (' + response.status + ').');
+                return response.text();
+            }).then(function (sdp) {
+                return pc.setRemoteDescription({ type: 'answer', sdp: sdp });
+            }).then(function () {
+                return new Promise(function (resolve, reject) {
+                    if (dc.readyState === 'open') { resolve(); return; }
+                    dc.addEventListener('open', resolve, { once: true });
+                    setTimeout(function () { reject(new Error('The assistant did not answer in time.')); }, 15000);
+                });
+            }).then(function () {
+                if (attempt !== liveAttempt) throw new Error('cancelled');
+                liveStarting = false;
+                live = s;
+                s.timer = setTimeout(function () {
+                    append('Live conversations last ' + info.maxMinutes + ' minutes. Tap the microphone to start a new one.', 'assistant-msg-bot', false);
+                    endLive();
+                }, info.maxMinutes * 60000);
+                showLiveState('on');
+                setLiveStatus('Listening… speak naturally. Tap the microphone to end.');
+            });
+        }).catch(function (error) {
+            if (pc) { try { pc.close(); } catch (e) { /* already closed */ } }
+            if (mic) mic.getTracks().forEach(function (t) { t.stop(); });
+            if (attempt !== liveAttempt) return; // the user ended it while it was connecting
+            liveStarting = false;
+            showLiveState('off');
+            setLiveStatus('');
+            var message = error && error.name === 'NotAllowedError'
+                ? 'Microphone access was blocked. Allow the microphone for this site in your browser, then try again. You can still type.'
+                : ((error && error.message) || 'The live conversation could not start.') + ' You can still type your questions.';
+            append(message, 'assistant-msg-error', false);
+        });
+    }
+
+    function endLive() {
+        var s = live;
+        live = null;
+        liveAttempt++;
+        liveStarting = false;
+        liveBubble = null;
+        showLiveState('off');
+        setLiveStatus('');
+        if (!s) return;
+        clearTimeout(s.timer);
+        try { s.dc.close(); } catch (e) { /* already closed */ }
+        try { s.pc.close(); } catch (e) { /* already closed */ }
+        s.mic.getTracks().forEach(function (t) { t.stop(); });
+        s.audio.srcObject = null;
+    }
+
+    function handleLiveEvent(event) {
+        switch (event.type) {
+            case 'input_audio_buffer.speech_started':
+                setLiveStatus('Listening…');
+                break;
+            case 'conversation.item.input_audio_transcription.completed':
+                if (event.transcript && event.transcript.trim()) {
+                    // The transcript can arrive after the answer has started; keep it above the answer.
+                    var said = el('div', 'assistant-msg assistant-msg-user', event.transcript.trim());
+                    if (liveBubble && liveBubble.parentNode === log) log.insertBefore(said, liveBubble);
+                    else log.appendChild(said);
+                    log.scrollTop = log.scrollHeight;
+                    logLive('user', event.transcript);
+                }
+                break;
+            case 'response.created':
+                setLiveStatus('Thinking…');
+                liveBubble = null;
+                liveText = '';
+                break;
+            case 'response.output_audio_transcript.delta':
+            case 'response.output_text.delta':
+                if (!liveBubble) liveBubble = append('', 'assistant-msg-bot', false);
+                liveText += event.delta || '';
+                liveBubble.textContent = liveText;
+                log.scrollTop = log.scrollHeight;
+                setLiveStatus('Speaking… you can interrupt at any time.');
+                break;
+            case 'response.output_audio_transcript.done':
+            case 'response.output_text.done':
+                if (liveBubble && liveText) {
+                    liveBubble.innerHTML = render(liveText);
+                    logLive('assistant', liveText);
+                }
+                liveBubble = null;
+                liveText = '';
+                break;
+            case 'response.done':
+                onLiveResponseDone(event.response || {});
+                break;
+            case 'error':
+                // Interrupting while nothing is playing is harmless and not worth showing.
+                if (event.error && event.error.code !== 'response_cancel_not_active') {
+                    append(event.error.message || 'The assistant reported an error.', 'assistant-msg-error', false);
+                }
+                break;
+        }
+    }
+
+    function onLiveResponseDone(response) {
+        var calls = (response.output || []).filter(function (item) { return item.type === 'function_call'; });
+        if (!calls.length) {
+            if (live) setLiveStatus('Listening… speak naturally. Tap the microphone to end.');
+            return;
+        }
+
+        var s = live;
+        setLiveStatus(toolLabels[calls[0].name] || 'Looking that up…');
+        Promise.all(calls.map(function (call) {
+            return postJson(widget.getAttribute('data-realtime-tool-url'), { name: call.name, arguments: call.arguments })
+                .then(function (result) {
+                    if (result.proposals && result.proposals.length) showProposals(result.proposals);
+                    return { call: call, output: result.output || '{}' };
+                })
+                .catch(function (error) {
+                    return { call: call, output: JSON.stringify({ error: error.message }) };
+                });
+        })).then(function (results) {
+            if (live !== s) return;
+            results.forEach(function (r) {
+                sendLive({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: r.call.call_id, output: r.output } });
+            });
+            sendLive({ type: 'response.create' });
+        });
+    }
+
+    window.addEventListener('pagehide', endLive);
+
     document.getElementById('assistantLauncher').addEventListener('click', function () {
         var open = panel.hasAttribute('hidden');
         if (open) {
@@ -553,6 +805,7 @@
         document.getElementById('assistantLauncher').setAttribute('aria-expanded', 'false');
         stopRecording();
         stopSpeaking();
+        endLive();
     });
 
     document.getElementById('assistantReset').addEventListener('click', function () {
@@ -570,6 +823,10 @@
 
     form.addEventListener('submit', function (event) {
         event.preventDefault();
-        ask(input.value.trim());
+        var text = input.value.trim();
+        if (!text) return;
+        // During a live conversation, typing joins the same conversation.
+        if (live) sendLiveText(text);
+        else ask(text);
     });
 })();

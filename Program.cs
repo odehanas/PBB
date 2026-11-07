@@ -227,6 +227,7 @@ builder.Services.AddScoped<GovBudget.Services.Assistant.AssistantProposalCollect
 builder.Services.AddScoped<GovBudget.Services.Assistant.IAssistantToolProvider, GovBudget.Services.Assistant.DataEntryToolProvider>();
 builder.Services.AddScoped<GovBudget.Services.Assistant.IChatAssistantService, GovBudget.Services.Assistant.OpenAIChatAssistantService>();
 builder.Services.AddScoped<GovBudget.Services.Assistant.OpenAISpeechService>();
+builder.Services.AddScoped<GovBudget.Services.Assistant.OpenAIRealtimeService>();
 
 // Password reset delivery. NoOp for now (admin shares the link manually);
 // swap for an SMTP implementation later without touching callers.
@@ -632,7 +633,11 @@ else
 }
 
 app.UseHttpsRedirection();
-app.UseSecurityHeaders(app.Configuration["Security:ContentSecurityPolicy"]);
+// Live voice connects the browser to OpenAI directly, so only then may pages reach it.
+var assistantOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<GovBudget.Services.Assistant.AssistantOptions>>().Value;
+app.UseSecurityHeaders(
+    app.Configuration["Security:ContentSecurityPolicy"],
+    assistantOptions.IsRealtimeConfigured ? new Uri(assistantOptions.BaseUrl).GetLeftPart(UriPartial.Authority) : null);
 app.UseStaticFiles();
 
 app.UseRouting();

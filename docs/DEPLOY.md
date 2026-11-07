@@ -116,6 +116,22 @@ section shape, then the app must be restarted:
 
 `OPENAI_API_KEY` only works as a real environment variable, never as a JSON key.
 
+**Live voice does not start, or drops straight away.**
+The microphone opens a live conversation (OpenAI Realtime). The server only mints a
+10-minute key; the **user's browser then connects to `api.openai.com` directly**, so the
+user's PC and network must allow outbound HTTPS and WebRTC (UDP) to OpenAI. Admins see
+OpenAI's reason in the panel when the server cannot mint a key (wrong key, model name or
+no balance). To go back to the record-then-answer voice, which only the server talks to
+OpenAI for, set:
+
+```json
+{ "Assistant": { "RealtimeEnabled": false } }
+```
+
+Limits (also in the `Assistant` section): `RealtimeMaxSessionMinutes` (15),
+`RealtimeMaxToolCalls` (60 lookups per conversation), `RealtimeDailySessionsPerUser` (40).
+Model and voice: `RealtimeModel` (`gpt-realtime-2.1-mini`), `RealtimeVoice` (`marin`).
+
 **HTTP 500.30 after a deploy.**
 Start-up crash. Set `stdoutLogEnabled="true"` in `web.config`, reproduce, read
 `logs/stdout_*.log`, then set it back to `false` (the file grows without limit). Usual
@@ -194,6 +210,7 @@ On the VM (`vm-govbudget-app`), set these as **environment variables on the IIS 
 | `DataProtection__KeyPath` | `D:\GovBudget\keys` | Outside the site folder so a Web Deploy cannot delete the keys. Grant the app pool identity **Modify** on this folder. |
 | `Assistant__Enabled` | `false` | The assistant calls `api.openai.com` (data leaves the UAE) and the VNet has no outbound internet. Keep off until an approved endpoint (e.g. Azure OpenAI, UAE North) is agreed. |
 | `Assistant__OecdLiveEnabled` | `false` | Calls `sdmx.oecd.org`; same outbound restriction. |
+| `Assistant__RealtimeEnabled` | `false` | Live voice connects each **user's browser** to OpenAI directly (audio over WebRTC), not just the server. Even once the assistant is enabled, keep this off unless EGA allows users' PCs to reach the endpoint. |
 
 ### Managed identity for Azure SQL
 1. Enable the **system-assigned managed identity** on `vm-govbudget-app`.

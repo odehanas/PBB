@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace GovBudget.Controllers
@@ -32,10 +33,17 @@ namespace GovBudget.Controllers
         // camelCase, matching what Json(...) sends from the non-streaming endpoint.
         private static readonly JsonSerializerOptions EventJson = new(JsonSerializerDefaults.Web);
 
+        // Live voice session state, kept in the user's own server session.
+        private const string RealtimeStartedKey = "assistantRealtimeStarted";
+        private const string RealtimeToolCallsKey = "assistantRealtimeToolCalls";
+
         private readonly IChatAssistantService _assistant;
         private readonly IPermissionService _permissions;
         private readonly AssistantProposalCollector _proposals;
         private readonly OpenAISpeechService _speech;
+        private readonly OpenAIRealtimeService _realtime;
+        private readonly IEnumerable<IAssistantToolProvider> _toolProviders;
+        private readonly IMemoryCache _cache;
         private readonly ILogger<ChatController> _logger;
 
         public ChatController(
@@ -43,13 +51,36 @@ namespace GovBudget.Controllers
             IPermissionService permissions,
             AssistantProposalCollector proposals,
             OpenAISpeechService speech,
+            OpenAIRealtimeService realtime,
+            IEnumerable<IAssistantToolProvider> toolProviders,
+            IMemoryCache cache,
             ILogger<ChatController> logger)
         {
             _assistant = assistant;
             _permissions = permissions;
             _proposals = proposals;
             _speech = speech;
+            _realtime = realtime;
+            _toolProviders = toolProviders;
+            _cache = cache;
             _logger = logger;
+        }
+
+        public sealed class RealtimeSessionRequest
+        {
+            public string? Screen { get; set; }
+        }
+
+        public sealed class RealtimeToolRequest
+        {
+            public string? Name { get; set; }
+            public string? Arguments { get; set; }
+        }
+
+        public sealed class RealtimeLogRequest
+        {
+            public string? Role { get; set; }
+            public string? Text { get; set; }
         }
 
         public sealed class SpeakRequest
@@ -229,6 +260,151 @@ namespace GovBudget.Controllers
                 _logger.LogWarning(ex, "Text-to-speech failed");
                 return StatusCode(StatusCodes.Status502BadGateway);
             }
+        }
+
+        // ---- Live voice (OpenAI Realtime) ----
+
+        /// <summary>
+        /// Starts a live voice conversation: returns a short-lived key the browser uses to connect
+        /// to OpenAI directly. The real API key stays here.
+        /// </summary>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [EnableRateLimiting("assistantVoice")]
+        public async Task<IActionResult> RealtimeSession([FromBody] RealtimeSessionRequest? request, CancellationToken ct)
+        {
+            if (!await _permissions.CanViewAsync(User, AppForms.Assistant) || !_realtime.IsConfigured)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { error = "Live voice is not available." });
+            }
+
+            var user = BuildUserContext();
+            var options = _realtime.Options;
+
+            // Each live minute is billed, so every user gets a daily allowance.
+            var countKey = $"assistantRealtimeCount:{user.UserName}:{DateTime.UtcNow:yyyyMMdd}";
+            var started = _cache.GetOrCreate(countKey, e =>
+            {
+                e.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(1);
+                return 0;
+            });
+            if (started >= options.RealtimeDailySessionsPerUser)
+            {
+                return StatusCode(StatusCodes.Status429TooManyRequests,
+                    new { error = $"You have used today's {options.RealtimeDailySessionsPerUser} live voice conversations. You can still type your questions." });
+            }
+
+            try
+            {
+                var session = await _realtime.StartAsync(user, ReadHistory(), Clip(request?.Screen, 100), ct);
+
+                _cache.Set(countKey, started + 1, TimeSpan.FromDays(1));
+                HttpContext.Session.SetString(RealtimeStartedKey, DateTime.UtcNow.Ticks.ToString());
+                HttpContext.Session.SetInt(RealtimeToolCallsKey, 0);
+
+                return Json(new
+                {
+                    clientSecret = session.ClientSecret,
+                    model = session.Model,
+                    expiresAt = session.ExpiresAt,
+                    maxMinutes = options.RealtimeMaxSessionMinutes
+                });
+            }
+            catch (OpenAIRealtimeService.RealtimeException ex)
+            {
+                var reason = user.Role is "ADMIN" or "SYSADMIN" && ex.Detail is not null ? $" (OpenAI {ex.Detail})" : "";
+                return StatusCode(StatusCodes.Status502BadGateway, new { error = ex.Message + reason });
+            }
+        }
+
+        /// <summary>
+        /// Runs a tool the live model asked for, with the caller's own entity and cost-center
+        /// scope worked out here from the sign-in. Nothing about identity or scope is taken from
+        /// the browser or the model. propose_change still only prepares a card to confirm.
+        /// </summary>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> RealtimeTool([FromBody] RealtimeToolRequest? request, CancellationToken ct)
+        {
+            if (!await _permissions.CanViewAsync(User, AppForms.Assistant) || !_realtime.IsConfigured)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { error = "Live voice is not available." });
+            }
+
+            var options = _realtime.Options;
+            if (!long.TryParse(HttpContext.Session.GetString(RealtimeStartedKey), out var startedTicks)
+                || new DateTime(startedTicks, DateTimeKind.Utc).AddMinutes(options.RealtimeMaxSessionMinutes + 1) < DateTime.UtcNow)
+            {
+                return Json(new { output = JsonSerializer.Serialize(new { error = "This voice session has ended. Ask the user to start a new one." }) });
+            }
+
+            var calls = (HttpContext.Session.GetInt(RealtimeToolCallsKey) ?? 0) + 1;
+            HttpContext.Session.SetInt(RealtimeToolCallsKey, calls);
+            if (calls > options.RealtimeMaxToolCalls)
+            {
+                return Json(new { output = JsonSerializer.Serialize(new { error = "This voice session has reached its limit of lookups. Ask the user to start a new one." }) });
+            }
+
+            var name = (request?.Name ?? "").Trim();
+            var tool = _toolProviders.SelectMany(p => p.GetTools())
+                .FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase));
+
+            string output;
+            if (tool is null)
+            {
+                output = JsonSerializer.Serialize(new { error = $"Unknown tool '{Clip(name, 100)}'." });
+            }
+            else
+            {
+                try
+                {
+                    using var args = JsonDocument.Parse(string.IsNullOrWhiteSpace(request?.Arguments) ? "{}" : request!.Arguments!);
+                    output = await tool.InvokeAsync(args.RootElement, BuildUserContext(), ct);
+                }
+                catch (JsonException)
+                {
+                    output = JsonSerializer.Serialize(new { error = "The arguments were not valid JSON." });
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    _logger.LogWarning(ex, "Live assistant tool {Tool} failed.", name);
+                    output = JsonSerializer.Serialize(new { error = "The tool failed to run." });
+                }
+            }
+
+            if (output.Length > 12000)
+            {
+                output = output[..12000] + "…(cut short; ask for fewer rows)";
+            }
+
+            return Json(new { output, proposals = _proposals.Proposals });
+        }
+
+        /// <summary>
+        /// Keeps what was said in the live conversation in the chat history, so typed questions
+        /// afterwards (and the next live session) carry on from it.
+        /// </summary>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> RealtimeLog([FromBody] RealtimeLogRequest? request)
+        {
+            var text = Clip(request?.Text, 2000);
+            if (!await _permissions.CanViewAsync(User, AppForms.Assistant) || string.IsNullOrEmpty(text))
+            {
+                return Json(new { ok = false });
+            }
+
+            var history = ReadHistory();
+            history.Add(new ChatTurn(request?.Role == "assistant" ? "assistant" : "user", text));
+            WriteHistory(history);
+            return Json(new { ok = true });
+        }
+
+        private static string? Clip(string? text, int max)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            text = text.Trim();
+            return text.Length > max ? text[..max] : text;
         }
 
         private async Task WriteEventAsync(string name, object data, CancellationToken ct)
