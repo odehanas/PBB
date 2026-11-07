@@ -645,6 +645,9 @@ app.UseSession();
 // An administrator-issued password can only be used to choose a new one.
 app.UseForcePasswordChange();
 
+// Screens open on a chosen year, so the user picks one before reaching them.
+app.UseRequireBudgetYear();
+
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");

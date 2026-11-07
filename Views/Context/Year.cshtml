@@ -1,0 +1,357 @@
+@model GovBudget.Controllers.YearPickerVm
+@using System.Globalization
+@{
+    Layout = null;
+}
+@functions {
+    // 1,234,567,890 -> 1.23B. The cards only need to show the scale; the dashboard has the exact figure.
+    private static string Compact(decimal value)
+    {
+        var abs = Math.Abs(value);
+        var (divisor, suffix) = abs >= 1_000_000_000m ? (1_000_000_000m, "B")
+            : abs >= 1_000_000m ? (1_000_000m, "M")
+            : abs >= 1_000m ? (1_000m, "K")
+            : (1m, "");
+        return (value / divisor).ToString(suffix == "" ? "N0" : "0.##", CultureInfo.InvariantCulture) + suffix;
+    }
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Choose Budget Year - GovBudget</title>
+    <link rel="icon" href="~/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="~/images/favicon-32x32.png" />
+    <link rel="stylesheet" href="~/lib/bootstrap-icons/font/bootstrap-icons.min.css" />
+    <style>
+        :root {
+            --yp-deep: #06262f;
+            --yp-teal: #03606f;
+            --yp-teal-soft: #4c8d8e;
+            --yp-gold: #e0bb4a;
+            --yp-text: #f2f8f8;
+            --yp-muted: #a9c4c6;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body { margin: 0; min-height: 100%; }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            color: var(--yp-text);
+            font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+            background:
+                radial-gradient(900px 560px at 12% -8%, rgba(76, 141, 142, .42), transparent 68%),
+                radial-gradient(760px 520px at 100% 108%, rgba(224, 187, 74, .13), transparent 66%),
+                linear-gradient(150deg, #0a4652 0%, var(--yp-deep) 62%);
+            overflow-x: hidden;
+        }
+
+        .yp-emblem {
+            position: fixed;
+            right: -90px;
+            bottom: -110px;
+            width: min(640px, 80vw);
+            opacity: .07;
+            pointer-events: none;
+        }
+
+        .yp-top {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 20px clamp(16px, 4vw, 44px);
+        }
+
+        .yp-logo-plate {
+            background: #fff;
+            border-radius: 10px;
+            padding: 8px 14px;
+            line-height: 0;
+            box-shadow: 0 6px 22px rgba(0, 0, 0, .25);
+        }
+
+        .yp-logo-plate img { height: 42px; width: auto; }
+
+        .yp-signout {
+            background: none;
+            border: 1px solid rgba(255, 255, 255, .24);
+            border-radius: 999px;
+            color: var(--yp-muted);
+            font: inherit;
+            font-size: 13px;
+            padding: 7px 15px;
+            cursor: pointer;
+            transition: color .15s ease, border-color .15s ease;
+        }
+
+        .yp-signout:hover { color: #fff; border-color: rgba(255, 255, 255, .55); }
+
+        .yp-main {
+            position: relative;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            width: 100%;
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 12px clamp(16px, 4vw, 44px) 56px;
+        }
+
+        .yp-eyebrow {
+            color: var(--yp-gold);
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: .02em;
+            margin: 0 0 10px;
+        }
+
+        .yp-title {
+            font-size: clamp(30px, 4.6vw, 50px);
+            font-weight: 300;
+            line-height: 1.12;
+            letter-spacing: -.015em;
+            margin: 0 0 14px;
+        }
+
+        .yp-title strong { font-weight: 650; }
+
+        .yp-lead {
+            color: var(--yp-muted);
+            font-size: 16px;
+            line-height: 1.55;
+            max-width: 620px;
+            margin: 0 0 34px;
+        }
+
+        .yp-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .yp-card {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-height: 262px;
+            padding: 22px;
+            text-align: left;
+            color: inherit;
+            font: inherit;
+            cursor: pointer;
+            border-radius: 18px;
+            border: 1px dashed rgba(255, 255, 255, .22);
+            background: rgba(255, 255, 255, .035);
+            transition: transform .22s cubic-bezier(.2, .7, .2, 1), box-shadow .22s ease, border-color .22s ease, background .22s ease;
+        }
+
+        .yp-card.has-data {
+            border: 1px solid rgba(224, 187, 74, .55);
+            background: linear-gradient(165deg, rgba(255, 255, 255, .15), rgba(255, 255, 255, .05));
+            box-shadow: 0 16px 44px rgba(0, 0, 0, .28);
+        }
+
+        .yp-card:hover,
+        .yp-card:focus-visible {
+            transform: translateY(-6px);
+            border-color: var(--yp-gold);
+            background: linear-gradient(165deg, rgba(255, 255, 255, .2), rgba(255, 255, 255, .07));
+            box-shadow: 0 24px 56px rgba(0, 0, 0, .38), 0 0 0 1px rgba(224, 187, 74, .4);
+            outline: none;
+        }
+
+        .yp-card:focus-visible { outline: 3px solid var(--yp-gold); outline-offset: 3px; }
+
+        .yp-label { color: var(--yp-muted); font-size: 13.5px; }
+
+        .yp-year {
+            font-size: 58px;
+            font-weight: 650;
+            line-height: 1.08;
+            letter-spacing: -.025em;
+            font-variant-numeric: tabular-nums;
+            margin: 4px 0 12px;
+        }
+
+        .yp-card:not(.has-data) .yp-year { color: rgba(242, 248, 248, .62); font-weight: 400; }
+
+        .yp-status {
+            display: inline-flex;
+            align-items: center;
+            align-self: flex-start;
+            gap: 6px;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--yp-gold);
+        }
+
+        .yp-card:not(.has-data) .yp-status { color: var(--yp-muted); font-weight: 400; }
+
+        .yp-figures {
+            display: grid;
+            gap: 7px;
+            margin-top: auto;
+            padding-top: 16px;
+            font-size: 13px;
+        }
+
+        .yp-figure { display: flex; justify-content: space-between; gap: 10px; }
+        .yp-figure span { color: var(--yp-muted); }
+        .yp-figure b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+        .yp-empty-note {
+            margin-top: auto;
+            padding-top: 16px;
+            color: var(--yp-muted);
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .yp-go {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 14px;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: var(--yp-text);
+        }
+
+        .yp-go i { transition: transform .2s ease; }
+        .yp-card:hover .yp-go i, .yp-card:focus-visible .yp-go i { transform: translateX(5px); }
+
+        .yp-current {
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: var(--yp-deep);
+            background: var(--yp-gold);
+            border-radius: 999px;
+            padding: 3px 10px;
+        }
+
+        .yp-foot { margin: 26px 0 0; color: var(--yp-muted); font-size: 13.5px; }
+
+        @@media (max-width: 980px) {
+            .yp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .yp-card { min-height: 236px; }
+        }
+
+        @@media (max-width: 520px) {
+            .yp-grid { grid-template-columns: 1fr; gap: 12px; }
+            .yp-card { min-height: 0; }
+            .yp-year { font-size: 46px; }
+            .yp-logo-plate img { height: 34px; }
+        }
+
+        @@media (prefers-reduced-motion: no-preference) {
+            .yp-rise { animation: ypRise .6s cubic-bezier(.2, .7, .2, 1) both; }
+            .yp-card { animation: ypRise .6s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(.14s + var(--i) * .08s); }
+            @@keyframes ypRise {
+                from { opacity: 0; transform: translateY(22px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            /* The entrance leaves its end state applied, which would override the hover lift. */
+            .yp-card:hover, .yp-card:focus-visible { animation: none; }
+
+            body.is-leaving .yp-card { animation: none; opacity: .25; transform: scale(.97); }
+            body.is-leaving .yp-card.is-chosen { opacity: 1; transform: scale(1.04); border-color: var(--yp-gold); }
+        }
+
+        @@media (prefers-reduced-motion: reduce) {
+            .yp-card, .yp-go i { transition: none; }
+            .yp-card:hover, .yp-card:focus-visible { transform: none; }
+        }
+    </style>
+</head>
+<body>
+    <svg class="yp-emblem" viewBox="0 0 120 120" aria-hidden="true">
+        <path d="M70 14 L104 82 L82 82 L58 34 Z" fill="#fff" />
+        <path d="M46 46 L74 82 L50 82 L36 62 Z" fill="#fff" />
+    </svg>
+
+    <header class="yp-top">
+        <div class="yp-logo-plate">
+            <img src="~/images/rak-dof-logo.png" alt="Ras Al Khaimah Government Department of Finance" />
+        </div>
+        <form asp-controller="Account" asp-action="Logout" method="post">
+            <button type="submit" class="yp-signout"><i class="bi bi-box-arrow-right"></i> Sign out</button>
+        </form>
+    </header>
+
+    <main class="yp-main">
+        <p class="yp-eyebrow yp-rise">Welcome, @User.Identity?.Name</p>
+        <h1 class="yp-title yp-rise">Which <strong>budget year</strong> are you working on?</h1>
+        <p class="yp-lead yp-rise">
+            @if (Model.AnyData)
+            {
+                <text>GovBudget will open on the year you choose. The years that already hold data are highlighted.</text>
+            }
+            else
+            {
+                <text>GovBudget will open on the year you choose. There is no budget data for your account yet, so pick the year you are preparing.</text>
+            }
+        </p>
+
+        <form asp-action="Year" method="post" id="ypForm">
+            <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+            <div class="yp-grid">
+                @for (var i = 0; i < Model.Choices.Count; i++)
+                {
+                    var c = Model.Choices[i];
+                    <button type="submit" name="year" value="@c.Year" style="--i:@i" class="yp-card @(c.HasData ? "has-data" : "")">
+                        @if (c.IsCurrentSelection)
+                        {
+                            <span class="yp-current">Current</span>
+                        }
+                        <span class="yp-label">@c.Label</span>
+                        <span class="yp-year">@c.Year</span>
+                        @if (c.HasData)
+                        {
+                            <span class="yp-status"><i class="bi bi-check-circle-fill"></i> Data available</span>
+                            <span class="yp-figures">
+                                <span class="yp-figure"><span>Revenue</span><b>@Compact(c.Revenue)</b></span>
+                                <span class="yp-figure"><span>Expenditure</span><b>@Compact(c.Expenditure)</b></span>
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="yp-status"><i class="bi bi-circle"></i> No data yet</span>
+                            <span class="yp-empty-note">Nothing has been entered for this year.</span>
+                        }
+                        <span class="yp-go">Open @c.Year <i class="bi bi-arrow-right"></i></span>
+                    </button>
+                }
+            </div>
+        </form>
+
+        <p class="yp-foot yp-rise">You can still switch year from the filter on the dashboard.</p>
+    </main>
+
+    <script>
+        (function () {
+            var form = document.getElementById('ypForm');
+            if (!form) return;
+            form.addEventListener('submit', function (e) {
+                if (e.submitter) e.submitter.classList.add('is-chosen');
+                document.body.classList.add('is-leaving');
+            });
+            // Coming back with the browser's Back button restores the page as it was left.
+            window.addEventListener('pageshow', function () {
+                document.body.classList.remove('is-leaving');
+            });
+        })();
+    </script>
+</body>
+</html>
