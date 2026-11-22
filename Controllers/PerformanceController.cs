@@ -839,10 +839,13 @@ namespace GovBudget.Controllers
                 .ToListAsync();
             var outMap = outputs.GroupBy(o => o.ActivityId).ToDictionary(g => g.Key, g => g.First());
 
+            // Output KPIs linked to an activity can stand in for an output that nobody has typed yet.
+            var candidates = await OutputKpiCandidates(selectedYear, actIds);
+
             var rows = activities.Select(a =>
             {
                 outMap.TryGetValue(a.ActivityId, out var o);
-                return new OutputEditRow
+                var row = new OutputEditRow
                 {
                     ActivityId = a.ActivityId,
                     ActivityLabel = a.ActivityCode + " - " + a.ActivityName,
@@ -850,6 +853,17 @@ namespace GovBudget.Controllers
                     OutputMeasure = o?.OutputMeasure ?? "",
                     OutputVolume = o?.OutputVolume ?? 0m
                 };
+                if (o == null && candidates.TryGetValue(a.ActivityId, out var ks))
+                {
+                    row.KpiOptions = ks.Select(k => new OutputKpiOption
+                    {
+                        KpiId = k.KpiId,
+                        KpiCode = k.KpiCode ?? "",
+                        KpiName = k.KpiName,
+                        Target = k.Target
+                    }).ToList();
+                }
+                return row;
             })
             .OrderBy(r => r.ProgramCode).ThenBy(r => r.ActivityLabel)
             .ToList();
@@ -857,7 +871,90 @@ namespace GovBudget.Controllers
             ViewBag.Year = selectedYear;
             ViewBag.YearOptions = YearOptions(selectedYear);
             ViewBag.EntityOptions = await EntityOptions(entityId);
+            ViewBag.SelectedEntityId = entityId;
             return View(rows);
+        }
+
+        // Output-type KPIs per activity for a year, best candidate first: one with a target,
+        // then the heaviest cost weight, then KPI code.
+        private async Task<Dictionary<int, List<Kpis>>> OutputKpiCandidates(int year, List<int> activityIds)
+        {
+            if (activityIds.Count == 0) return new Dictionary<int, List<Kpis>>();
+            var kpis = await _db.Kpis.AsNoTracking()
+                .Where(k => k.BudgetYear == year && k.Period == DefaultPeriod && k.KpiType == "Output"
+                    && k.ActivityId != null && activityIds.Contains(k.ActivityId.Value))
+                .ToListAsync();
+            return kpis.GroupBy(k => k.ActivityId!.Value).ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(k => k.Target.HasValue)
+                      .ThenByDescending(k => k.CostWeight ?? 0m)
+                      .ThenBy(k => CodeSortKey(k.KpiCode), StringComparer.Ordinal)
+                      .ThenBy(k => k.KpiId)
+                      .ToList());
+        }
+
+        // Fills activities that have no output yet from their Output KPI: the KPI name becomes the
+        // measure and its target the volume. Rows somebody already entered are never touched.
+        // pick[activityId] = kpiId chooses between several Output KPIs on one activity.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> OutputsFillFromKpis(int year, int? entityId = null, Dictionary<int, long>? pick = null)
+        {
+            var scope = EffectiveEntityId(entityId);
+            if (scope.HasValue && scope.Value <= 0) return Forbid();
+
+            var actQuery =
+                from a in _db.Activities.AsNoTracking().Where(ActivityVisibility.IsVisible(_db))
+                join p in _db.Programs.AsNoTracking() on a.ProgramId equals p.ProgramId
+                select new { a.ActivityId, p.EntityId };
+            if (scope.HasValue) actQuery = actQuery.Where(x => x.EntityId == scope.Value);
+            var actIds = await actQuery.Select(x => x.ActivityId).ToListAsync();
+
+            var candidates = await OutputKpiCandidates(year, actIds);
+            var existing = await _db.ActivityOutputs.AsNoTracking()
+                .Where(o => o.BudgetYear == year && actIds.Contains(o.ActivityId))
+                .Select(o => new { o.ActivityId, o.OutputMeasure, o.IsPrimary })
+                .ToListAsync();
+            var hasPrimary = existing.Where(o => o.IsPrimary).Select(o => o.ActivityId).ToHashSet();
+
+            int filled = 0, noTarget = 0;
+            foreach (var kv in candidates)
+            {
+                if (hasPrimary.Contains(kv.Key)) continue;
+
+                var kpi = kv.Value[0];
+                if (pick != null && pick.TryGetValue(kv.Key, out var chosenId))
+                    kpi = kv.Value.FirstOrDefault(k => k.KpiId == chosenId) ?? kpi;
+
+                var measure = kpi.KpiName.Trim();
+                if (measure.Length > 200) measure = measure.Substring(0, 200);
+                if (measure.Length == 0) continue;
+                // (ActivityId, BudgetYear, OutputMeasure) is unique, also across non-primary rows.
+                if (existing.Any(o => o.ActivityId == kv.Key && string.Equals(o.OutputMeasure, measure, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+
+                var volume = kpi.Target.HasValue && kpi.Target.Value > 0 ? kpi.Target.Value : 0m;
+                if (volume == 0m) noTarget++;
+                _db.ActivityOutputs.Add(new ActivityOutputs
+                {
+                    ActivityId = kv.Key,
+                    BudgetYear = year,
+                    OutputMeasure = measure,
+                    OutputVolume = volume,
+                    IsPrimary = true,
+                    CreatedBy = User.Identity?.Name
+                });
+                filled++;
+            }
+            if (filled > 0) await _db.SaveChangesAsync();
+
+            var msg = filled == 0
+                ? "Nothing to fill: no activity without an output has an Output KPI for this year."
+                : $"Filled {filled} activity output(s) from KPIs.";
+            if (noTarget > 0)
+                msg += $" {noTarget} of them have no KPI target, so the volume was left at 0 - enter it and save.";
+            TempData["OutputFillResult"] = msg;
+            return RedirectToAction(nameof(Outputs), new { year, entityId });
         }
 
         [HttpPost]
@@ -1231,6 +1328,16 @@ namespace GovBudget.Controllers
         public string ProgramCode { get; set; } = "";
         public string OutputMeasure { get; set; } = "";
         public decimal OutputVolume { get; set; }
+        // Output KPIs that could fill this row; only set while the row has no output. Best first.
+        public List<OutputKpiOption> KpiOptions { get; set; } = new();
+    }
+
+    public class OutputKpiOption
+    {
+        public long KpiId { get; set; }
+        public string KpiCode { get; set; } = "";
+        public string KpiName { get; set; } = "";
+        public decimal? Target { get; set; }
     }
 
     public class ActivityRowProjection
