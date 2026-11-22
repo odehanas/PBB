@@ -4,6 +4,11 @@
     var year = (int)ViewBag.Year;
     var yearOptions = ViewBag.YearOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
     var entityOptions = ViewBag.EntityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>;
+    var selectedEntityId = ViewBag.SelectedEntityId as int?;
+    var fillable = Model.Count(r => r.KpiOptions.Count > 0);
+    string KpiLabel(GovBudget.Controllers.OutputKpiOption k) =>
+        (k.KpiCode.Length > 0 ? k.KpiCode + " - " : "") + k.KpiName
+        + (k.Target.HasValue ? " (target " + k.Target.Value.ToString("#,0.####") + ")" : " (no target)");
 }
 
 <div class="container-fluid py-3">
@@ -25,6 +30,28 @@
             <button type="submit" class="btn btn-sm btn-primary">Apply</button>
         </div>
     </form>
+
+    @if (TempData["OutputFillResult"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show py-2 small" role="alert">
+            @TempData["OutputFillResult"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    @if (fillable > 0)
+    {
+        <form method="post" asp-action="OutputsFillFromKpis" id="fillFromKpisForm"
+              class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
+            <input type="hidden" name="year" value="@year" />
+            <input type="hidden" name="entityId" value="@selectedEntityId" />
+            <div class="small">
+                <strong>@fillable</strong> empty @(fillable == 1 ? "activity has" : "activities have") an Output KPI for @year.
+                Filling uses the KPI name as the measure and its target as the volume. Outputs already entered are not changed.
+            </div>
+            <button type="submit" class="btn btn-sm btn-success">Fill from KPIs</button>
+        </form>
+    }
 
     <div class="card shadow-sm">
         <div class="card-body">
@@ -58,6 +85,27 @@
                             <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
                         </div>
                     </form>
+                    @if (r.KpiOptions.Count == 1)
+                    {
+                        <div class="row mb-2">
+                            <div class="col-md-6 offset-md-6 small text-muted">From KPI: @KpiLabel(r.KpiOptions[0])</div>
+                        </div>
+                    }
+                    else if (r.KpiOptions.Count > 1)
+                    {
+                        <div class="row g-2 align-items-center mb-2">
+                            <div class="col-md-6 offset-md-6">
+                                <label class="small text-muted mb-1">This activity has @r.KpiOptions.Count Output KPIs - choose the one to fill from:</label>
+                                @* Belongs to the fill form above, not to this row's save form. *@
+                                <select name="pick[@r.ActivityId]" form="fillFromKpisForm" class="form-select form-select-sm">
+                                    @foreach (var k in r.KpiOptions)
+                                    {
+                                        <option value="@k.KpiId">@KpiLabel(k)</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    }
                 }
                 <div class="text-muted small mt-2">Tip: clear the Output Measure and save to remove an output.</div>
             }
