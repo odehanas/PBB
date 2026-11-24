@@ -509,6 +509,14 @@ namespace GovBudget.Controllers
                 ModelState.AddModelError(nameof(Items.GLAccountId), "Please select a GL Account.");
             }
 
+            // Item codes are unique; catch a clash with another item before the database does.
+            var code = (items.ItemCode ?? "").Trim();
+            if (!string.IsNullOrEmpty(code) &&
+                await _context.Items.AnyAsync(i => i.ItemCode == code && i.ItemId != items.ItemId))
+            {
+                ModelState.AddModelError(nameof(Items.ItemCode), $"Another item already uses code '{code}'.");
+            }
+
             if (ModelState.IsValid)
             {
                 try
