@@ -258,13 +258,41 @@ namespace GovBudget.Controllers
         [Authorize(Policy = "SysAdminOnly")]
         public async Task<IActionResult> Create([Bind("GLAccountId,GLCode,GLName,GLType")] GLAccounts gLAccounts)
         {
+            await CheckGlCodeIsFree(gLAccounts);
+
             if (ModelState.IsValid)
             {
-                _context.Add(gLAccounts);
-                await _context.SaveChangesAsync();
-                return RedirectToAction(nameof(Index));
+                try
+                {
+                    _context.Add(gLAccounts);
+                    await _context.SaveChangesAsync();
+                    TempData["Success"] = $"GL account '{gLAccounts.GLCode} - {gLAccounts.GLName}' created.";
+                    return RedirectToAction(nameof(Index));
+                }
+                catch (DbUpdateException)
+                {
+                    // Two people saving the same code at once, or any other database refusal.
+                    ModelState.AddModelError(string.Empty, "The GL account could not be saved. Check that the GL code is not already in use and try again.");
+                }
             }
             return View(gLAccounts);
+        }
+
+        // GL codes are unique. Say so on the form instead of letting the database reject the save.
+        private async Task CheckGlCodeIsFree(GLAccounts gl)
+        {
+            gl.GLCode = (gl.GLCode ?? "").Trim();
+            if (gl.GLCode.Length == 0) return;
+
+            var existing = await _context.GLAccounts.AsNoTracking()
+                .Where(g => g.GLCode == gl.GLCode && g.GLAccountId != gl.GLAccountId)
+                .Select(g => new { g.GLName, g.GLType })
+                .FirstOrDefaultAsync();
+            if (existing != null)
+            {
+                ModelState.AddModelError(nameof(GLAccounts.GLCode),
+                    $"GL code '{gl.GLCode}' already exists ({existing.GLName}, {existing.GLType}). Use a different code, or edit the existing account.");
+            }
         }
 
         // GET: GLAccounts/Edit/5
@@ -297,6 +325,8 @@ namespace GovBudget.Controllers
                 return NotFound();
             }
 
+            await CheckGlCodeIsFree(gLAccounts);
+
             if (ModelState.IsValid)
             {
                 try
@@ -315,6 +345,12 @@ namespace GovBudget.Controllers
                         throw;
                     }
                 }
+                catch (DbUpdateException)
+                {
+                    ModelState.AddModelError(string.Empty, "The GL account could not be saved. Check that the GL code is not already in use and try again.");
+                    return View(gLAccounts);
+                }
+                TempData["Success"] = $"GL account '{gLAccounts.GLCode} - {gLAccounts.GLName}' updated.";
                 return RedirectToAction(nameof(Index));
             }
             return View(gLAccounts);
