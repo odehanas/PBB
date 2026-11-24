@@ -20,6 +20,7 @@ namespace GovBudget.Controllers
         private const string PbbMoney = "#,##0.00;[Red](#,##0.00);-";
         private const string PbbPercent = "0.0%;[Red]-0.0%;-";
         private const string PbbNumber = "#,##0.##;[Red]-#,##0.##;-";
+        private const string PbbWholeNumber = "#,##0;[Red]-#,##0;-";
 
         private enum PbbKind { Text, Money, Percent, Number }
         private enum PbbRowStyle { Normal, Subtotal, Total, Muted }
@@ -62,10 +63,18 @@ namespace GovBudget.Controllers
             var tradCapex = Cat(traditional, "CAPEX");
             var tradExpense = tradHr + tradOpex + tradCapex;
 
+            // CAPEX shown in two parts on the summary: capital projects (CAPEX lines that carry a
+            // project) and all other CAPEX. The two always add back to the CAPEX total.
+            var capexProjects = traditional.Where(r => r.CategoryCode == "CAPEX" && r.ProjectId.HasValue).Sum(r => r.Amount);
+            var capexOther = tradCapex - capexProjects;
+
             // HR that was imported but not yet allocated to any activity. It belongs to no
             // programme, so it is carried as its own line to keep both views equal in total.
             var unallocatedHr = tradHr - Cat(pbb, "HR");
             var hasUnallocatedHr = Math.Abs(unallocatedHr) > 0.005m;
+            var unallocatedHrLabel = Math.Abs(unallocatedHr) < 1m
+                ? "HR allocation rounding difference"
+                : "HR not yet allocated to an activity";
 
             // ---- supporting data ----
             var scopeEntityIds = pbb.Select(r => r.EntityId).Concat(traditional.Select(r => r.EntityId))
@@ -191,7 +200,8 @@ namespace GovBudget.Controllers
                     {
                         new(new object?[] { "HR (salaries and staff cost)", tradHr, Share(tradHr, tradExpense) }),
                         new(new object?[] { "OPEX (operating expenditure)", tradOpex, Share(tradOpex, tradExpense) }),
-                        new(new object?[] { "CAPEX (capital expenditure)", tradCapex, Share(tradCapex, tradExpense) }),
+                        new(new object?[] { "CAPEX expenditures (not tied to a project)", capexOther, Share(capexOther, tradExpense) }),
+                        new(new object?[] { "Capital projects (CAPEX tagged to a project)", capexProjects, Share(capexProjects, tradExpense) }),
                         new(new object?[] { "Total expenditure", tradExpense, Share(tradExpense, tradExpense) }, PbbRowStyle.Total),
                         new(new object?[] { "Revenue", tradRevenue, null }),
                         new(new object?[] { "Surplus / (deficit)", tradRevenue - tradExpense, null }, PbbRowStyle.Subtotal)
@@ -206,7 +216,7 @@ namespace GovBudget.Controllers
                     p.Direct, p.Allocated, p.Total, Share(p.Total, pbbTotal)
                 })).ToList();
                 if (hasUnallocatedHr)
-                    progRows.Add(new PbbRow(new object?[] { "HR not yet allocated to an activity", "", null, unallocatedHr, 0m, unallocatedHr, Share(unallocatedHr, pbbTotal) }, PbbRowStyle.Muted));
+                    progRows.Add(new PbbRow(new object?[] { unallocatedHrLabel, "", null, unallocatedHr, 0m, unallocatedHr, Share(unallocatedHr, pbbTotal) }, PbbRowStyle.Muted));
                 progRows.Add(new PbbRow(new object?[]
                 {
                     "Total expenditure", "", programmes.Sum(p => p.Activities),
@@ -332,7 +342,7 @@ namespace GovBudget.Controllers
                     p.Hr, p.Opex, p.Capex, p.Direct, p.Allocated, p.Total, Share(p.Total, pbbTotal), p.Revenue, p.Revenue - p.Total
                 })).ToList();
                 if (hasUnallocatedHr)
-                    rows.Add(new PbbRow(new object?[] { "", "", "HR not yet allocated to an activity", "", null, null, unallocatedHr, 0m, 0m, unallocatedHr, 0m, unallocatedHr, Share(unallocatedHr, pbbTotal), 0m, -unallocatedHr }, PbbRowStyle.Muted));
+                    rows.Add(new PbbRow(new object?[] { "", "", unallocatedHrLabel, "", null, null, unallocatedHr, 0m, 0m, unallocatedHr, 0m, unallocatedHr, Share(unallocatedHr, pbbTotal), 0m, -unallocatedHr }, PbbRowStyle.Muted));
                 rows.Add(new PbbRow(new object?[]
                 {
                     "Total", "", "", "", programmes.Sum(p => p.Activities), programmes.Sum(p => p.Kpis),
@@ -381,7 +391,7 @@ namespace GovBudget.Controllers
                     }, PbbRowStyle.Subtotal));
                 }
                 if (hasUnallocatedHr)
-                    rows.Add(new PbbRow(new object?[] { "", "HR not yet allocated to an activity", "", "", unallocatedHr, 0m, 0m, unallocatedHr, 0m, unallocatedHr, Share(unallocatedHr, pbbTotal), 0m, "", null, null, null }, PbbRowStyle.Muted));
+                    rows.Add(new PbbRow(new object?[] { "", unallocatedHrLabel, "", "", unallocatedHr, 0m, 0m, unallocatedHr, 0m, unallocatedHr, Share(unallocatedHr, pbbTotal), 0m, "", null, null, null }, PbbRowStyle.Muted));
                 rows.Add(new PbbRow(new object?[]
                 {
                     "Total", "", "", "",
@@ -758,7 +768,7 @@ namespace GovBudget.Controllers
                     {
                         PbbKind.Money => PbbMoney,
                         PbbKind.Percent => PbbPercent,
-                        PbbKind.Number => PbbNumber,
+                        PbbKind.Number => r.Cells[c] is decimal dn && dn != Math.Truncate(dn) ? PbbNumber : PbbWholeNumber,
                         _ => "@"
                     };
                     if (kinds[c] == PbbKind.Text) cell.Style.NumberFormat.Format = "";
