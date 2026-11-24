@@ -206,6 +206,8 @@ namespace GovBudget.Controllers
                 .Select(y => new SelectListItem(y.ToString(), y.ToString(), y == selectedYear))
                 .ToList();
 
+            var projects = await BuildProjectSummary(selectedYear, effectiveEntityId);
+
             var canAccessAdminRoom = User.IsInRole("ADMIN") || User.IsInRole("SYSADMIN");
             var vm = new HomeExecutiveSummaryVm
             {
@@ -240,10 +242,72 @@ namespace GovBudget.Controllers
                         Capex = overallCapex,
                         Headcount = overallHeadcount
                     },
-                Entities = rows
+                Entities = rows,
+                Projects = projects
             };
 
             return View(vm);
+        }
+
+        // Projects are a second way of looking at money that is already in the Revenue, HR, OPEX
+        // and CAPEX totals: a budget line or an HR allocation may carry a project. This lists that
+        // part per project. It is a breakdown of the totals above, never an addition to them.
+        private async Task<List<ProjectSummaryRowVm>> BuildProjectSummary(int year, int? entityId)
+        {
+            var lineQuery =
+                from b in _db.BudgetLines.AsNoTracking()
+                join cat in _db.Categories.AsNoTracking() on b.CategoryId equals cat.CategoryId
+                where b.BudgetYear == year && b.ProjectId != null
+                select new { b.EntityId, ProjectId = b.ProjectId!.Value, cat.CategoryCode, b.Amount };
+            if (entityId.HasValue) lineQuery = lineQuery.Where(x => x.EntityId == entityId.Value);
+            var lineAgg = await lineQuery
+                .GroupBy(x => new { x.ProjectId, x.CategoryCode })
+                .Select(g => new { g.Key.ProjectId, g.Key.CategoryCode, Total = g.Sum(x => x.Amount) })
+                .ToListAsync();
+
+            // HR reaches a project only through an employee cost allocation that names one.
+            var hrQuery =
+                from a in _db.HrEmployeeCostAllocations.AsNoTracking()
+                join emp in _db.HrEmployeeCosts.AsNoTracking() on a.EmployeeCostId equals emp.EmployeeCostId
+                where emp.BudgetYear == year && a.ProjectId != null
+                select new { emp.EntityId, ProjectId = a.ProjectId!.Value, a.EmployeeCostId, a.AllocatedAmount };
+            if (entityId.HasValue) hrQuery = hrQuery.Where(x => x.EntityId == entityId.Value);
+            var hrRows = await hrQuery.ToListAsync();
+            var hrAgg = hrRows.GroupBy(x => x.ProjectId)
+                .ToDictionary(g => g.Key, g => (Total: g.Sum(x => x.AllocatedAmount), Staff: g.Select(x => x.EmployeeCostId).Distinct().Count()));
+
+            var projectIds = lineAgg.Select(x => x.ProjectId).Concat(hrAgg.Keys).Distinct().ToList();
+            if (projectIds.Count == 0) return new List<ProjectSummaryRowVm>();
+
+            var meta = await _db.Projects.AsNoTracking()
+                .Where(p => projectIds.Contains(p.ProjectId))
+                .Select(p => new { p.ProjectId, p.ProjectCode, p.ProjectName })
+                .ToDictionaryAsync(p => p.ProjectId);
+
+            decimal Line(int projectId, string category) => lineAgg
+                .Where(x => x.ProjectId == projectId && string.Equals(x.CategoryCode, category, StringComparison.OrdinalIgnoreCase))
+                .Sum(x => x.Total);
+
+            return projectIds
+                .Select(id =>
+                {
+                    meta.TryGetValue(id, out var m);
+                    hrAgg.TryGetValue(id, out var hr);
+                    return new ProjectSummaryRowVm
+                    {
+                        ProjectId = id,
+                        ProjectCode = m?.ProjectCode ?? "",
+                        ProjectName = m?.ProjectName ?? "(Project " + id + ")",
+                        Revenue = Line(id, "REVENUE"),
+                        Hr = hr.Total,
+                        Staff = hr.Staff,
+                        Opex = Line(id, "OPEX"),
+                        Capex = Line(id, "CAPEX")
+                    };
+                })
+                .OrderByDescending(x => x.TotalExpense)
+                .ThenBy(x => x.ProjectCode)
+                .ToList();
         }
 
         public IActionResult Privacy()
@@ -312,6 +376,22 @@ namespace GovBudget.Controllers
         public OverallSummaryVm Overall { get; set; } = new();
         public DonutSummaryVm Donut { get; set; } = new();
         public List<EntitySummaryRowVm> Entities { get; set; } = new();
+        public List<ProjectSummaryRowVm> Projects { get; set; } = new();
+    }
+
+    // One project's share of the budget: revenue and cost tagged to it, by category.
+    public class ProjectSummaryRowVm
+    {
+        public int ProjectId { get; set; }
+        public string ProjectCode { get; set; } = "";
+        public string ProjectName { get; set; } = "";
+        public decimal Revenue { get; set; }
+        public decimal Hr { get; set; }
+        public int Staff { get; set; }
+        public decimal Opex { get; set; }
+        public decimal Capex { get; set; }
+        public decimal TotalExpense => Hr + Opex + Capex;
+        public decimal Net => Revenue - TotalExpense;
     }
 
     public class OverallSummaryVm

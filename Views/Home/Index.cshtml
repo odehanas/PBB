@@ -147,6 +147,117 @@
         </div>
     </div>
 
+    @{
+        var projects = Model.Projects;
+        var projRevenue = projects.Sum(p => p.Revenue);
+        var projHr = projects.Sum(p => p.Hr);
+        var projOpex = projects.Sum(p => p.Opex);
+        var projCapex = projects.Sum(p => p.Capex);
+        var projExpense = projHr + projOpex + projCapex;
+        var projEntityRoute = Model.IsAdmin ? (Model.DonutEntityId?.ToString() ?? "") : "";
+        string ShareOf(decimal part, decimal whole) => whole == 0m ? "-" : (part / whole).ToString("P1");
+    }
+    <div class="card shadow-sm mb-2" id="projectsCard">
+        <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div>
+                <span class="fw-bold">Projects</span>
+                <span class="text-muted small ms-2">Revenue and cost tagged to a project, split by HR, OPEX and CAPEX.</span>
+            </div>
+            <a class="btn btn-sm btn-outline-primary"
+               asp-controller="Reports" asp-action="Index" asp-route-report="projects"
+               asp-route-year="@Model.Year" asp-route-entityId="@projEntityRoute">
+                Open project report
+            </a>
+        </div>
+        <div class="card-body py-2">
+            @if (projects.Count == 0)
+            {
+                <div class="text-muted small py-2">
+                    No budget line or HR allocation is tagged to a project for @Model.Year.
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-light border small py-2 mb-2">
+                    These amounts are <strong>already inside</strong> the Revenue, HR, OPEX and CAPEX totals above.
+                    They are shown here as a separate view by project and are not added to those totals.
+                    Projects carry <strong>@ShareOf(projExpense, Model.Overall.TotalExpense)</strong> of total expense.
+                </div>
+                <div class="row g-2">
+                    <div class="col-12 col-xl-7">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Project</th>
+                                        <th class="text-end">Revenue</th>
+                                        <th class="text-end">HR</th>
+                                        <th class="text-end">OPEX</th>
+                                        <th class="text-end">CAPEX</th>
+                                        <th class="text-end">Total Expense</th>
+                                        <th class="text-end">Net</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var p in projects)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <a asp-controller="Reports" asp-action="ProjectCostDetail"
+                                                   asp-route-projectId="@p.ProjectId" asp-route-year="@Model.Year"
+                                                   asp-route-entityId="@projEntityRoute">
+                                                    @(string.IsNullOrWhiteSpace(p.ProjectCode) ? p.ProjectName : (p.ProjectCode + " - " + p.ProjectName))
+                                                </a>
+                                            </td>
+                                            <td class="text-end">@p.Revenue.ToString("N2")</td>
+                                            <td class="text-end">
+                                                <div>@p.Hr.ToString("N2")</div>
+                                                @if (p.Staff > 0)
+                                                {
+                                                    <div class="small text-secondary">@p.Staff.ToString("N0") employee(s)</div>
+                                                }
+                                            </td>
+                                            <td class="text-end">@p.Opex.ToString("N2")</td>
+                                            <td class="text-end">@p.Capex.ToString("N2")</td>
+                                            <td class="text-end">@p.TotalExpense.ToString("N2")</td>
+                                            <td class="text-end">@p.Net.ToString("N2")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot class="table-light fw-bold">
+                                    <tr>
+                                        <td>All projects</td>
+                                        <td class="text-end">@projRevenue.ToString("N2")</td>
+                                        <td class="text-end">@projHr.ToString("N2")</td>
+                                        <td class="text-end">@projOpex.ToString("N2")</td>
+                                        <td class="text-end">@projCapex.ToString("N2")</td>
+                                        <td class="text-end">@projExpense.ToString("N2")</td>
+                                        <td class="text-end">@((projRevenue - projExpense).ToString("N2"))</td>
+                                    </tr>
+                                    <tr class="fw-normal text-secondary small">
+                                        <td>Share of the total above</td>
+                                        <td class="text-end">@ShareOf(projRevenue, Model.Overall.Revenue)</td>
+                                        <td class="text-end">@ShareOf(projHr, Model.Overall.Hr)</td>
+                                        <td class="text-end">@ShareOf(projOpex, Model.Overall.Opex)</td>
+                                        <td class="text-end">@ShareOf(projCapex, Model.Overall.Capex)</td>
+                                        <td class="text-end">@ShareOf(projExpense, Model.Overall.TotalExpense)</td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-12 col-xl-5">
+                        <div class="text-muted small mb-1">Project cost by category@(projects.Count > 8 ? " (top 8 by cost)" : "")</div>
+                        <div style="position: relative; height: @(Math.Max(160, Math.Min(projects.Count, 8) * 34 + 60))px;">
+                            <canvas id="projectsBar"></canvas>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
     <div class="card shadow-sm home-dashboard-table">
         <div class="card-header bg-white fw-bold">Entity Summary</div>
         <div class="card-body p-0">
@@ -245,6 +356,45 @@
                     cutout: '62%'
                 }
             });
+
+            var pctx = document.getElementById('projectsBar');
+            if (pctx) {
+                var existingProj = Chart.getChart(pctx);
+                if (existingProj) existingProj.destroy();
+                var proj = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Projects.Take(8).Select(p => new {
+                    label = string.IsNullOrWhiteSpace(p.ProjectCode) ? p.ProjectName : p.ProjectCode,
+                    name = p.ProjectName, hr = p.Hr, opex = p.Opex, capex = p.Capex })));
+                var money = function (v) { return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+                new Chart(pctx, {
+                    type: 'bar',
+                    data: {
+                        labels: proj.map(function (p) { return p.label; }),
+                        datasets: [
+                            { label: 'HR', data: proj.map(function (p) { return p.hr; }), backgroundColor: '#0f7b5b' },
+                            { label: 'OPEX', data: proj.map(function (p) { return p.opex; }), backgroundColor: '#12797C' },
+                            { label: 'CAPEX', data: proj.map(function (p) { return p.capex; }), backgroundColor: '#c9a227' }
+                        ]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, padding: 10, font: { size: 10 } } },
+                            tooltip: {
+                                callbacks: {
+                                    title: function (items) { var p = proj[items[0].dataIndex]; return p.label === p.name ? p.label : p.label + ' - ' + p.name; },
+                                    label: function (context) { return context.dataset.label + ': ' + money(context.raw); }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { stacked: true, ticks: { font: { size: 10 }, callback: function (v) { return Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 }); } } },
+                            y: { stacked: true, ticks: { font: { size: 10 } } }
+                        }
+                    }
+                });
+            }
 
             var wctx = document.getElementById('pnlWaterfall');
             if (!wctx) return;
