@@ -2,6 +2,24 @@
 
 @{
     ViewData["Title"] = "Executive Summary";
+
+    // Project figures are a breakdown of the totals on this page, never an addition to them.
+    var projects = Model.Projects;
+    var projRevenue = projects.Sum(p => p.Revenue);
+    var projHr = projects.Sum(p => p.Hr);
+    var projOpex = projects.Sum(p => p.Opex);
+    var projCapex = projects.Sum(p => p.Capex);
+    var projExpense = projHr + projOpex + projCapex;
+    var projEntityRoute = Model.IsAdmin ? (Model.DonutEntityId?.ToString() ?? "") : "";
+    string ShareOf(decimal part, decimal whole) => whole == 0m ? "-" : (part / whole).ToString("P1");
+    // The cost categories that actually carry project money, e.g. "HR, OPEX and CAPEX".
+    var projSources = new List<string>();
+    if (projHr != 0m) { projSources.Add("HR"); }
+    if (projOpex != 0m) { projSources.Add("OPEX"); }
+    if (projCapex != 0m) { projSources.Add("CAPEX"); }
+    var projSourceText = projSources.Count == 0 ? ""
+        : projSources.Count == 1 ? projSources[0]
+        : string.Join(", ", projSources.Take(projSources.Count - 1)) + " and " + projSources[projSources.Count - 1];
 }
 
 <div class="container-fluid py-2 home-dashboard">
@@ -42,7 +60,7 @@
     <div class="row g-2 mb-2 home-dashboard-top">
         <div class="col-12 col-xl-8">
             <div class="row g-2">
-                <div class="col-12 col-md-6 col-lg-3">
+                <div class="col-12 col-md-6 col-lg">
                     <div class="card shadow-sm h-100 home-kpi">
                         <div class="card-body py-2">
                             <div class="text-muted small">Revenue</div>
@@ -50,7 +68,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-12 col-md-6 col-lg-3">
+                <div class="col-12 col-md-6 col-lg">
                     <div class="card shadow-sm h-100 home-kpi">
                         <div class="card-body py-2">
                             <div class="text-muted small">HR</div>
@@ -61,7 +79,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-12 col-md-6 col-lg-3">
+                <div class="col-12 col-md-6 col-lg">
                     <div class="card shadow-sm h-100 home-kpi">
                         <div class="card-body py-2">
                             <div class="text-muted small">OPEX</div>
@@ -69,13 +87,42 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-12 col-md-6 col-lg-3">
+                <div class="col-12 col-md-6 col-lg">
                     <div class="card shadow-sm h-100 home-kpi">
                         <div class="card-body py-2">
                             <div class="text-muted small">CAPEX</div>
                             <div class="fs-6 fw-bold">@Model.Overall.Capex.ToString("N2")</div>
                         </div>
                     </div>
+                </div>
+                <div class="col-12 col-md-12 col-lg">
+                    <a href="#projectsCard" class="card shadow-sm h-100 home-kpi text-decoration-none text-reset"
+                       style="border: 1px dashed #c9a227; background: rgba(201,162,39,0.07);"
+                       title="Project cost is part of the HR, OPEX and CAPEX totals. Click for the list of projects.">
+                        <div class="card-body py-2">
+                            <div class="d-flex justify-content-between align-items-baseline">
+                                <div class="text-muted small">Projects</div>
+                                <div class="small text-secondary">@projects.Count.ToString("N0") project(s)</div>
+                            </div>
+                            <div class="fs-6 fw-bold">@projExpense.ToString("N2")</div>
+                            @if (projects.Count == 0)
+                            {
+                                <div class="small text-secondary">Nothing is tagged to a project for @Model.Year.</div>
+                            }
+                            else
+                            {
+                                <div class="small" style="color: #8a6d00;">
+                                    Included in @(projSourceText.Length > 0 ? projSourceText : "the totals") &ndash; not added
+                                </div>
+                                <div class="small text-secondary">
+                                    @if (projHr != 0m) { <div>HR @projHr.ToString("N2")</div> }
+                                    @if (projOpex != 0m) { <div>OPEX @projOpex.ToString("N2")</div> }
+                                    @if (projCapex != 0m) { <div>CAPEX @projCapex.ToString("N2")</div> }
+                                    @if (projRevenue != 0m) { <div>Revenue @projRevenue.ToString("N2") (in Revenue)</div> }
+                                </div>
+                            }
+                        </div>
+                    </a>
                 </div>
 
                 <div class="col-12">
@@ -147,16 +194,6 @@
         </div>
     </div>
 
-    @{
-        var projects = Model.Projects;
-        var projRevenue = projects.Sum(p => p.Revenue);
-        var projHr = projects.Sum(p => p.Hr);
-        var projOpex = projects.Sum(p => p.Opex);
-        var projCapex = projects.Sum(p => p.Capex);
-        var projExpense = projHr + projOpex + projCapex;
-        var projEntityRoute = Model.IsAdmin ? (Model.DonutEntityId?.ToString() ?? "") : "";
-        string ShareOf(decimal part, decimal whole) => whole == 0m ? "-" : (part / whole).ToString("P1");
-    }
     <div class="card shadow-sm mb-2" id="projectsCard">
         <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
