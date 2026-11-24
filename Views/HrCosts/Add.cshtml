@@ -1,0 +1,135 @@
+@model GovBudget.Models.HrCostEntryInput
+@{
+    ViewData["Title"] = "Add Employee Cost";
+    var isBudget = ViewBag.IsBudget as bool? ?? false;
+    var entityOptions = ViewBag.EntityOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem> ?? new();
+    var departmentOptions = ViewBag.DepartmentOptions as List<GovBudget.Models.HrCostDepartmentOption> ?? new();
+    var glOptions = ViewBag.GlOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem> ?? new();
+    var glKindOptions = ViewBag.GlKindOptions as List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem> ?? new();
+    var backAction = isBudget ? "Budget" : "Index";
+}
+
+<div class="container py-4" style="max-width: 900px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1 class="mb-0">Add Employee Cost</h1>
+            <div class="text-muted">Type one employee's annual cost. After saving you go straight to allocating it to activities.</div>
+        </div>
+        <a asp-action="@backAction" asp-route-year="@Model.BudgetYear" class="btn btn-secondary">&larr; Back</a>
+    </div>
+
+    <div asp-validation-summary="All" class="text-danger mb-3"></div>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form asp-action="@(isBudget ? "BudgetAdd" : "Add")" method="post">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label" for="BudgetYear">Budget Year</label>
+                        <select id="BudgetYear" name="BudgetYear" class="form-select" asp-items="ViewBag.BudgetYear"></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label" for="EmployeeId">Employee ID</label>
+                        <input id="EmployeeId" name="EmployeeId" value="@Model.EmployeeId" class="form-control" maxlength="50" required />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="EmployeeName">Employee Name</label>
+                        <input id="EmployeeName" name="EmployeeName" value="@Model.EmployeeName" class="form-control" maxlength="200" required />
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label" for="Occupation">Occupation <span class="text-muted small">(optional)</span></label>
+                        <input id="Occupation" name="Occupation" value="@Model.Occupation" class="form-control" maxlength="150" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="AnnualCost">Annual Cost</label>
+                        <input id="AnnualCost" name="AnnualCost" value="@(Model.AnnualCost?.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))"
+                               type="number" step="0.01" min="0.01" class="form-control" required />
+                    </div>
+
+                    @if (isBudget)
+                    {
+                        <div class="col-md-6">
+                            <label class="form-label">Entity</label>
+                            <input class="form-control" value="@ViewBag.FixedEntity" disabled />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Cost Center</label>
+                            <input class="form-control" value="@ViewBag.FixedDepartment" disabled />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="col-md-6">
+                            <label class="form-label" for="EntityId">Entity</label>
+                            <select id="EntityId" name="EntityId" class="form-select" required>
+                                @if (entityOptions.Count != 1)
+                                {
+                                    <option value="">Choose an entity</option>
+                                }
+                                @foreach (var e in entityOptions)
+                                {
+                                    <option value="@e.Value" selected="@e.Selected">@e.Text</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="DepartmentId">Cost Center</label>
+                            <select id="DepartmentId" name="DepartmentId" class="form-select" required>
+                                <option value="">Choose a cost center</option>
+                                @foreach (var d in departmentOptions)
+                                {
+                                    <option value="@d.DepartmentId" data-entity="@d.EntityId" selected="@(Model.DepartmentId == d.DepartmentId)">@d.Label</option>
+                                }
+                            </select>
+                        </div>
+                    }
+
+                    <div class="col-md-8">
+                        <label class="form-label" for="GLCode">GL Account</label>
+                        <select id="GLCode" name="GLCode" class="form-select" required>
+                            <option value="">Choose a GL account</option>
+                            @foreach (var g in glOptions)
+                            {
+                                <option value="@g.Value" selected="@g.Selected">@g.Text</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="GLKind">GL Kind</label>
+                        <select id="GLKind" name="GLKind" class="form-select" asp-items="glKindOptions"></select>
+                    </div>
+                </div>
+
+                <div class="mt-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Save and allocate</button>
+                    <a asp-action="@backAction" asp-route-year="@Model.BudgetYear" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@if (!isBudget)
+{
+    @section Scripts {
+        <script>
+            // Show only the cost centers of the chosen entity.
+            (function () {
+                var entity = document.getElementById('EntityId');
+                var dept = document.getElementById('DepartmentId');
+                if (!entity || !dept) return;
+                var all = Array.prototype.slice.call(dept.querySelectorAll('option[data-entity]'));
+                function narrow() {
+                    var chosen = dept.value;
+                    all.forEach(function (o) { if (o.parentNode) o.parentNode.removeChild(o); });
+                    all.filter(function (o) { return o.getAttribute('data-entity') === entity.value; })
+                        .forEach(function (o) { dept.appendChild(o); });
+                    dept.value = all.some(function (o) { return o.parentNode && o.value === chosen; }) ? chosen : '';
+                }
+                entity.addEventListener('change', narrow);
+                narrow();
+            })();
+        </script>
+    }
+}
