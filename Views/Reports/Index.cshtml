@@ -244,6 +244,16 @@
         </div>
 
         <div class="col-auto">
+            <a class="btn btn-sm btn-success"
+               asp-controller="Reports" asp-action="PbbWorkbook"
+               asp-route-year="@Model.Year"
+               asp-route-entityId="@(Model.EntityId?.ToString() ?? "")"
+               title="One Excel workbook for management: traditional GL view, programmes, activities, programme x GL crosswalk, HR allocation and cost allocation">
+                <i class="bi bi-file-earmark-spreadsheet"></i> PBB Report (Excel)
+            </a>
+        </div>
+
+        <div class="col-auto">
             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">Print</button>
         </div>
 

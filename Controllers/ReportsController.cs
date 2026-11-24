@@ -15,7 +15,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GovBudget.Controllers
 {
     [Authorize]
-    public class ReportsController : Controller
+    public partial class ReportsController : Controller
     {
         private readonly GovBudgetContext _db;
 
