@@ -258,6 +258,7 @@ namespace GovBudget.Controllers
                     ("Programmes", "Cost of each programme: direct, allocated and total, with revenue."),
                     ("Activities", "Cost of each activity after allocation, with output and cost per output."),
                     ("Programme x GL", "Crosswalk: each GL account split across the programmes (direct cost)."),
+                    ("Projects", "Each project's revenue and cost, and whether it comes from HR, OPEX or CAPEX."),
                     ("HR Allocation", "Each employee's annual cost and how it is allocated to activities."),
                     ("Cost Allocation", "The posted transfers of cost from support to mandate programmes.")
                 };
@@ -452,6 +453,129 @@ namespace GovBudget.Controllers
                 ws.Column(1).Width = 14; ws.Column(2).Width = 16; ws.Column(3).Width = 42;
                 for (var c = 4; c <= headers.Count; c++) ws.Column(c).Width = 17;
                 ws.SheetView.FreezeColumns(3);
+                PbbPrint(ws);
+            }
+
+            // =====================================================================
+            // Projects - a second cut of the same budget. A budget line or an HR allocation may
+            // carry a project; this sheet shows that part per project and where it came from.
+            // =====================================================================
+            {
+                var ws = wb.Worksheets.Add("Projects");
+                var row = PbbTitle(ws, "Projects - revenue and cost by project, with the source of each amount", entityTitle, selectedYear, 9, null);
+
+                // OPEX, CAPEX and revenue: budget lines tagged to a project (same ledger as the other sheets).
+                var projectLines = pbb.Where(r => r.ProjectId.HasValue && r.CategoryCode != "HR").ToList();
+                // HR: employee cost allocations that name a project.
+                var projectHr = employees
+                    .SelectMany(e => e.HrEmployeeCostAllocations.Where(a => a.ProjectId != null).Select(a => (Emp: e, Alloc: a)))
+                    .ToList();
+
+                var projectMeta = projectLines
+                    .Select(r => (Id: r.ProjectId!.Value, Code: r.ProjectCode, Name: r.ProjectName))
+                    .Concat(projectHr.Select(x => (Id: x.Alloc.ProjectId!.Value, Code: x.Alloc.Project?.ProjectCode ?? "", Name: x.Alloc.Project?.ProjectName ?? "")))
+                    .GroupBy(x => x.Id)
+                    .Select(g => g.First())
+                    .OrderBy(x => x.Code)
+                    .ToList();
+
+                if (projectMeta.Count == 0)
+                {
+                    ws.Cell(row, 1).Value = "No budget line or HR allocation is tagged to a project for this year.";
+                    ws.Cell(row, 1).Style.Font.Italic = true;
+                    ws.Column(1).Width = 90;
+                }
+                else
+                {
+                    ws.Cell(row - 1, 1).Value = "Project amounts are already included in the totals on the other sheets. This sheet is a separate view by project and adds nothing to them.";
+                    ws.Cell(row - 1, 1).Style.Font.Italic = true;
+                    ws.Cell(row - 1, 1).Style.Font.FontColor = XLColor.Gray;
+
+                    decimal LineSum(int id, string cat) => projectLines.Where(r => r.ProjectId == id && r.CategoryCode == cat).Sum(r => r.Amount);
+                    decimal HrSum(int id) => projectHr.Where(x => x.Alloc.ProjectId == id).Sum(x => x.Alloc.AllocatedAmount);
+
+                    // ---- 1) one line per project ----
+                    row = PbbSection(ws, row, "Summary by project", 9);
+                    var summary = projectMeta.Select(m =>
+                    {
+                        var hr = HrSum(m.Id); var opex = LineSum(m.Id, "OPEX"); var capex = LineSum(m.Id, "CAPEX"); var rev = LineSum(m.Id, "REVENUE");
+                        return (m.Code, m.Name, Rev: rev, Hr: hr, Opex: opex, Capex: capex, Cost: hr + opex + capex);
+                    }).ToList();
+                    var allCost = summary.Sum(x => x.Cost);
+                    var summaryRows = summary.Select(x => new PbbRow(new object?[]
+                    {
+                        x.Code, x.Name, x.Hr, x.Opex, x.Capex, x.Cost, Share(x.Cost, tradExpense), x.Rev, x.Rev - x.Cost
+                    })).ToList();
+                    summaryRows.Add(new PbbRow(new object?[]
+                    {
+                        "All projects", "", summary.Sum(x => x.Hr), summary.Sum(x => x.Opex), summary.Sum(x => x.Capex), allCost,
+                        Share(allCost, tradExpense), summary.Sum(x => x.Rev), summary.Sum(x => x.Rev) - allCost
+                    }, PbbRowStyle.Total));
+                    summaryRows.Add(new PbbRow(new object?[]
+                    {
+                        "Share of the budget total", "", Share(summary.Sum(x => x.Hr), tradHr), Share(summary.Sum(x => x.Opex), tradOpex),
+                        Share(summary.Sum(x => x.Capex), tradCapex), Share(allCost, tradExpense), null, Share(summary.Sum(x => x.Rev), tradRevenue), null
+                    }, PbbRowStyle.Muted));
+                    var shareRow = row + summaryRows.Count;
+                    row = PbbTable(ws, row,
+                        new[] { "Project code", "Project", "HR", "OPEX", "CAPEX", "Total cost", "% of total expenditure", "Revenue", "Net (revenue - cost)" },
+                        new[] { PbbKind.Text, PbbKind.Text, PbbKind.Money, PbbKind.Money, PbbKind.Money, PbbKind.Money, PbbKind.Percent, PbbKind.Money, PbbKind.Money },
+                        summaryRows, filter: false);
+                    // The share line holds percentages under the money columns.
+                    ws.Range(shareRow, 3, shareRow, 8).Style.NumberFormat.Format = PbbPercent;
+
+                    // ---- 2) where each amount comes from ----
+                    row = PbbSection(ws, row + 1, "Source of each project amount", 9);
+                    var detail = new List<PbbRow>();
+                    foreach (var m in projectMeta)
+                    {
+                        var label = PbbLabel("", m.Code, m.Name);
+                        var projectTotal = 0m;
+                        foreach (var src in new[] { "REVENUE", "HR", "OPEX", "CAPEX" })
+                        {
+                            var srcTotal = 0m;
+                            if (src == "HR")
+                            {
+                                foreach (var x in projectHr.Where(x => x.Alloc.ProjectId == m.Id).OrderBy(x => x.Emp.EmployeeName))
+                                {
+                                    detail.Add(new PbbRow(new object?[]
+                                    {
+                                        label, "HR", x.Emp.GLCode, "",
+                                        PbbLabel("", x.Alloc.Activity?.Program?.ProgramCode ?? "", x.Alloc.Activity?.Program?.ProgramName ?? ""),
+                                        PbbLabel("", x.Alloc.Activity?.ActivityCode ?? "", x.Alloc.Activity?.ActivityName ?? ""),
+                                        PbbLabel("", x.Emp.EmployeeId, x.Emp.EmployeeName), x.Emp.DepartmentName, x.Alloc.AllocatedAmount
+                                    }));
+                                    srcTotal += x.Alloc.AllocatedAmount;
+                                }
+                            }
+                            else
+                            {
+                                foreach (var r in projectLines.Where(r => r.ProjectId == m.Id && r.CategoryCode == src)
+                                             .OrderBy(r => r.GLCode).ThenBy(r => r.ActivityCode).ThenBy(r => r.ItemCode))
+                                {
+                                    detail.Add(new PbbRow(new object?[]
+                                    {
+                                        label, src == "REVENUE" ? "Revenue" : src, r.GLCode, r.GLName,
+                                        PbbLabel("", r.ProgramCode, r.ProgramName), PbbLabel("", r.ActivityCode, r.ActivityName),
+                                        PbbLabel("", r.ItemCode, r.ItemName), "", r.Amount
+                                    }));
+                                    srcTotal += r.Amount;
+                                }
+                            }
+                            if (srcTotal != 0m)
+                            {
+                                detail.Add(new PbbRow(new object?[] { label, "Total " + (src == "REVENUE" ? "Revenue" : src), "", "", "", "", "", "", srcTotal }, PbbRowStyle.Subtotal));
+                                if (src != "REVENUE") projectTotal += srcTotal;
+                            }
+                        }
+                        detail.Add(new PbbRow(new object?[] { label, "Total cost (HR + OPEX + CAPEX)", "", "", "", "", "", "", projectTotal }, PbbRowStyle.Total));
+                    }
+                    PbbTable(ws, row,
+                        new[] { "Project", "Source", "GL code", "GL account", "Programme", "Activity", "Item / employee", "Cost center (HR)", "Amount" },
+                        new[] { PbbKind.Text, PbbKind.Text, PbbKind.Text, PbbKind.Text, PbbKind.Text, PbbKind.Text, PbbKind.Text, PbbKind.Text, PbbKind.Money },
+                        detail);
+                    PbbWidths(ws, 34, 30, 17, 30, 34, 38, 36, 26, 20);
+                }
                 PbbPrint(ws);
             }
 
