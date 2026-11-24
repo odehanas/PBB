@@ -150,6 +150,12 @@
                     Download Template
                 </a>
 
+                <a class="btn btn-sm btn-outline-secondary"
+                   asp-controller="BudgetLines" asp-action="Export" asp-route-category="@category"
+                   title="Download every @category line of this cost center and year as Excel">
+                    Export Excel
+                </a>
+
                 @if (!isLocked)
                 {
                     <form asp-controller="BudgetLines" asp-action="Upload" method="post"
@@ -550,7 +556,14 @@
     }
 
     <hr class="my-4" />
-    <h5 class="text-secondary" id="recentLines" data-tour="recent">Recent Lines (last 100)</h5>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <h5 class="text-secondary mb-0" id="recentLines" data-tour="recent">Recent Lines (last 100)</h5>
+        <a class="btn btn-sm btn-outline-secondary"
+           asp-controller="BudgetLines" asp-action="Export" asp-route-category="@category"
+           title="Download every @category line of this cost center and year as Excel">
+            Export all @(ViewBag.LineCount) line(s) to Excel
+        </a>
+    </div>
     <div class="table-responsive">
         <table class="table table-sm table-striped table-hover align-middle recent-lines">
             <thead class="table-light">

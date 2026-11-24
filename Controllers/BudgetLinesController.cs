@@ -1008,6 +1008,146 @@ WHERE b.BudgetYear = {year.Value}
                 $"BudgetLines_{category}_Template.xlsx");
         }
 
+        // GET: Export every budget line of the working context (year, entity, cost center) for a
+        // category. The first columns are the upload template's, in the same order, so the file
+        // can be laid beside an uploaded one to reconcile; the computed columns follow.
+        [HttpGet]
+        public async Task<IActionResult> Export(string category = "OPEX")
+        {
+            category = (category ?? "OPEX").ToUpperInvariant();
+            if (!IsBulkCategory(category)) category = "OPEX";
+
+            var year = HttpContext.Session.GetInt("ctxYear") ?? DateTime.Now.Year;
+            var entityId = HttpContext.Session.GetInt("ctxEntityId");
+            var deptId = HttpContext.Session.GetInt("ctxDeptId");
+            if (!(entityId.HasValue && deptId.HasValue))
+                return RedirectToAction("Select", "Context");
+
+            var dep = await _db.Departments.AsNoTracking().Include(d => d.Entity)
+                .FirstOrDefaultAsync(d => d.DepartmentId == deptId.Value);
+            var cat = await _db.Categories.AsNoTracking().FirstOrDefaultAsync(c => c.CategoryCode == category);
+            if (dep == null || cat == null)
+                return RedirectToAction(nameof(Entry), new { category });
+
+            var entityCode = dep.Entity?.EntityCode ?? "";
+
+            // Same rows as the list on the entry screen, without its 100-line cap.
+            var lines = await (
+                from b in _db.BudgetLines.AsNoTracking()
+                join item in _db.Items.AsNoTracking() on b.ItemId equals item.ItemId
+                join act in _db.Activities.AsNoTracking() on b.ActivityId equals act.ActivityId into actJoin
+                from act in actJoin.DefaultIfEmpty()
+                join proj in _db.Projects.AsNoTracking() on b.ProjectId equals proj.ProjectId into projJoin
+                from proj in projJoin.DefaultIfEmpty()
+                where b.CategoryId == cat.CategoryId
+                   && b.BudgetYear == year
+                   && b.EntityId == entityId.Value
+                   && b.DepartmentId == deptId.Value
+                orderby b.BudgetLineId descending
+                select new
+                {
+                    Line = b,
+                    item.ItemCode,
+                    item.ItemName,
+                    ActivityCode = act != null ? act.ActivityCode : "",
+                    ProjectCode = proj != null ? proj.ProjectCode : ""
+                }
+            ).ToListAsync();
+
+            var templateCols = ColumnsFor(category);
+            var extraCols = new[] { "Amount", "F1_Amount", "F2_Amount", "ItemName", "Source", "CreatedBy", "CreatedAt" };
+            var cols = templateCols.Concat(extraCols).ToArray();
+            var moneyCols = new HashSet<string>
+            {
+                "UnitPrice", "Amount", "F1_Amount", "F2_Amount",
+                "M01", "M02", "M03", "M04", "M05", "M06", "M07", "M08", "M09", "M10", "M11", "M12"
+            };
+
+            using var wb = new XLWorkbook();
+            var ws = wb.Worksheets.Add(category);
+            for (int c = 0; c < cols.Length; c++) ws.Cell(1, c + 1).Value = cols[c];
+            var head = ws.Range(1, 1, 1, cols.Length).Style;
+            head.Font.Bold = true;
+            head.Fill.BackgroundColor = XLColor.FromHtml(GovBudget.Utils.BrandColors.HeaderHex);
+            head.Font.FontColor = XLColor.White;
+            ws.SheetView.FreezeRows(1);
+
+            var r = 2;
+            foreach (var x in lines)
+            {
+                var b = x.Line;
+                var values = new Dictionary<string, object?>
+                {
+                    ["Year"] = b.BudgetYear,
+                    ["EntityCode"] = entityCode,
+                    ["DeptCode"] = dep.DeptCode,
+                    ["ItemCode"] = x.ItemCode,
+                    ["Description"] = b.Description,
+                    ["ActivityCode"] = x.ActivityCode,
+                    ["ProjectCode"] = x.ProjectCode,
+                    ["Quantity"] = b.Quantity,
+                    ["UnitPrice"] = b.UnitPrice,
+                    ["DistributionMode"] = b.DistributionMode,
+                    ["M01"] = b.M01, ["M02"] = b.M02, ["M03"] = b.M03, ["M04"] = b.M04,
+                    ["M05"] = b.M05, ["M06"] = b.M06, ["M07"] = b.M07, ["M08"] = b.M08,
+                    ["M09"] = b.M09, ["M10"] = b.M10, ["M11"] = b.M11, ["M12"] = b.M12,
+                    ["F1_Percent"] = b.F1_Percent,
+                    ["F2_Percent"] = b.F2_Percent,
+                    ["Notes"] = b.Notes,
+                    ["CapexAssetType"] = b.CapexAssetType,
+                    ["Dep_Method"] = b.Dep_Method,
+                    ["Dep_LifeMonths"] = b.Dep_LifeMonths,
+                    ["Dep_StartMonth"] = (int)b.Dep_StartMonth,
+                    ["Amount"] = b.Amount,
+                    ["F1_Amount"] = b.F1_Amount,
+                    ["F2_Amount"] = b.F2_Amount,
+                    ["ItemName"] = x.ItemName,
+                    ["Source"] = b.EntrySource == EntrySourceUpload ? "Upload" : "Manual",
+                    ["CreatedBy"] = b.CreatedBy,
+                    ["CreatedAt"] = b.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+                };
+                for (int c = 0; c < cols.Length; c++)
+                    if (values.TryGetValue(cols[c], out var v)) SetCell(ws, r, c + 1, v);
+                r++;
+            }
+
+            for (int c = 0; c < cols.Length; c++)
+                if (moneyCols.Contains(cols[c])) ws.Column(c + 1).Style.NumberFormat.Format = "#,##0.00";
+            ws.Columns(1, cols.Length).AdjustToContents();
+
+            // Totals live on their own sheet so the data sheet stays one line per row.
+            var sum = wb.Worksheets.Add("Summary");
+            var summary = new (string Label, object Value)[]
+            {
+                ("Category", category),
+                ("Budget year", year),
+                ("Entity", entityCode + " - " + (dep.Entity?.EntityName ?? "")),
+                ("Cost center", dep.DeptCode + " - " + dep.DeptName),
+                ("Lines", lines.Count),
+                ("Uploaded lines", lines.Count(x => x.Line.EntrySource == EntrySourceUpload)),
+                ("Manual lines", lines.Count(x => x.Line.EntrySource != EntrySourceUpload)),
+                ("Total annual amount", lines.Sum(x => x.Line.Amount)),
+                ("Total F1 amount", lines.Sum(x => x.Line.F1_Amount)),
+                ("Total F2 amount", lines.Sum(x => x.Line.F2_Amount)),
+                ("Exported at", DateTime.Now.ToString("yyyy-MM-dd HH:mm")),
+                ("Exported by", User.Identity?.Name ?? "")
+            };
+            for (int i = 0; i < summary.Length; i++)
+            {
+                sum.Cell(i + 1, 1).Value = summary[i].Label;
+                sum.Cell(i + 1, 1).Style.Font.Bold = true;
+                SetCell(sum, i + 1, 2, summary[i].Value);
+                if (summary[i].Value is decimal) sum.Cell(i + 1, 2).Style.NumberFormat.Format = "#,##0.00";
+            }
+            sum.Columns(1, 2).AdjustToContents();
+
+            using var stream = new MemoryStream();
+            wb.SaveAs(stream);
+            return File(stream.ToArray(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                $"BudgetLines_{category}_{year}_{entityCode}_{dep.DeptCode}.xlsx");
+        }
+
         // POST: Bulk upload budget lines from the template
         [HttpPost]
         [ValidateAntiForgeryToken]
