@@ -576,6 +576,213 @@ namespace GovBudget.Controllers
             return await HandleImport(file, budgetYear, null, entityId.Value, deptId.Value, false);
         }
 
+        // ---- Manual entry of one employee cost (the alternative to the Excel import) ----
+
+        [HttpGet]
+        [Authorize(Policy = "AdminOnly")]
+        public Task<IActionResult> Add(int? year = null, int? entityId = null)
+        {
+            return ShowEntryForm(new HrCostEntryInput { BudgetYear = year ?? DateTime.Now.Year, EntityId = entityId }, false);
+        }
+
+        [HttpGet]
+        public Task<IActionResult> BudgetAdd(int? year = null)
+        {
+            var selectedYear = year ?? HttpContext.Session.GetInt("ctxYear") ?? DateTime.Now.Year;
+            return ShowEntryForm(new HrCostEntryInput { BudgetYear = selectedYear }, true);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [Authorize(Policy = "AdminOnly")]
+        public Task<IActionResult> Add(HrCostEntryInput input)
+        {
+            return SaveEntry(input, false);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public Task<IActionResult> BudgetAdd(HrCostEntryInput input)
+        {
+            return SaveEntry(input, true);
+        }
+
+        private async Task<IActionResult> ShowEntryForm(HrCostEntryInput input, bool isBudget)
+        {
+            ViewBag.IsBudget = isBudget;
+
+            var thisYear = DateTime.Now.Year;
+            var years = new[] { thisYear - 1, thisYear, thisYear + 1, thisYear + 2 }
+                .Select(y => new { Id = y, Name = y.ToString() }).ToList();
+            ViewBag.BudgetYear = new SelectList(years, "Id", "Name", input.BudgetYear);
+
+            if (isBudget)
+            {
+                var ctxEntityId = HttpContext.Session.GetInt("ctxEntityId");
+                var ctxDeptId = HttpContext.Session.GetInt("ctxDeptId");
+                if (!(ctxEntityId.HasValue && ctxDeptId.HasValue))
+                {
+                    return RedirectToAction("Select", "Context");
+                }
+
+                ViewBag.FixedEntity = await _db.Entities.AsNoTracking()
+                    .Where(e => e.EntityId == ctxEntityId.Value)
+                    .Select(e => e.EntityCode + " - " + e.EntityName).FirstOrDefaultAsync();
+                ViewBag.FixedDepartment = await _db.Departments.AsNoTracking()
+                    .Where(d => d.DepartmentId == ctxDeptId.Value && d.EntityId == ctxEntityId.Value)
+                    .Select(d => d.DeptCode + " - " + d.DeptName).FirstOrDefaultAsync();
+            }
+            else
+            {
+                var scope = EffectiveEntityId(null);
+                var entitiesQ = _db.Entities.AsNoTracking().Where(e => e.IsActive);
+                if (scope.HasValue) entitiesQ = entitiesQ.Where(e => e.EntityId == scope.Value);
+                var entities = await entitiesQ.OrderBy(e => e.EntityCode)
+                    .Select(e => new { e.EntityId, Label = e.EntityCode + " - " + e.EntityName })
+                    .ToListAsync();
+
+                // An entity admin (or a single-entity setup) has nothing to choose.
+                if (entities.Count == 1) input.EntityId = entities[0].EntityId;
+
+                ViewBag.EntityOptions = entities
+                    .Select(e => new SelectListItem(e.Label, e.EntityId.ToString(), input.EntityId == e.EntityId))
+                    .ToList();
+
+                var entityIds = entities.Select(e => e.EntityId).ToList();
+                // Every cost centre in scope; the page narrows the list to the chosen entity.
+                ViewBag.DepartmentOptions = await _db.Departments.AsNoTracking()
+                    .Where(d => d.IsActive && entityIds.Contains(d.EntityId))
+                    .OrderBy(d => d.DeptCode)
+                    .Select(d => new HrCostDepartmentOption
+                    {
+                        DepartmentId = d.DepartmentId,
+                        EntityId = d.EntityId,
+                        Label = d.DeptCode + " - " + d.DeptName
+                    })
+                    .ToListAsync();
+            }
+
+            ViewBag.GlOptions = (await _db.GLAccounts.AsNoTracking()
+                    .OrderBy(g => g.GLCode)
+                    .Select(g => new { g.GLCode, g.GLName })
+                    .ToListAsync())
+                .Select(g => new SelectListItem(g.GLCode + " - " + g.GLName, g.GLCode,
+                    string.Equals(g.GLCode, input.GLCode, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            var kind = string.IsNullOrWhiteSpace(input.GLKind) ? "HR" : input.GLKind.Trim().ToUpperInvariant();
+            ViewBag.GlKindOptions = new[] { "HR", "OPEX", "CAPEX", "REVENUE", "TRANSFER" }
+                .Select(k => new SelectListItem(k, k, k == kind))
+                .ToList();
+
+            return View("Add", input);
+        }
+
+        private async Task<IActionResult> SaveEntry(HrCostEntryInput input, bool isBudget)
+        {
+            var employeeId = (input.EmployeeId ?? "").Trim();
+            var employeeName = (input.EmployeeName ?? "").Trim();
+            var occupation = string.IsNullOrWhiteSpace(input.Occupation) ? null : input.Occupation.Trim();
+            var glCode = (input.GLCode ?? "").Trim();
+            var glKind = (input.GLKind ?? "").Trim().ToUpperInvariant();
+
+            // The same rules the Excel import applies to a row.
+            if (employeeId.Length == 0) ModelState.AddModelError(nameof(input.EmployeeId), "Employee ID is required.");
+            else if (employeeId.Length > 50) ModelState.AddModelError(nameof(input.EmployeeId), "Employee ID can be at most 50 characters.");
+            if (employeeName.Length == 0) ModelState.AddModelError(nameof(input.EmployeeName), "Employee name is required.");
+            else if (employeeName.Length > 200) ModelState.AddModelError(nameof(input.EmployeeName), "Employee name can be at most 200 characters.");
+            if (occupation != null && occupation.Length > 150) ModelState.AddModelError(nameof(input.Occupation), "Occupation can be at most 150 characters.");
+            if (!input.AnnualCost.HasValue || input.AnnualCost.Value <= 0m)
+                ModelState.AddModelError(nameof(input.AnnualCost), "Annual cost must be greater than zero.");
+            if (input.BudgetYear < 2000 || input.BudgetYear > 2100)
+                ModelState.AddModelError(nameof(input.BudgetYear), "Choose a budget year.");
+
+            if (glCode.Length == 0 || !await _db.GLAccounts.AsNoTracking().AnyAsync(g => g.GLCode == glCode))
+                ModelState.AddModelError(nameof(input.GLCode), "Choose a GL account.");
+            if (!ValidGlKinds.Contains(glKind))
+                ModelState.AddModelError(nameof(input.GLKind), "Choose a GL kind.");
+
+            // Who the cost belongs to: the working context on the budget screen, otherwise the
+            // chosen entity and cost centre, limited to what this admin is allowed to see.
+            Entities? entity = null;
+            Departments? dept = null;
+            if (isBudget)
+            {
+                var ctxEntityId = HttpContext.Session.GetInt("ctxEntityId");
+                var ctxDeptId = HttpContext.Session.GetInt("ctxDeptId");
+                if (!(ctxEntityId.HasValue && ctxDeptId.HasValue))
+                {
+                    return RedirectToAction("Select", "Context");
+                }
+
+                entity = await _db.Entities.AsNoTracking().FirstOrDefaultAsync(e => e.EntityId == ctxEntityId.Value);
+                dept = await _db.Departments.AsNoTracking()
+                    .FirstOrDefaultAsync(d => d.DepartmentId == ctxDeptId.Value && d.EntityId == ctxEntityId.Value);
+                if (entity == null || dept == null)
+                    ModelState.AddModelError("", "Your working entity or cost center was not found. Choose your context again.");
+            }
+            else
+            {
+                var scope = EffectiveEntityId(input.EntityId);
+                if (!scope.HasValue || scope.Value <= 0)
+                {
+                    ModelState.AddModelError(nameof(input.EntityId), "Choose an entity.");
+                }
+                else
+                {
+                    input.EntityId = scope.Value;
+                    entity = await _db.Entities.AsNoTracking().FirstOrDefaultAsync(e => e.EntityId == scope.Value);
+                    if (entity == null) ModelState.AddModelError(nameof(input.EntityId), "Choose an entity.");
+                }
+
+                if (entity != null)
+                {
+                    dept = input.DepartmentId.HasValue
+                        ? await _db.Departments.AsNoTracking()
+                            .FirstOrDefaultAsync(d => d.DepartmentId == input.DepartmentId.Value && d.EntityId == entity.EntityId)
+                        : null;
+                    if (dept == null)
+                        ModelState.AddModelError(nameof(input.DepartmentId), "Choose a cost center of the selected entity.");
+                }
+            }
+
+            // One row per employee and year (the import updates it; a typed entry must not overwrite).
+            if (employeeId.Length > 0
+                && await _db.HrEmployeeCosts.AsNoTracking().AnyAsync(x => x.BudgetYear == input.BudgetYear && x.EmployeeId == employeeId))
+            {
+                ModelState.AddModelError(nameof(input.EmployeeId),
+                    $"Employee '{employeeId}' already has an HR cost for {input.BudgetYear}. Find it in the list to change its allocation.");
+            }
+
+            if (!ModelState.IsValid || entity == null || dept == null)
+            {
+                return await ShowEntryForm(input, isBudget);
+            }
+
+            var rec = new HrEmployeeCosts
+            {
+                BudgetYear = input.BudgetYear,
+                EmployeeId = employeeId,
+                EmployeeName = employeeName,
+                Occupation = occupation,
+                GLCode = glCode,
+                GLKind = glKind,
+                EntityId = entity.EntityId,
+                EntityName = entity.EntityName,
+                DepartmentId = dept.DepartmentId,
+                DepartmentName = dept.DeptName,
+                AnnualCost = Math.Round(input.AnnualCost!.Value, 2, MidpointRounding.AwayFromZero),
+                ImportedAt = DateTime.UtcNow,
+                ImportedBy = User.Identity?.Name,
+                SourceFile = "Manual entry"
+            };
+            _db.HrEmployeeCosts.Add(rec);
+            await _db.SaveChangesAsync();
+
+            TempData["Success"] = $"{employeeName} was added. Allocate the annual cost to activities below.";
+            return RedirectToAction(nameof(Allocate), new { id = rec.EmployeeCostId, budget = isBudget });
+        }
+
         [HttpGet]
         public async Task<IActionResult> Allocate(int id, bool budget = false)
         {
